@@ -14,3 +14,4 @@
 - [x] R1: real/demo switch, persistent Inbox, manual requests, versioned quotes, drafts, approval history and settings.
 - [x] R1: verified signed-in creation/edit/approval/readback and unchanged demo on desktop and phone; no AI or external delivery.
 - [ ] R1: email-link delivery and click-through — external Supabase mail delivery and redirect allowlist unverified; disposable authenticated accounts verified the real-data flow instead.
+- [x] Fix preview workspace-context identity during live provider updates; all five pages and Jonas approval verified on desktop and phone, with 19 targeted tests passing.
