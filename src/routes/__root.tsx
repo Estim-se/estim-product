@@ -14,6 +14,8 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { EstimProvider } from '@/components/estim/store-provider';
 import { Toast } from '@/components/estim/toast';
+import { QuoteDrawer } from '@/components/estim/quote-drawer';
+import { CustomerView } from '@/components/estim/customer-view';
 
 function NotFoundComponent() {
   return (
@@ -127,7 +129,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <EstimProvider><Outlet /><Toast /></EstimProvider>
+      <EstimProvider><Outlet /><QuoteDrawer /><CustomerView /><Toast /></EstimProvider>
     </QueryClientProvider>
   );
 }

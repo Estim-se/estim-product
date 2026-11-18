@@ -449,3 +449,26 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .bankid h3{font-size:19px}.customer-done{text-align:center;padding-top:34px}.customer-done .okmark{margin:0 auto;color:var(--greenInk)}.okmark svg{stroke-width:2.4}
 @media(max-width:1180px){.phone-wrap{grid-template-columns:1fr;justify-items:center}.side-explain{max-width:none}}
 @media(max-width:600px){.dr-h{padding:18px 16px 12px}.dr-b{padding:4px 16px 20px}.dr-f{padding:14px 16px}.lrow{grid-template-columns:minmax(0,1fr) 60px 72px 42px 28px;gap:4px}.lrow .input.sm{padding:0 6px;min-width:0}.line-quantity input{width:40px}.addbox{padding:10px 8px}.grid2{grid-template-columns:1fr}.ov{padding:10px}.md{max-height:calc(100dvh - 20px)}.md-h{padding:18px 16px 8px}.phone-wrap{padding:8px 14px 20px;gap:18px}.phone{width:min(350px,calc(100vw - 68px));height:min(720px,calc(100dvh - 140px))}.lrow:not(.h)>input:first-child{grid-column:1 / -1}.lrow:not(.h){grid-template-columns:1fr 72px 42px 28px}.clines div{overflow-wrap:anywhere}.dr-f>span{flex:1;min-width:150px}}
+
+/* Stage 4: prototype tables, channels and settings. */
+:root{--stage4-table-hover:#FCFBF7;}
+.kop{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.kop:first-of-type{border-top:0}
+.kop .grow{display:flex;flex-direction:column;line-height:1.3}
+.kop .grow span{font-size:12px;color:var(--muted)}
+.chcard{display:flex;flex-direction:column;gap:10px}
+.chcard .top{display:flex;align-items:center;gap:12px}
+.chcard p{font-size:13.5px;color:var(--ink2)}
+.otable{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);border-radius:20px;overflow:hidden}
+.otable th{text-align:left;font-size:11px;letter-spacing:0;text-transform:uppercase;color:var(--muted);font-weight:600;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--thread-tone-19)}
+.otable td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+.otable tr:last-child td{border-bottom:0}
+.otable tr.click{cursor:pointer}
+.otable tr.click:hover td{background:var(--stage4-table-hover)}
+.otable td.r,.otable th.r{text-align:right;white-space:nowrap}
+.tablewrap{border:1px solid var(--line);border-radius:20px;overflow:auto;box-shadow:var(--shadow)}
+.otable{min-width:1000px}.otable tr.click{position:relative}.quote-row-link::after{content:'';position:absolute;inset:0}.quote-edit-cell .btn{position:relative;z-index:1}.quote-row-link:focus-visible::after{outline:2px solid var(--ink);outline-offset:-2px}
+.quote-table-note{max-width:720px}.settings-grid{align-items:start}.settings-column{gap:14px;min-width:0}.settings-docs{gap:8px}.settings-doc{background:var(--bg);border-radius:12px;padding:10px 12px}.settings-doc>span:first-child{gap:8px;min-width:0}.settings-doc svg{width:16px;height:16px;flex:none}.settings-doc>span:last-child{flex:none}
+.kop{display:grid;grid-template-columns:minmax(0,1fr) auto}.kop .grow{min-width:0}.prototype-control.toggle{width:38px;height:22px;border-radius:11px;flex:none}
+.chcard .top{display:grid;grid-template-columns:34px minmax(0,1fr) auto}.chcard .grow{min-width:0}.chcard .top b{overflow-wrap:anywhere}.chcard .chi,.chcard .chip{flex:none}
+@media(max-width:600px){.topbar{display:grid;grid-template-columns:minmax(0,1fr)}.channels-grid,.settings-grid{grid-template-columns:1fr}.chcard .top{grid-template-columns:34px minmax(0,1fr)}.chcard .top>.chip{grid-column:2;justify-self:start}.settings-doc{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}.settings-doc>span:first-child{overflow-wrap:anywhere}.settings-doc>span:last-child{padding-left:24px}.card h3{overflow-wrap:anywhere}.tablewrap{max-width:100%}}

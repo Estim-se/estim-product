@@ -5,4 +5,5 @@
 - [x] Stage 3: quote drawer, customer approval screens, live draft recalculation; Sara's edit, preview, optional total, signing and week-50 handover verified on desktop and phones.
 - [x] Confirm Stage 3 user-facing text stays Swedish and matches the prototype; code comments stay English.
 - [x] Final audit: both entry points and all five customers checked at desktop and phone widths, including quote edits, preview blocking, signing fields, approval and sent handovers; Wallin's no-quote visit flow preserved. The prototype has one theme.
-- [ ] Later stages: remaining screens, mobile scene and guided demo — waiting for the user's next-stage instruction.
+- [x] Stage 4: Offerter, Kanaler and AI/settings routes, shared navigation, persistent toggles; all quote editors, Sara's approved table row, every channel test and upload toasts verified on desktop and two phone widths.
+- [ ] Later stages: mobile scene and guided demo — waiting for the user's next-stage instruction.

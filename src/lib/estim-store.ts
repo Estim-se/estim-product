@@ -1,6 +1,7 @@
 import { initialThreads, simulatedRequest, type InboxFilter, type Thread } from '@/data/inbox';
 import { DRAFTS, formal, type DraftVariant } from './drafts';
 import type { Quote } from './quote';
+import { settings } from '@/data/prototype-pages';
 
 export interface Draft { text: string; v: DraftVariant; ch: string; att: string[]; edited: boolean }
 export function initial() {
@@ -8,7 +9,7 @@ export function initial() {
   const drafts: Record<string, Draft> = {};
   threads.forEach(t => { const generator = DRAFTS[t.id]; if (generator) drafts[t.id] = { text: generator(t), v: 'std', ch: t.ch === 'form' ? 'email' : t.ch, att: t.att.slice(), edited: false }; });
   return { view: 'desk', page: 'inkorg', sel: 'lind', filter: 'alla' as InboxFilter, threads, drafts,
-    drawer: null as string | null, modal: null as { type: string; id: string; preview?: boolean } | null,
+    settings: settings.map(s => s.on), drawer: null as string | null, modal: null as { type: string; id: string; preview?: boolean } | null,
     toast: '', hl: null as string | null, guide: { on: false, step: 0 },
     m: { scr: 'lock', id: null as string | null, editing: false }, cust: { step: 'view' }, stats: { ai: 14, sek: 47 } };
 }
@@ -41,6 +42,7 @@ export function createEstimStore() {
   };
   const actions = {
     update, toast,
+    toggleSetting(index: number) { update(s => { if (index >= 0 && index < s.settings.length) s.settings[index] = !s.settings[index]; }); },
     reset() { timers.forEach(clearTimeout); timers.clear(); clearTimeout(toastTimer); state = initial(); toast('Demon är återställd'); },
     select(id: string) { update(s => { const t = s.threads.find(t => t.id === id); if (!t) return; t.read = true; s.sel = id; s.page = 'inkorg'; s.view = 'desk'; s.hl = null; }); },
     toggleAuto(id: string) { let auto = false; update(s => { const t = s.threads.find(t => t.id === id); if (t) { t.autopilot = !t.autopilot; auto = t.autopilot; } }); toast(auto ? 'AI svarar själv i den här tråden. Priser kräver fortfarande ditt OK.' : 'AI skriver utkast, du skickar'); },

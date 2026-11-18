@@ -5,8 +5,8 @@ import type { DraftVariant } from '@/lib/drafts';
 import { Button } from '@/components/ui/button';
 import { Icon } from './icon';
 import { useEstim } from './store-provider';
+import { DOCS as docs } from '@/data/prototype-pages';
 
-const docs = ['Försäkringsbevis.pdf', 'Auktorisation Elsäkerhetsverket.pdf', 'Referenser.pdf', 'Allmänna villkor.pdf'];
 const variants: [DraftVariant, string][] = [['std', 'AI-förslaget'], ['kort', 'Kortare'], ['formell', 'Mer formell']];
 export function Composer({ thread: t }: { thread: Thread }) {
   const { state, actions } = useEstim();
