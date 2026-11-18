@@ -63,6 +63,7 @@ export type Database = {
       }
       companies: {
         Row: {
+          active: boolean
           company_id: string | null
           created_at: string
           created_by: string
@@ -77,6 +78,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          active?: boolean
           company_id?: string | null
           created_at?: string
           created_by?: string
@@ -91,6 +93,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          active?: boolean
           company_id?: string | null
           created_at?: string
           created_by?: string
@@ -105,6 +108,59 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      company_invitations: {
+        Row: {
+          accepted_at: string | null
+          company_id: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          revoked_at: string | null
+          role: string
+          token_hash: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          company_id: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by: string
+          revoked_at?: string | null
+          role: string
+          token_hash: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          accepted_at?: string | null
+          company_id?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          revoked_at?: string | null
+          role?: string
+          token_hash?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_members: {
         Row: {
@@ -358,6 +414,24 @@ export type Database = {
           },
         ]
       }
+      platform_admins: {
+        Row: {
+          created_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           company_id: string | null
@@ -524,7 +598,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      estim_accept_invitation: {
+        Args: {
+          display: string
+          expected_hash: string
+          iid: string
+          uid: string
+        }
+        Returns: string
+      }
       estim_approve: { Args: { tid: string }; Returns: string }
+      estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_manage_member: {
+        Args: { actor: string; cid: string; new_role: string; uid: string }
+        Returns: undefined
+      }
       estim_onboard: { Args: { payload: Json }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
       estim_request: { Args: { payload: Json }; Returns: string }
