@@ -122,12 +122,13 @@ export const acceptInvitation = createServerFn({ method: 'POST' }).middleware([r
   const company = await db.from('companies').select('active').eq('id', invitation.data.company_id).single();
   const membership = await db.from('company_members').select('id').eq('user_id', context.userId).maybeSingle();
   if (!company.data?.active || membership.data || membership.error) throw new Error('Inbjudan kan inte användas för detta konto.');
-  const password = await db.auth.admin.updateUserById(context.userId, { password: data.password });
-  if (password.error) throw new Error('Lösenordet kunde inte sparas. Välj ett annat lösenord.');
   const accepted = await db.rpc('estim_accept_invitation', { iid: invitation.data.id, uid: context.userId, expected_hash: token_hash, display: data.name });
   if (accepted.error) throw new Error('Inbjudan är ogiltig, använd eller har gått ut.');
+  // Consume first: a revoked or losing concurrent request must never change credentials.
+  const password = await db.auth.admin.updateUserById(context.userId, { password: data.password });
+  if (password.error) throw new Error('Inbjudan är accepterad, men lösenordet kunde inte sparas. Använd Glömt lösenord? för att slutföra kontot.');
   const bearer = getRequestHeader('authorization')?.replace(/^Bearer /i, '');
-  if (bearer) await db.auth.admin.signOut(bearer, 'global');
+  if (bearer) { const result=await db.auth.admin.signOut(bearer, 'global'); if(result.error)throw new Error('Kontot är klart, men utloggningen kunde inte slutföras. Logga ut och försök igen.'); }
   return { companyId: accepted.data };
 });
 

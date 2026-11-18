@@ -4,6 +4,8 @@ import { canManageCompany } from './access-rules';
 
 // RLS-visible role rows authorize privileged work before the admin client is loaded.
 export async function readAccess(db: SupabaseClient<Database>, userId: string) {
+  const session = await db.rpc('estim_session_valid');
+  if (session.error || !session.data) throw new Error('Logga in igen.');
   const [platform, member] = await Promise.all([
     db.from('platform_admins').select('user_id').eq('user_id', userId).maybeSingle(),
     db.from('company_members').select('company_id,role').eq('user_id', userId).maybeSingle(),

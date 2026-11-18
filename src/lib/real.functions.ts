@@ -30,6 +30,8 @@ export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 
 export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator(parseMutation).handler(async ({data,context}) => {
   const db = context.supabase;
+  const session=await db.rpc('estim_session_valid');
+  if(session.error||!session.data)throw new Error('Logga in igen.');
   const membership = await db.from('company_members').select('company_id').eq('user_id',context.userId).maybeSingle();
   if (membership.error) throw new Error('Kunde inte kontrollera företaget.');
   const cid = membership.data?.company_id;

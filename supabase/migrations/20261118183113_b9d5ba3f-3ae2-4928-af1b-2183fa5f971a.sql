@@ -1,0 +1,21 @@
+CREATE OR REPLACE FUNCTION estim_private.valid_session() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$ SELECT EXISTS(SELECT 1 FROM auth.sessions WHERE id=nullif(auth.jwt()->>'session_id','')::uuid AND user_id=auth.uid()) $$;
+REVOKE ALL ON FUNCTION estim_private.valid_session() FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION estim_private.valid_session() TO authenticated,service_role;
+CREATE OR REPLACE FUNCTION estim_private.active_company() RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$ SELECT m.company_id FROM public.company_members m JOIN public.companies c ON c.id=m.company_id WHERE m.user_id=auth.uid() AND c.active AND estim_private.valid_session() $$;
+CREATE OR REPLACE FUNCTION public.estim_session_valid() RETURNS boolean LANGUAGE sql STABLE SET search_path=public AS $$ SELECT estim_private.valid_session() $$;
+REVOKE ALL ON FUNCTION public.estim_session_valid() FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION public.estim_session_valid() TO authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.estim_manage_member(cid uuid,uid uuid,new_role text,actor uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE old_role text; normalized text=nullif(new_role,''); recipient text; BEGIN
+PERFORM 1 FROM public.companies WHERE id=cid FOR UPDATE;
+IF NOT EXISTS(SELECT 1 FROM public.platform_admins WHERE user_id=actor) AND NOT EXISTS(SELECT 1 FROM public.company_members m JOIN public.companies c ON c.id=m.company_id WHERE m.company_id=cid AND m.user_id=actor AND m.role='ägare' AND c.active) THEN RAISE EXCEPTION 'Not allowed'; END IF;
+SELECT role INTO old_role FROM public.company_members WHERE company_id=cid AND user_id=uid;
+IF old_role IS NULL OR (normalized IS NOT NULL AND normalized NOT IN ('ägare','användare')) THEN RAISE EXCEPTION 'Invalid member'; END IF;
+IF old_role='ägare' AND normalized IS DISTINCT FROM 'ägare' AND (SELECT count(*) FROM public.company_members WHERE company_id=cid AND role='ägare')<=1 THEN RAISE EXCEPTION 'Last owner'; END IF;
+IF normalized IS NULL THEN SELECT lower(email) INTO recipient FROM auth.users WHERE id=uid; UPDATE public.company_invitations SET revoked_at=now() WHERE company_id=cid AND email=recipient AND accepted_at IS NULL AND revoked_at IS NULL; DELETE FROM public.company_members WHERE company_id=cid AND user_id=uid; UPDATE public.profiles SET company_id=NULL WHERE id=uid; ELSE UPDATE public.company_members SET role=normalized WHERE company_id=cid AND user_id=uid; END IF;
+INSERT INTO public.audit_log(company_id,user_id,event,"before","after") VALUES(cid,actor,CASE WHEN normalized IS NULL THEN 'Användare borttagen' ELSE 'Roll ändrad' END,jsonb_build_object('user_id',uid,'role',old_role),jsonb_build_object('user_id',uid,'role',normalized)); END $$;
+REVOKE ALL ON FUNCTION public.estim_manage_member(uuid,uuid,text,uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.estim_manage_member(uuid,uuid,text,uuid) TO service_role;
+CREATE OR REPLACE FUNCTION public.estim_accept_invitation(iid uuid,uid uuid,expected_hash text,display text) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ DECLARE inv public.company_invitations; BEGIN
+SELECT * INTO inv FROM public.company_invitations WHERE id=iid FOR UPDATE;
+IF inv.id IS NULL OR inv.token_hash<>expected_hash OR inv.accepted_at IS NOT NULL OR inv.revoked_at IS NOT NULL OR inv.expires_at<=now() OR NOT public.estim_company_active(inv.company_id) THEN RAISE EXCEPTION 'Invalid invitation'; END IF;
+IF NOT EXISTS(SELECT 1 FROM auth.users WHERE id=uid AND lower(email)=inv.email AND email_confirmed_at IS NOT NULL) THEN RAISE EXCEPTION 'Wrong recipient'; END IF;
+IF EXISTS(SELECT 1 FROM public.company_members WHERE user_id=uid) THEN RAISE EXCEPTION 'Already a member'; END IF;
+INSERT INTO public.company_members(company_id,user_id,role) VALUES(inv.company_id,uid,inv.role); UPDATE public.profiles SET display_name=display WHERE id=uid; UPDATE public.company_invitations SET accepted_at=now(),user_id=uid WHERE id=iid;
+INSERT INTO public.audit_log(company_id,user_id,event,"after") VALUES(inv.company_id,uid,'Inbjudan accepterad',jsonb_build_object('invitation_id',iid)); RETURN inv.company_id; END $$;

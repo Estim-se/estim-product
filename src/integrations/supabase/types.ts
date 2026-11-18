@@ -680,6 +680,7 @@ export type Database = {
       estim_onboard: { Args: { payload: Json }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
       estim_request: { Args: { payload: Json }; Returns: string }
+      estim_session_valid: { Args: never; Returns: boolean }
       my_company: { Args: never; Returns: string }
     }
     Enums: {
