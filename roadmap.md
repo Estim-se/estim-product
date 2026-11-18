@@ -1,5 +1,10 @@
 # Prototype rebuild
 
+- [ ] R1b: real-mode invitation-only accounts, seven-day invitations, password/recovery login and global password-change logout.
+- [ ] R1b: server-authorized platform administration and owner team management with immutable audit history and unchanged tenant isolation.
+- [ ] R1b: regression tests, invitation/role denial tests, live two-company isolation and desktop/phone checks.
+- [ ] R1b: first platform admin awaits the user's email; custom login limiting awaits the user's choice; external Supabase email settings require verification.
+
 - [x] Security-only fixes: revoked elevated trigger execution; patched dependencies without migrating direct Zod 3; bounded requests and inputs before validation; 66 tests including live two-company isolation passed; signed-in desktop/phone regression and oversized HTTP/form rejection passed; deep scan found no code-security issues. Password protection remains for the user to enable; direct Zod 3 advisory remains with input-limit mitigation.
 
 - [x] Real-mode fixes: company quote sequence from 1001; save-only quote revisions/events; approval-only attribution; company sender identity; attachment-aware sent status; signed-in creation/save/send/reload and five-page verification; 57 tests passed, demo unchanged.
