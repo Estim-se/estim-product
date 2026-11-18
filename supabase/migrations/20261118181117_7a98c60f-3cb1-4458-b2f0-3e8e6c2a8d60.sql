@@ -1,0 +1,11 @@
+CREATE SCHEMA IF NOT EXISTS estim_private;
+REVOKE ALL ON SCHEMA estim_private FROM PUBLIC,anon;
+GRANT USAGE ON SCHEMA estim_private TO authenticated,service_role;
+CREATE OR REPLACE FUNCTION estim_private.active_company() RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$ SELECT m.company_id FROM public.company_members m JOIN public.companies c ON c.id=m.company_id WHERE m.user_id=auth.uid() AND c.active $$;
+REVOKE ALL ON FUNCTION estim_private.active_company() FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION estim_private.active_company() TO authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.my_company() RETURNS uuid LANGUAGE sql STABLE SET search_path=public AS $$ SELECT estim_private.active_company() $$;
+CREATE OR REPLACE FUNCTION public.estim_company_active(cid uuid) RETURNS boolean LANGUAGE sql STABLE SET search_path=public AS $$ SELECT coalesce((SELECT active FROM public.companies WHERE id=cid),false) $$;
+REVOKE ALL ON FUNCTION public.estim_company_active(uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.estim_company_active(uuid) TO service_role;
+CREATE POLICY invitation_deny_direct ON public.company_invitations FOR ALL TO authenticated USING(false) WITH CHECK(false);
+DROP INDEX public.company_members_single_company;
+CREATE OR REPLACE FUNCTION public.estim_new_profile() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ BEGIN INSERT INTO public.profiles(id,display_name) VALUES(NEW.id,coalesce(NEW.raw_user_meta_data->>'display_name','')); RETURN NEW; END $$;
