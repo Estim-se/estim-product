@@ -680,6 +680,22 @@ export type Database = {
       estim_onboard: { Args: { payload: Json }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
       estim_request: { Args: { payload: Json }; Returns: string }
+      estim_revoke_invitation: {
+        Args: { actor: string; cid: string; iid: string }
+        Returns: undefined
+      }
+      estim_save_invitation: {
+        Args: {
+          actor: string
+          cid: string
+          expiry: string
+          hashed: string
+          invited_role: string
+          previous_id: string
+          recipient: string
+        }
+        Returns: string
+      }
       estim_session_valid: { Args: never; Returns: boolean }
       my_company: { Args: never; Returns: string }
     }

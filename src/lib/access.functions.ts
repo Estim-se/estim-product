@@ -60,9 +60,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     const token_hash = await hashInvitation(token);
     const expires_at = new Date(Date.now() + INVITATION_DAYS * 86400000).toISOString();
     const recipient = email.toLowerCase();
-    const saved = previousId
-      ? await db.from('company_invitations').update({ token_hash, expires_at }).eq('id', previousId).eq('company_id', cid).is('accepted_at', null).is('revoked_at', null).select('id').single()
-      : await db.from('company_invitations').insert({ company_id: cid, email: recipient, role, token_hash, expires_at, invited_by: context.userId }).select('id').single();
+    const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,previous_id:previousId??''});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
     const redirectTo = `${origin}/inbjudan?token=${token}`;
     let sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
@@ -73,13 +71,13 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
       if (!url || !key) throw new Error('E-posttjänsten är inte tillgänglig.');
       const auth = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
       const retry = await auth.auth.signInWithOtp({ email: recipient, options: { shouldCreateUser: false, emailRedirectTo: redirectTo } });
-      if (!retry.error) return audit(cid, previousId ? 'Inbjudan skickad igen' : 'Inbjudan skickad', { invitation_id: saved.data.id, email: recipient, role });
+      if (!retry.error) return audit(cid, previousId ? 'Inbjudan skickad igen' : 'Inbjudan skickad', { invitation_id: saved.data, email: recipient, role });
     }
     if (sent.error) {
-      if (!previousId) await db.from('company_invitations').update({ revoked_at: new Date().toISOString() }).eq('id', saved.data.id);
+      if (!previousId) await db.from('company_invitations').update({ revoked_at: new Date().toISOString() }).eq('id', saved.data);
       throw new Error('Inbjudan kunde inte mejlas. Kontrollera e-postinställningarna och försök igen.');
     }
-    await audit(cid, previousId ? 'Inbjudan skickad igen' : 'Inbjudan skickad', { invitation_id: saved.data.id, email: recipient, role });
+    await audit(cid, previousId ? 'Inbjudan skickad igen' : 'Inbjudan skickad', { invitation_id: saved.data, email: recipient, role });
   }
   if (data.kind === 'company') {
     const id = crypto.randomUUID();
@@ -107,9 +105,8 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
   const invitation = await db.from('company_invitations').select('*').eq('id', data.id).eq('company_id', data.companyId).single();
   if (!invitation.data || invitation.data.accepted_at || invitation.data.revoked_at) throw new Error('Inbjudan kan inte ändras.');
   if (data.kind === 'resend') return invite(data.companyId, invitation.data.email, invitation.data.role as 'ägare' | 'användare', data.id);
-  const revoked = await db.from('company_invitations').update({ revoked_at: new Date().toISOString() }).eq('id', data.id).is('accepted_at', null);
+  const revoked = await db.rpc('estim_revoke_invitation',{cid:data.companyId,actor:context.userId,iid:data.id});
   if (revoked.error) throw new Error('Kunde inte återkalla inbjudan.');
-  await audit(data.companyId, 'Inbjudan återkallad', { invitation_id: data.id });
 });
 
 export const acceptInvitation = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator(parseAccept).handler(async ({ context, data }) => {
