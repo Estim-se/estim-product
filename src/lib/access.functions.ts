@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
+import type { Json } from '@/integrations/supabase/types';
 import { assertBoundedInput } from './input-limits';
 import { parseAccept, parseManagement, INVITATION_DAYS, invitationStatus } from './access-rules';
 
@@ -48,7 +49,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
   const origin = getRequestHeader('origin');
   const request = new URL((await import('@tanstack/react-start/server')).getRequest().url);
   if (!origin || origin !== request.origin) throw new Error('Ogiltig avsändare.');
-  async function audit(cid: string, event: string, after: Record<string, unknown>) {
+  async function audit(cid: string, event: string, after: Json) {
     const saved = await db.from('audit_log').insert({ company_id: cid, user_id: context.userId, event, after });
     if (saved.error) throw new Error('Kunde inte spara händelsen.');
   }
@@ -93,7 +94,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
   }
   if (data.kind === 'invite') return invite(data.companyId, data.email, data.role);
   if (data.kind === 'member') {
-    const changed = await db.rpc('estim_manage_member', { cid: data.companyId, uid: data.userId, new_role: data.role, actor: context.userId });
+    const changed = await db.rpc('estim_manage_member', { cid: data.companyId, uid: data.userId, new_role: data.role ?? '', actor: context.userId });
     if (changed.error) throw new Error('Ändringen nekades. Företaget måste ha minst en ägare.');
     return;
   }

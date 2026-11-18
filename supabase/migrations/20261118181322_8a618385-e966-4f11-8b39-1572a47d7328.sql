@@ -1,0 +1,3 @@
+CREATE OR REPLACE FUNCTION public.estim_registration_gate() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ BEGIN
+IF NOT EXISTS(SELECT 1 FROM public.company_invitations WHERE email=lower(NEW.email) AND expires_at>now() AND accepted_at IS NULL AND revoked_at IS NULL) THEN RAISE EXCEPTION 'Registration requires an invitation'; END IF; RETURN NEW; END $$;
+REVOKE ALL ON FUNCTION public.estim_registration_gate() FROM PUBLIC,anon,authenticated;
