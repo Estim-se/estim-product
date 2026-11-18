@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       audit_log: {
         Row: {
+          actor_name: string
           after: Json | null
           approved_name: string
           before: Json | null
@@ -27,6 +28,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          actor_name?: string
           after?: Json | null
           approved_name?: string
           before?: Json | null
@@ -38,6 +40,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          actor_name?: string
           after?: Json | null
           approved_name?: string
           before?: Json | null

@@ -26,11 +26,19 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
    const quote={nr:'R1-test',owners:1,addOn:false,prisform:'fast',lines:[{t:'Uttag',typ:'arbete',q:1,u:'h',p:650,rot:true}]};
    expect((await b.client.rpc('estim_quote',{tid,payload:quote})).error).toBeNull();
    expect((await b.client.rpc('estim_quote',{tid,payload:{...quote,lines:[{...quote.lines[0],p:700}]}})).error).toBeNull();
-   const versions=await b.client.from('quotes').select('version,lines').eq('thread_id',tid).order('version');expect(versions.data?.map(v=>v.version)).toEqual([1,2]);
+   const versions=await b.client.from('quotes').select('version,lines,nr').eq('thread_id',tid).order('version');expect(versions.data?.map(v=>v.version)).toEqual([1,2]);expect(versions.data?.map(v=>v.nr)).toEqual(['1001','1001']);
+   const next=await b.client.rpc('estim_request',{payload:{name:'Andra kunden',text:'Uttag',job:'Uttag',channel:'email'}});
+   expect((await b.client.rpc('estim_quote',{tid:next.data,payload:quote})).error).toBeNull();
+   expect((await b.client.from('quotes').select('nr').eq('thread_id',next.data)).data?.[0]?.nr).toBe('1002');
+   const own=await a.client.rpc('estim_request',{payload:{name:'Egen kund',text:'Uttag',job:'Uttag',channel:'email'}});
+   expect((await a.client.rpc('estim_quote',{tid:own.data,payload:quote})).error).toBeNull();
+   expect((await a.client.from('quotes').select('nr').eq('thread_id',own.data)).data?.[0]?.nr).toBe('1001');
+   const edits=await b.client.from('audit_log').select('actor_name,approved_name').eq('event','Offert ändrad');
+   expect(edits.data?.every(e=>e.actor_name==='R1 B'&&e.approved_name==='')).toBe(true);
    expect((await b.client.from('drafts').update({text:'Manuellt godkänt svar'}).eq('thread_id',tid)).error).toBeNull();
    expect((await b.client.rpc('estim_approve',{tid})).error).toBeNull();
    const audit=await b.client.from('audit_log').select('approved_name,after').eq('event','Svar godkänt');expect(audit.data?.[0]?.approved_name).toBe('R1 B');
-   const message=await b.client.from('messages').select('approved_by').eq('thread_id',tid).eq('from','vv');expect(message.data?.[0]?.approved_by).toBe(users[1]);
+   const message=await b.client.from('messages').select('approved_by,attachments').eq('thread_id',tid).eq('from','vv');expect(message.data?.[0]?.approved_by).toBe(users[1]);expect(message.data?.[0]?.attachments).toEqual([]);
   } finally {
    for(const cid of companies){for(const table of ['audit_log','drafts','quotes','messages','threads','customers','moments','company_members'] as const)await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
    for(const id of users)await admin.auth.admin.deleteUser(id);

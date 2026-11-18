@@ -39,4 +39,5 @@ use the editor.
 - Mount shared overlays beside the root outlet and use leaf routes for each prototype page; route navigation must preserve store-backed settings and quote edits.
 - Keep the mobile scene in its own leaf route with central-store screen actions and a stable phone scroll container; approvals reuse desktop send timers and navigation resets only the phone screen.
 - Persist real-company mutations through company-scoped RLS and atomic database functions; quote changes append immutable versions and approval saves a message plus an audit row without provider delivery.
+- Stage real quote edits locally until drawer save, and allocate numbers inside the company-locked quote function; this prevents field-level history spam and concurrent numbering collisions.
 - Define workspace React context in a separate component-free module so provider hot updates cannot replace the context identity used by mounted route consumers.

@@ -1,6 +1,6 @@
 # Prototype rebuild
 
-- [ ] Real-mode fixes: company quote sequence from 1001; save-only quote revisions/events; approval-only attribution; company sender identity; attachment-aware sent status; signed-in verification.
+- [x] Real-mode fixes: company quote sequence from 1001; save-only quote revisions/events; approval-only attribution; company sender identity; attachment-aware sent status; signed-in creation/save/send/reload and five-page verification; 57 tests passed, demo unchanged.
 
 - [x] Stage 1: shell, design tokens, Inbox list and mock-data interactions; verified desktop and narrow layouts.
 - [x] Stage 2: central mock store, quote calculations and drafts, thread conversation/composer/status/context, scripted replies; all five customers and Sofia verified against the prototype.

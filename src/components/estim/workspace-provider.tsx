@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter, useNavigate } from '@tanstack/react-router';
+import { useRouter, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { supabase } from '@/integrations/supabase/client';
 import { loadWorkspace, mutateWorkspace, type WorkspaceData } from '@/lib/real.functions';
@@ -17,6 +17,17 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   const identityEpoch=useRef(0);
   const read=useServerFn(loadWorkspace),write=useServerFn(mutateWorkspace);
   const router=useRouter(),navigate=useNavigate(),queryClient=useQueryClient();
+  const pathname=useRouterState({select:s=>s.location.pathname});
+  // Preserve prototype metadata in demo; company identity replaces it only in real mode.
+  useEffect(()=>{
+    if(mode!=='real'||!data?.company)return;
+    const name=data.company.name,previous=document.title;
+    document.title=previous.replace(/Volt Vision(?: AB)?/g,name);
+    const tags=Array.from(document.querySelectorAll<HTMLMetaElement>('meta[name="description"],meta[property="og:title"],meta[property="og:description"]')).filter(tag=>tag.content.includes('Volt Vision'));
+    const originals=tags.map(tag=>tag.content);
+    tags.forEach(tag=>{tag.content=tag.content.replace(/Volt Vision(?: AB)?/g,name);});
+    return()=>{document.title=previous;tags.forEach((tag,i)=>{tag.content=originals[i]??'';});};
+  },[mode,data?.company?.name,pathname]);
   async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);}
   async function mutate(input:RealMutation){return write({data:input});}
   realStore.connect(mutate,refresh);

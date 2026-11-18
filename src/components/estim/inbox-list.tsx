@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { channelIcon, filterThreads, threadStatus, type InboxFilter, type Thread } from '@/data/inbox';
 import { Icon } from './icon';
+import { realSentStatus } from '@/lib/real-presentation';
 
 const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntar på mig'], ['ai', 'AI sköter'], ['vunna', 'Vunna']];
 
@@ -13,14 +14,14 @@ export function InboxList({ threads, selected, filter, onFilter, onSelect, onSim
   return <div className="tl2">
     <div className="filters" aria-label="Filtrera inkorgen">{filters.map(([key, label]) =>
       <Button key={key} variant="prototype" className={`fchip ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => onFilter(key)}>{label}</Button>)}</div>
-    {list.map(thread => <ThreadItem key={thread.id} thread={thread} selected={selected === thread.id} onSelect={() => onSelect(thread.id)} />)}
+    {list.map(thread => <ThreadItem key={thread.id} real={real} thread={thread} selected={selected === thread.id} onSelect={() => onSelect(thread.id)} />)}
     {list.length === 0 && <div className="empty-list small muted">Inget här just nu.</div>}
     <Button variant="prototype" className="btn btn-ghost btn-sm mt8" onClick={onSimulate}><Icon name="plus" />{real?'Ny förfrågan':'Simulera ny förfrågan'}</Button>
   </div>;
 }
 
-function ThreadItem({ thread: t, selected, onSelect }: { thread: Thread; selected: boolean; onSelect: () => void }) {
-  const status = threadStatus(t);
+function ThreadItem({ thread: t, selected, onSelect, real }: { thread: Thread; selected: boolean; onSelect: () => void; real: boolean }) {
+  const status = real&&t.status==='skickad'?realSentStatus(t):threadStatus(t);
   const last = [...t.msgs].reverse().find(m => m.text);
   const who = last?.from === 'kund' ? '' : last?.from === 'ai' ? 'AI: ' : 'Du: ';
   return <Button variant="prototype" className={`ti2 ${selected ? 'on' : ''} ${t.read ? '' : 'unread'}`} aria-pressed={selected} aria-label={t.name} onClick={onSelect}>
