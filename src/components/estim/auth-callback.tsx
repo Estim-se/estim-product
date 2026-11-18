@@ -8,6 +8,7 @@ export function AuthCallback(){const navigate=useNavigate();const workspace=useW
     const params=new URLSearchParams(window.location.search);const hash=new URLSearchParams(window.location.hash.slice(1));
     if(params.has('error')||hash.has('error')){setError('Inloggningslänken är ogiltig eller har gått ut.');return;}
     const code=params.get('code');if(code){const result=await supabase.auth.exchangeCodeForSession(code);if(result.error){setError('Inloggningslänken är ogiltig eller har gått ut.');return;}}
+    const tokenHash=params.get('token_hash');if(tokenHash){const result=await supabase.auth.verifyOtp({token_hash:tokenHash,type:'magiclink'});if(result.error){setError('Inloggningslänken är ogiltig eller har gått ut.');return;}}
     const {data}=await supabase.auth.getUser();if(!data.user){setError('Inloggningslänken är ogiltig eller har gått ut.');return;}
     if(active){await workspace.refresh();await navigate({to:'/',replace:true});}
   }void finish().catch(()=>setError('Kunde inte slutföra inloggningen.'));return()=>{active=false;};},[]);

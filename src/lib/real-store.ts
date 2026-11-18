@@ -7,6 +7,7 @@ import type { Quote } from './quote';
 const time = (value:string) => new Date(value).toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
 const strings = (value:unknown):string[] => Array.isArray(value) ? value.filter((v):v is string=>typeof v==='string') : [];
 const rows = (value:unknown):string[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>row.map(String)) : [];
+const asks = (value:unknown):(string|number)[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>[String(row[0]??''),row[1]?1:0]) : [];
 export function emptyRealState(): EstimState { const s=initial(); return {...s, threads:[],drafts:{},sel:'',stats:{ai:0,sek:0},settings:[true,true,false,true,true,true,true]}; }
 export function workspaceState(data:WorkspaceData, previous:EstimState):EstimState {
   const drafts:Record<string,Draft>={};
@@ -15,7 +16,7 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
     const msgs=data.messages.filter(m=>m.thread_id===t.id).map(m=>({from:m.from,ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
-    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status,read:t.read,autopilot:t.autopilot,waWin:false,msgs,asks:rows(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),`${a.event}${a.approved_name?' · Godkänd av '+a.approved_name:''}`]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
+    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status,read:t.read,autopilot:t.autopilot,waWin:false,msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),`${a.event}${a.approved_name?' · Godkänd av '+a.approved_name:''}`]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
 }
@@ -27,12 +28,15 @@ export function createRealStore() {
   let mutate:((input:RealMutation)=>Promise<unknown>)|undefined;
   let reload:(()=>Promise<void>)|undefined;
   let queue=Promise.resolve(); let toastTimer:ReturnType<typeof setTimeout>|undefined;
+  let writeError=false;
+  let epoch=0;
   const update=(fn:(s:EstimState)=>void)=>{state=structuredClone(state);fn(state);listeners.forEach(l=>l());};
   const toast=(text:string)=>{clearTimeout(toastTimer);update(s=>{s.toast=text;});toastTimer=setTimeout(()=>update(s=>{s.toast='';}),3200);};
   const persist=(input:RealMutation,refresh=false)=>{
     const write=mutate,read=reload;
-    const task=queue.then(async()=>{if(!write)throw new Error('Ingen anslutning.');await write(input);if(refresh&&read)await read();});
-    queue=task.catch(()=>{toast('Ändringen kunde inte sparas. Försök igen.');});return task;
+    const own=epoch;
+    const task=queue.then(async()=>{if(own!==epoch)return;if(!write)throw new Error('Ingen anslutning.');await write(input);if(own===epoch&&refresh&&read)await read();});
+    queue=task.then(()=>{writeError=false;}).catch(()=>{writeError=true;toast('Ändringen kunde inte sparas. Försök igen.');});return task;
   };
   const draftSave=(id:string)=>{const draft=state.drafts[id];if(draft)void persist({kind:'draft',id,draft:{...draft,ch:draft.ch==='sms'?'sms':draft.ch==='wa'?'wa':'email'}}).catch(()=>{});};
   const quoteSave=(id:string)=>{const q=state.threads.find(t=>t.id===id)?.q;if(q)void persist({kind:'quote',id,quote:{...q,owners:q.owners===2?2:1,prisform:q.prisform==='fast'?'fast':'ungefar',lines:q.lines.map(l=>({...l,typ:l.typ==='arbete'?'arbete':l.typ==='material'?'material':'resa'}))}},true).catch(()=>{});};
@@ -65,9 +69,9 @@ export function createRealStore() {
   return {getSnapshot:()=>state,subscribe:(l:()=>void)=>{listeners.add(l);return()=>{listeners.delete(l);};},actions,
     connect(write:(input:RealMutation)=>Promise<unknown>,read:()=>Promise<void>){mutate=write;reload=read;},
     hydrate(next:WorkspaceData){data=next;state=workspaceState(next,state);listeners.forEach(l=>l());},
-    clear(){data=null;mutate=undefined;reload=undefined;state=emptyRealState();listeners.forEach(l=>l());},
-    flush:()=>queue,
-    async createQuote(id:string){update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.q={nr:new Date().getTime().toString(),owners:1,addOn:false,prisform:'fast',lines:[]};s.drawer=id;});quoteSave(id);await queue;},
+    clear(){epoch++;clearTimeout(toastTimer);data=null;mutate=undefined;reload=undefined;queue=Promise.resolve();writeError=false;state=emptyRealState();listeners.forEach(l=>l());},
+    async flush(){await queue;if(writeError)throw new Error('Kunde inte spara.');},
+    async createQuote(id:string){await queue;update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.q={nr:new Date().getTime().toString(),owners:1,addOn:false,prisform:'fast',lines:[]};});quoteSave(id);await queue;if(!writeError)actions.openDrawer(id);},
     addMoment(id:string){const moment=data?.moments.find(m=>m.id===id);if(!moment)return;changeQuote(q=>{q.lines.push({t:moment.name,typ:'arbete',q:moment.hours_per_unit,u:'h',p:data?.company?.hourly_rate_ex_vat??0,rot:moment.rot_eligible});if(moment.material_per_unit_ex_vat)q.lines.push({t:moment.name+' · material',typ:'material',q:1,u:moment.unit,p:moment.material_per_unit_ex_vat,rot:false});});},
   };
 }
