@@ -5,10 +5,12 @@ import { parseMutation } from './real.schemas';
 // Every read and write revalidates the caller; ordinary queries run under RLS.
 export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
   const db = context.supabase;
+  const { readAccess } = await import('./access.server');
+  const access = await readAccess(db,context.userId);
   const membership = await db.from('company_members').select('*').eq('user_id',context.userId).maybeSingle();
   const profile = await db.from('profiles').select('display_name').eq('id',context.userId).maybeSingle();
   if (membership.error || profile.error) throw new Error('Kunde inte läsa ditt konto.');
-  if (!membership.data) return { company: null, profile: profile.data, threads: [], customers: [], messages: [], quotes: [], drafts: [], moments: [], audit: [] };
+  if (!membership.data) return { platform:access.platform,role:null,company: null, profile: profile.data, threads: [], customers: [], messages: [], quotes: [], drafts: [], moments: [], audit: [] };
   const cid = membership.data.company_id;
   const [company, threads, customers, messages, quotes, drafts, moments, audit] = await Promise.all([
     db.from('companies').select('*').eq('id',cid).single(),
@@ -21,7 +23,8 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
     db.from('audit_log').select('*').eq('company_id',cid).order('created_at',{ascending:false}),
   ]);
   if ([company,threads,customers,messages,quotes,drafts,moments,audit].some(result=>result.error)) throw new Error('Kunde inte läsa företagets uppgifter.');
-  return { company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [] };
+  if(!company.data?.active)throw new Error('Företaget är avaktiverat.');
+  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [] };
 });
 export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 
@@ -36,12 +39,11 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
     return { id: context.userId };
   }
   if (data.kind === 'onboard') {
-    if(cid) throw new Error('Du har redan ett företag.');
-    const result = await db.rpc('estim_onboard',{payload:{...data.company,moments:data.moments}});
-    if(result.error) throw new Error('Kunde inte skapa företaget.');
-    return {id: result.data};
+    throw new Error('Företag skapas av en plattformsadministratör.');
   }
   if (!cid) throw new Error('Skapa ett företag först.');
+  const active=await db.from('companies').select('active').eq('id',cid).maybeSingle();
+  if(!active.data?.active)throw new Error('Företaget är avaktiverat.');
   let result;
   switch(data.kind) {
     case 'request': result=await db.rpc('estim_request',{payload:data.request}); break;

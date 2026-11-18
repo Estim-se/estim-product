@@ -30,6 +30,8 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## App structure
+- Authorize invitation and administration operations against RLS-readable role rows before loading privileged clients; company activation gates the existing tenant key and never grants platform-wide customer RLS access.
+- Keep invite tokens hashed, email/company/role-bound and atomically single-use; permit Auth user creation only against a pending invitation and never trust user-editable role metadata.
 - Bound raw requests before framework decoding and bound mutation collections before Zod on client and server; direct Zod 3 remains isolated from patched framework Zod 4 to avoid an unrelated migration.
 - Keep prototype demo records in one browser-safe data module and render the shell and Inbox through focused React components and TanStack routes; this keeps staged implementation separate from connected services.
 - Keep backend initialization in the workspace provider and server functions, not prototype screens; demo data stays local and no AI provider is initialized in R1.

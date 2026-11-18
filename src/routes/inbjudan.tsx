@@ -1,0 +1,3 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { PasswordPage } from '@/components/estim/password-page';
+export const Route = createFileRoute('/inbjudan')({ head: () => ({ meta: [{ title: 'estim · Acceptera inbjudan' }, { name: 'description', content: 'Ange namn och lösenord för ditt inbjudna konto.' }, { property: 'og:title', content: 'estim · Acceptera inbjudan' }, { property: 'og:description', content: 'Ange namn och lösenord för ditt inbjudna konto.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary_large_image' }] }), component: () => <PasswordPage invitation /> });

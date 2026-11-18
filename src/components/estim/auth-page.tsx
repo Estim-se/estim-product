@@ -1,17 +1,27 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { Logo } from './logo';
 import { useWorkspace } from './workspace-provider';
-import { parseSignIn } from '@/lib/real.schemas';
+import { parseLogin } from '@/lib/access-rules';
+import { assertBoundedInput } from '@/lib/input-limits';
 
 export function AuthPage(){
-  const {signedIn,data}=useWorkspace();
-  const [email,setEmail]=useState(''),[name,setName]=useState(''),[sent,setSent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const workspace=useWorkspace(),navigate=useNavigate();
+  const {signedIn,data}=workspace;
+  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[sent,setSent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[alternative,setAlternative]=useState<'password'|'link'|'reset'>('password');
   async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');
-    try{const input=parseSignIn({email,display_name:name});const result=await supabase.auth.signInWithOtp({email:input.email,options:{emailRedirectTo:window.location.origin+'/auth/callback',data:{display_name:input.display_name}}});
-    if(result.error)setError('Länken kunde inte skickas. Kontrollera e-postadressen och försök igen.');else setSent(true);}catch{setError('Länken kunde inte skickas. Försök igen.');}finally{setBusy(false);}
+    try{assertBoundedInput({email,password});
+    if(email.length>254)throw new Error('Ogiltig e-postadress.');
+    if(alternative==='password'){
+      const input=parseLogin({email,password});const result=await supabase.auth.signInWithPassword(input);
+      if(result.error)throw new Error('Fel e-post eller lösenord. Försök igen.');
+      try {const next=await workspace.refresh();await navigate({to:next?.platform?'/admin':'/',replace:true});}catch{await workspace.signOut();throw new Error('Kontot saknar åtkomst eller företaget är avaktiverat.');}
+    }else{
+      const result=alternative==='reset'?await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/reset-password?type=recovery'}):await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false,emailRedirectTo:window.location.origin+'/auth/callback'}});
+      if(result.error)throw new Error('Länken kunde inte skickas. Försök igen.');setSent(true);
+    }}catch(e){setError(e instanceof Error?e.message:'Kunde inte logga in. Försök igen.');}finally{setBusy(false);}
   }
-  return <main className="account-page"><Logo/><h1>Logga in i estim</h1>{signedIn?<Button asChild variant="prototype" className="btn btn-primary"><Link to={data?.company?'/':'/onboarding'}>Fortsätt</Link></Button>:sent?<div role="status"><h2>Kontrollera din e-post</h2><p className="muted mt8">Vi har skickat en engångslänk till {email}. Öppna länken för att logga in.</p><Button variant="prototype" className="btn btn-ghost mt16" onClick={()=>setSent(false)}>Skicka en ny länk</Button></div>:<form onSubmit={submit} className="account-form"><label className="field">Visningsnamn<input className="input" value={name} onChange={e=>setName(e.target.value)} required maxLength={100} autoComplete="name"/></label><label className="field">E-post<input className="input" type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoComplete="email"/></label>{error&&<p role="alert">{error}</p>}<Button variant="prototype" className="btn btn-primary" type="submit" disabled={busy}>{busy?'Skickar…':'Skicka inloggningslänk'}</Button></form>}<Link to="/" className="link mt24">Till demoläge</Link></main>;
+  return <main className="account-page"><Logo/><h1>{alternative==='reset'?'Glömt lösenord?':'Logga in i estim'}</h1>{signedIn?<Button asChild variant="prototype" className="btn btn-primary"><Link to={data?.platform?'/admin':'/'}>Fortsätt</Link></Button>:sent?<div role="status"><h2>Kontrollera din e-post</h2><p className="muted mt8">Om adressen har ett konto skickas en länk till {email}.</p><Button variant="prototype" className="btn btn-ghost mt16" onClick={()=>setSent(false)}>Skicka en ny länk</Button></div>:<form onSubmit={submit} className="account-form"><label className="field">E-post<input className="input" type="email" value={email} onChange={e=>setEmail(e.target.value)} required maxLength={254} autoComplete="email"/></label>{alternative==='password'&&<label className="field">Lösenord<input className="input" type="password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={10} maxLength={200} autoComplete="current-password"/></label>}{error&&<p role="alert">{error}</p>}<Button variant="prototype" className="btn btn-primary" type="submit" disabled={busy}>{busy?'Vänta…':alternative==='password'?'Logga in':alternative==='reset'?'Skicka återställningslänk':'Skicka inloggningslänk'}</Button><Button variant="prototype" className="link" type="button" onClick={()=>{setError('');setAlternative(alternative==='password'?'link':'password');}}>{alternative==='password'?'Skicka inloggningslänk istället':'Logga in med lösenord'}</Button>{alternative==='password'&&<Button variant="prototype" className="link" type="button" onClick={()=>{setError('');setAlternative('reset');}}>Glömt lösenord?</Button>}</form>}<Link to="/" className="link mt24">Till demoläge</Link></main>;
 }

@@ -1,0 +1,3 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { PasswordPage } from '@/components/estim/password-page';
+export const Route = createFileRoute('/reset-password')({ head: () => ({ meta: [{ title: 'estim · Återställ lösenord' }, { name: 'description', content: 'Välj ett nytt lösenord för ditt konto i estim.' }, { property: 'og:title', content: 'estim · Återställ lösenord' }, { property: 'og:description', content: 'Välj ett nytt lösenord för ditt konto i estim.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary_large_image' }] }), component: () => <PasswordPage /> });

@@ -29,6 +29,7 @@ export function AppShell({ children, waiting, onReset }: {
       <Button asChild variant="prototype" className="nav"><Link to="/kanaler" activeProps={{ className: 'active' }} title="Kanaler"><Icon name="plug" /><span>Kanaler</span></Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/installningar" activeProps={{ className: 'active' }} title="AI och inställningar"><Icon name="settings" /><span>AI och inställningar</span></Link></Button>
       <div className="side-bottom">
+        {real&&workspace.data?.platform&&<Button asChild variant="prototype" className="nav"><Link to="/admin"><Icon name="settings"/><span>Administration</span></Link></Button>}
         <Button asChild variant="prototype" className="nav"><Link to="/mobil" activeProps={{ className: 'active' }} title="Appen i mobilen" onClick={() => actions.openMobile(path)}><Icon name="mobile" /><span>Appen i mobilen</span></Link></Button>
         {!real&&<Button variant="prototype" className="reset" onClick={onReset}>Återställ demo</Button>}
         {workspace.signedIn?<Button variant="prototype" className="nav" title="Logga ut" onClick={()=>void workspace.signOut()}><Icon name="back"/><span>Logga ut</span></Button>:<Button asChild variant="prototype" className="nav"><Link to="/auth" title="Logga in"><Icon name="user"/><span>Logga in</span></Link></Button>}

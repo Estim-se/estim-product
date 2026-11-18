@@ -10,12 +10,15 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as InbjudanRouteImport } from './routes/inbjudan'
 import { Route as InstallningarRouteImport } from './routes/installningar'
 import { Route as KanalerRouteImport } from './routes/kanaler'
 import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as OfferterRouteImport } from './routes/offerter'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,9 +26,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InbjudanRoute = InbjudanRouteImport.update({
+  id: '/inbjudan',
+  path: '/inbjudan',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstallningarRoute = InstallningarRouteImport.update({
@@ -53,6 +66,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
@@ -61,76 +79,97 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/auth'
+    | '/inbjudan'
     | '/installningar'
     | '/kanaler'
     | '/mobil'
     | '/offerter'
     | '/onboarding'
+    | '/reset-password'
     | '/auth/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/auth'
+    | '/inbjudan'
     | '/installningar'
     | '/kanaler'
     | '/mobil'
     | '/offerter'
     | '/onboarding'
+    | '/reset-password'
     | '/auth/callback'
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/auth'
+    | '/inbjudan'
     | '/installningar'
     | '/kanaler'
     | '/mobil'
     | '/offerter'
     | '/onboarding'
+    | '/reset-password'
     | '/auth/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRouteWithChildren
+  InbjudanRoute: typeof InbjudanRoute
   InstallningarRoute: typeof InstallningarRoute
   KanalerRoute: typeof KanalerRoute
   MobilRoute: typeof MobilRoute
   OfferterRoute: typeof OfferterRoute
   OnboardingRoute: typeof OnboardingRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -142,11 +181,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbjudan': {
+      id: '/inbjudan'
+      path: '/inbjudan'
+      fullPath: '/inbjudan'
+      preLoaderRoute: typeof InbjudanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/installningar': {
@@ -184,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/callback'
@@ -206,12 +266,15 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   AuthRoute: AuthRouteWithChildren,
+  InbjudanRoute: InbjudanRoute,
   InstallningarRoute: InstallningarRoute,
   KanalerRoute: KanalerRoute,
   MobilRoute: MobilRoute,
   OfferterRoute: OfferterRoute,
   OnboardingRoute: OnboardingRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

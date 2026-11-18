@@ -1,0 +1,3 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { ManagementPage } from '@/components/estim/management-page';
+export const Route = createFileRoute('/admin')({ head: () => ({ meta: [{ title: 'estim · Administration' }, { name: 'description', content: 'Företag, team och inbjudningar i estim.' }, { property: 'og:title', content: 'estim · Administration' }, { property: 'og:description', content: 'Företag, team och inbjudningar i estim.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary_large_image' }] }), component: () => <ManagementPage /> });

@@ -29,7 +29,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
     tags.forEach(tag=>{tag.content=tag.content.replace(/Volt Vision(?: AB)?/g,name);});
     return()=>{document.title=previous;tags.forEach((tag,i)=>{tag.content=originals[i]??'';});};
   },[mode,data?.company?.name,pathname]);
-  async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);}
+  async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);return next;}
   async function mutate(input:RealMutation){return write({data:parseMutation(input)});}
   realStore.connect(mutate,refresh);
   useEffect(()=>{
