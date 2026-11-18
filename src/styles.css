@@ -379,3 +379,5 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 @media(max-width:1180px){.ctx{grid-column:2;position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:960px){.ctx{grid-column:auto;grid-template-columns:1fr}}
 @media(max-width:600px){.cmp-h{flex-wrap:wrap}.msg{max-width:100%}.msg .meta{flex-wrap:wrap}.attach{max-width:100%;overflow-wrap:anywhere;color:var(--ink)}.att{height:auto;min-height:30px;max-width:100%;overflow-wrap:anywhere}.brief dl{grid-template-columns:90px minmax(0,1fr)}.bub,.brief dd,.tli>span:last-child{overflow-wrap:anywhere}.sys{border-radius:16px;max-width:100%;flex-wrap:wrap}.cmp-f>.btn,.brief-footer>.btn{white-space:normal;min-height:36px;height:auto}.tline .t{width:62px}}
+/* Keep customer identity separate from actions on narrow thread headers. */
+@media(max-width:600px){.thead{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:start}.thead>.grow{grid-column:2}.thead>.apt,.thead>.btn{grid-column:1 / -1;justify-self:start}.thead>.avatar{margin-top:3px}.thead .grow .row{align-items:flex-start}}
