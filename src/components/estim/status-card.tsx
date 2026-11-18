@@ -3,9 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Icon } from './icon';
 import { Brief } from './brief';
 import { useEstim } from './store-provider';
+import { useWorkspace } from './workspace-provider';
 
 export function StatusCard({ thread: t }: { thread: Thread }) {
   const { actions } = useEstim();
+  const workspace=useWorkspace();
+  if(workspace.mode==='real')return <div className="statuscard"><div><b>{t.status==='skickad'?'Sparat som skickat':'Ingen aktivitet'}</b><div className="small muted">{t.status==='skickad'?'Svaret är sparat. Ingen leverans har gjorts.':'Inga automatiska svar är aktiverade.'}</div></div></div>;
   const first = t.name.split(' ')[0];
   if (t.status === 'vunnen') return <Brief thread={t} />;
   if (t.status === 'analys') return <div className="statuscard"><div className="row"><span className="spin" /><div><b>AI läser och skriver…</b><div className="small muted">Autopilot: följdfrågor skickas direkt</div></div></div></div>;

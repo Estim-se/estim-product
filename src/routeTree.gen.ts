@@ -10,14 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as InstallningarRouteImport } from './routes/installningar'
 import { Route as KanalerRouteImport } from './routes/kanaler'
 import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as OfferterRouteImport } from './routes/offerter'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstallningarRoute = InstallningarRouteImport.update({
@@ -40,43 +48,89 @@ const OfferterRoute = OfferterRouteImport.update({
   path: '/offerter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRouteWithChildren
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
+  '/onboarding': typeof OnboardingRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRouteWithChildren
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
+  '/onboarding': typeof OnboardingRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRouteWithChildren
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
   '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
+  '/onboarding': typeof OnboardingRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/installningar'
+    | '/kanaler'
+    | '/mobil'
+    | '/offerter'
+    | '/onboarding'
+    | '/auth/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
-  id: '__root__' | '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
+  to:
+    | '/'
+    | '/auth'
+    | '/installningar'
+    | '/kanaler'
+    | '/mobil'
+    | '/offerter'
+    | '/onboarding'
+    | '/auth/callback'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/installningar'
+    | '/kanaler'
+    | '/mobil'
+    | '/offerter'
+    | '/onboarding'
+    | '/auth/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRouteWithChildren
   InstallningarRoute: typeof InstallningarRoute
   KanalerRoute: typeof KanalerRoute
   MobilRoute: typeof MobilRoute
   OfferterRoute: typeof OfferterRoute
+  OnboardingRoute: typeof OnboardingRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -86,6 +140,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/installningar': {
@@ -116,15 +177,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OfferterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof AuthRoute
+    }
   }
 }
 
+interface AuthRouteChildren {
+  AuthCallbackRoute: typeof AuthCallbackRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthCallbackRoute: AuthCallbackRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRouteWithChildren,
   InstallningarRoute: InstallningarRoute,
   KanalerRoute: KanalerRoute,
   MobilRoute: MobilRoute,
   OfferterRoute: OfferterRoute,
+  OnboardingRoute: OnboardingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

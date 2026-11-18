@@ -1,0 +1,3 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { OnboardingPage } from '@/components/estim/onboarding-page';
+export const Route=createFileRoute('/onboarding')({head:()=>({meta:[{title:'estim · Skapa företag'},{name:'description',content:'Företagsuppgifter, priser och arbetsmoment.'},{property:'og:title',content:'estim · Skapa företag'},{property:'og:description',content:'Företagsuppgifter, priser och arbetsmoment.'},{property:'og:type',content:'website'},{name:'twitter:card',content:'summary_large_image'}]}),component:OnboardingPage});

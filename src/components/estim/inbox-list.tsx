@@ -4,9 +4,10 @@ import { Icon } from './icon';
 
 const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntar på mig'], ['ai', 'AI sköter'], ['vunna', 'Vunna']];
 
-export function InboxList({ threads, selected, filter, onFilter, onSelect, onSimulate }: {
+export function InboxList({ threads, selected, filter, onFilter, onSelect, onSimulate, real=false }: {
   threads: Thread[]; selected: string; filter: InboxFilter;
   onFilter: (filter: InboxFilter) => void; onSelect: (id: string) => void; onSimulate: () => void;
+  real?: boolean;
 }) {
   const list = filterThreads(threads, filter);
   return <div className="tl2">
@@ -14,7 +15,7 @@ export function InboxList({ threads, selected, filter, onFilter, onSelect, onSim
       <Button key={key} variant="prototype" className={`fchip ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => onFilter(key)}>{label}</Button>)}</div>
     {list.map(thread => <ThreadItem key={thread.id} thread={thread} selected={selected === thread.id} onSelect={() => onSelect(thread.id)} />)}
     {list.length === 0 && <div className="empty-list small muted">Inget här just nu.</div>}
-    <Button variant="prototype" className="btn btn-ghost btn-sm mt8" onClick={onSimulate}><Icon name="plus" />Simulera ny förfrågan</Button>
+    <Button variant="prototype" className="btn btn-ghost btn-sm mt8" onClick={onSimulate}><Icon name="plus" />{real?'Ny förfrågan':'Simulera ny förfrågan'}</Button>
   </div>;
 }
 

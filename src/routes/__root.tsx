@@ -16,6 +16,7 @@ import { EstimProvider } from '@/components/estim/store-provider';
 import { Toast } from '@/components/estim/toast';
 import { QuoteDrawer } from '@/components/estim/quote-drawer';
 import { CustomerView } from '@/components/estim/customer-view';
+import { WorkspaceProvider } from '@/components/estim/workspace-provider';
 
 function NotFoundComponent() {
   return (
@@ -129,7 +130,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <EstimProvider><Outlet /><QuoteDrawer /><CustomerView /><Toast /></EstimProvider>
+      <WorkspaceProvider><EstimProvider><Outlet /><QuoteDrawer /><CustomerView /><Toast /></EstimProvider></WorkspaceProvider>
     </QueryClientProvider>
   );
 }

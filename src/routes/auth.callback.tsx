@@ -1,0 +1,3 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { AuthCallback } from '@/components/estim/auth-callback';
+export const Route=createFileRoute('/auth/callback')({head:()=>({meta:[{title:'estim · Slutför inloggning'},{name:'description',content:'Slutför inloggningen i estim.'},{property:'og:title',content:'estim · Slutför inloggning'},{property:'og:description',content:'Slutför inloggningen i estim.'},{property:'og:type',content:'website'},{name:'twitter:card',content:'summary_large_image'}]}),component:AuthCallback});

@@ -1,0 +1,3 @@
+import { useWorkspace } from './workspace-provider';
+
+export function AuditHistory(){const {data}=useWorkspace();return <section className="mt24"><h2>Händelser</h2>{!data?.audit.length?<p className="small muted mt12">Inga händelser ännu.</p>:<div className="tablewrap mt12"><table className="audit-table"><thead><tr><th>Tid</th><th>Händelse</th><th>Godkänd av</th></tr></thead><tbody>{data.audit.map(item=><tr key={item.id}><td>{new Date(item.created_at).toLocaleString('sv-SE')}</td><td>{item.event}</td><td>{item.approved_name||'—'}</td></tr>)}</tbody></table></div>}</section>;}

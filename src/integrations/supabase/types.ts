@@ -17,6 +17,7 @@ export type Database = {
       audit_log: {
         Row: {
           after: Json | null
+          approved_name: string
           before: Json | null
           company_id: string
           created_at: string
@@ -27,6 +28,7 @@ export type Database = {
         }
         Insert: {
           after?: Json | null
+          approved_name?: string
           before?: Json | null
           company_id: string
           created_at?: string
@@ -37,6 +39,7 @@ export type Database = {
         }
         Update: {
           after?: Json | null
+          approved_name?: string
           before?: Json | null
           company_id?: string
           created_at?: string
@@ -345,6 +348,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "moments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          display_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          display_name?: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
