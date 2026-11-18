@@ -1,5 +1,6 @@
 import { initialThreads, simulatedRequest, type InboxFilter, type Thread } from '@/data/inbox';
 import { DRAFTS, formal, type DraftVariant } from './drafts';
+import type { Quote } from './quote';
 
 export interface Draft { text: string; v: DraftVariant; ch: string; att: string[]; edited: boolean }
 export function initial() {
@@ -22,6 +23,7 @@ export function createEstimStore() {
   const listeners = new Set<() => void>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  let customerVisit = 0;
   const update = (fn: (s: EstimState) => void) => { state = structuredClone(state); fn(state); listeners.forEach(l => l()); };
   const after = (ms: number, fn: (s: EstimState) => void) => {
     const timer = setTimeout(() => { timers.delete(timer); update(fn); }, ms); timers.add(timer);
@@ -48,9 +50,31 @@ export function createEstimStore() {
     addAtt(id: string, value: string) { update(s => { const d = s.drafts[id]; if (d && value && !d.att.includes(value)) d.att.push(value); }); },
     delAtt(id: string, index: number) { update(s => { s.drafts[id]?.att.splice(index, 1); }); },
     setCh(id: string, ch: string) { update(s => { const t = s.threads.find(t => t.id === id), d = s.drafts[id]; if (t && d && (ch === 'email' ? t.email !== '—' : t.phone !== '—')) d.ch = ch; }); },
-    // TODO Stage 3: render the drawer and customer modal from these state values.
     openDrawer(id: string) { update(s => { s.drawer = id; }); },
-    openCustomer(id: string, preview?: boolean) { update(s => { s.cust = { step: 'view' }; s.modal = { type: 'cust', id, ...(preview === undefined ? {} : { preview }) }; }); },
+    closeDrawer() { const id = state.drawer; update(s => { s.drawer = null; }); if (id) actions.regen(id); },
+    upd(index: number, key: 't' | 'q' | 'p', value: string) {
+      const id = state.drawer; if (!id) return;
+      update(s => { const line = s.threads.find(t => t.id === id)?.q?.lines[index]; if (!line) return;
+        if (key === 't') line.t = value; else line[key] = parseFloat(value.replace(/\s/g, '').replace(',', '.')) || 0;
+      }); actions.regen(id);
+    },
+    togRot(index: number) { const id = state.drawer; if (!id) return; update(s => { const l = s.threads.find(t => t.id === id)?.q?.lines[index]; if (l) l.rot = !l.rot; }); actions.regen(id); },
+    delL(index: number) { const id = state.drawer; if (!id) return; update(s => { s.threads.find(t => t.id === id)?.q?.lines.splice(index, 1); }); actions.regen(id); },
+    addL(opt = false) { const id = state.drawer; if (!id) return; update(s => { s.threads.find(t => t.id === id)?.q?.lines.push({ t: opt ? 'Nytt tillval' : 'Ny rad', typ: 'arbete', q: 1, u: 'h', p: 650, rot: true, ...(opt ? { opt: true } : {}) }); }); actions.regen(id); },
+    setOwners(owners: number) { const id = state.drawer; if (!id) return; update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.owners = owners; }); actions.regen(id); },
+    setPriceForm(prisform: Quote['prisform']) { const id = state.drawer; if (!id) return; update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.prisform = prisform; }); actions.regen(id); },
+    openCustomer(id: string, preview?: boolean) { customerVisit++; update(s => { s.cust = { step: 'view' }; s.modal = { type: 'cust', id, ...(preview === undefined ? {} : { preview }) }; }); },
+    closeCustomer() { customerVisit++; update(s => { s.modal = null; }); },
+    toggleAddOn(id: string) { update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.addOn = !q.addOn; }); actions.regen(id); },
+    approveCustomer() {
+      const modal = state.modal; if (!modal || state.cust.step !== 'view') return;
+      if (modal.preview) { toast('Förhandsvisning. Skicka svaret först.'); return; }
+      update(s => { s.cust.step = 'bankid'; });
+      // Mock signing only; a visit counter isolates timers from closed/reopened views.
+      const visit = customerVisit;
+      after(1600, s => { if (customerVisit === visit && s.modal?.id === modal.id && s.cust.step === 'bankid') s.cust.step = 'info'; });
+    },
+    submitCustomer() { update(s => { if (!s.modal || s.modal.preview || s.cust.step !== 'info') return; const t = s.threads.find(t => t.id === s.modal?.id); if (!t) return; s.cust.step = 'klar'; win(s, t, 'v. 50'); }); },
     sendBrief(id: string) { update(s => { const t = s.threads.find(t => t.id === id); if (t) { t.briefSent = true; ev(t, 'Överlämning skickad till elektrikern (SMS) och order@voltvision.se'); } }); toast('Skickat till elektrikern och order@voltvision.se'); },
     send(id: string, { silent = false } = {}) {
       if (!state.drafts[id]) return;

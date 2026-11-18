@@ -34,3 +34,4 @@ use the editor.
 - Do not initialize backend or AI clients in prototype screens; the staged rebuild uses local mock data only.
 - Keep mutable prototype state in one per-app external store provided above the route outlet; store-owned timers preserve scripted replies across navigation without sharing state between SSR requests.
 - Generate draft amounts through pure quote helpers rather than embedded prices; quote edits must update unedited variants consistently.
+- Render quote and customer overlays through focused components backed by central store actions; keep signing timers visit-scoped and customer form values ephemeral because all approvals are mock-only.

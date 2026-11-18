@@ -7,6 +7,8 @@ import { useEstim } from './store-provider';
 import { ThreadHeader } from './thread-header';
 import { Conversation } from './conversation';
 import { ContextPanel } from './context-panel';
+import { QuoteDrawer } from './quote-drawer';
+import { CustomerView } from './customer-view';
 
 export function InboxScreen() {
   const { state, actions } = useEstim();
@@ -19,7 +21,7 @@ export function InboxScreen() {
     window.scrollTo(0, 0);
   }
 
-  return <AppShell waiting={waiting} onReset={actions.reset}>
+  return <><AppShell waiting={waiting} onReset={actions.reset}>
     <header className="topbar"><div><div className="crumbs"><h1>Inkorg</h1></div><div className="small muted mt4">Alla kunder, alla kanaler. AI:n svarar, du godkänner.</div></div>
       <div className="topright"><div className="viewseg"><Button variant="prototype" className="on" aria-pressed="true"><Icon name="desk" />Dator</Button><Button variant="prototype" disabled><Icon name="mobile" />Mobil</Button></div><Button variant="prototype" className="btn btn-sm btn-ink" disabled><Icon name="play" />Guidad demo</Button></div>
     </header>
@@ -27,5 +29,5 @@ export function InboxScreen() {
     <div className="ib2 fadein"><InboxList threads={threads} selected={selected} filter={filter} onFilter={filter => actions.update(s => { s.filter = filter; })} onSelect={select} onSimulate={() => { actions.simNew(); window.scrollTo(0, 0); }} />
       {current && <><div className="tv"><ThreadHeader thread={current} /><Conversation thread={current} /></div><ContextPanel thread={current} /></>}
     </div>
-  </AppShell>;
+  </AppShell><QuoteDrawer /><CustomerView /></>;
 }
