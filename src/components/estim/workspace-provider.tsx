@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { loadWorkspace, mutateWorkspace, type WorkspaceData } from '@/lib/real.functions';
 import { createRealStore } from '@/lib/real-store';
 import type { RealMutation } from '@/lib/real.schemas';
+import { parseMutation } from '@/lib/real.schemas';
 import { WorkspaceContext } from './workspace-context';
 export { useWorkspace } from './workspace-context';
 
@@ -29,7 +30,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
     return()=>{document.title=previous;tags.forEach((tag,i)=>{tag.content=originals[i]??'';});};
   },[mode,data?.company?.name,pathname]);
   async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);}
-  async function mutate(input:RealMutation){return write({data:input});}
+  async function mutate(input:RealMutation){return write({data:parseMutation(input)});}
   realStore.connect(mutate,refresh);
   useEffect(()=>{
     let alive=true;let generation=0;

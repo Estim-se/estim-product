@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
-import { mutationSchema } from './real.schemas';
+import { parseMutation } from './real.schemas';
 
 // Every read and write revalidates the caller; ordinary queries run under RLS.
 export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
@@ -25,7 +25,7 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
 });
 export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 
-export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator(input => mutationSchema.parse(input)).handler(async ({data,context}) => {
+export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator(parseMutation).handler(async ({data,context}) => {
   const db = context.supabase;
   const membership = await db.from('company_members').select('company_id').eq('user_id',context.userId).maybeSingle();
   if (membership.error) throw new Error('Kunde inte kontrollera företaget.');

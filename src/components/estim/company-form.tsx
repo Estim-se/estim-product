@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { electricianMoments } from '@/data/electrician-moments';
 import { useWorkspace } from './workspace-provider';
 import { settings } from '@/data/prototype-pages';
+import { parseMutation } from '@/lib/real.schemas';
+import { assertBoundedInput } from '@/lib/input-limits';
 
 export function CompanyForm({onboarding=false}:{onboarding?:boolean}){
  const workspace=useWorkspace();const company=workspace.data?.company;
@@ -11,6 +13,9 @@ export function CompanyForm({onboarding=false}:{onboarding?:boolean}){
  const [moments,setMoments]=useState<(typeof electricianMoments[number]&{id?:string})[]>(onboarding?structuredClone(electricianMoments):(workspace.data?.moments??[]));
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
  async function save(e:FormEvent){e.preventDefault();setBusy(true);setMessage('');try{
+  assertBoundedInput({values,name,moments});
+  parseMutation({kind:'profile',display_name:name});
+  if(onboarding)parseMutation({kind:'onboard',company:values,moments});else {parseMutation({kind:'company',company:values});for(const moment of moments)parseMutation({kind:'moment',moment});}
   await workspace.mutate({kind:'profile',display_name:name});
   if(onboarding)await workspace.mutate({kind:'onboard',company:values,moments});else {await workspace.mutate({kind:'company',company:values});for(const moment of moments)await workspace.mutate({kind:'moment',moment});}
   await workspace.refresh();setMessage('Uppgifterna är sparade.');

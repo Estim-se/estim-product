@@ -30,6 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## App structure
+- Bound raw requests before framework decoding and bound mutation collections before Zod on client and server; direct Zod 3 remains isolated from patched framework Zod 4 to avoid an unrelated migration.
 - Keep prototype demo records in one browser-safe data module and render the shell and Inbox through focused React components and TanStack routes; this keeps staged implementation separate from connected services.
 - Keep backend initialization in the workspace provider and server functions, not prototype screens; demo data stays local and no AI provider is initialized in R1.
 - Preserve the demo store as an isolated local mode; real mode uses authenticated TanStack server functions and a separate timer-free store adapter so demo scripts cannot modify company records.

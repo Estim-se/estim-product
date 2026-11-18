@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Security-only fixes: revoked elevated trigger execution; patched dependencies without migrating direct Zod 3; bounded requests and inputs before validation; 66 tests including live two-company isolation passed; signed-in desktop/phone regression and oversized HTTP/form rejection passed; deep scan found no code-security issues. Password protection remains for the user to enable; direct Zod 3 advisory remains with input-limit mitigation.
+
 - [x] Real-mode fixes: company quote sequence from 1001; save-only quote revisions/events; approval-only attribution; company sender identity; attachment-aware sent status; signed-in creation/save/send/reload and five-page verification; 57 tests passed, demo unchanged.
 
 - [x] Stage 1: shell, design tokens, Inbox list and mock-data interactions; verified desktop and narrow layouts.
