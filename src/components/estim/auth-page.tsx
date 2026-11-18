@@ -6,17 +6,22 @@ import { Logo } from './logo';
 import { useWorkspace } from './workspace-provider';
 import { parseLogin } from '@/lib/access-rules';
 import { assertBoundedInput } from '@/lib/input-limits';
+import { useServerFn } from '@tanstack/react-start';
+import { passwordLogin } from '@/lib/login.functions';
 
 export function AuthPage(){
   const workspace=useWorkspace(),navigate=useNavigate();
+  const login=useServerFn(passwordLogin);
   const {signedIn,data}=workspace;
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[sent,setSent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[alternative,setAlternative]=useState<'password'|'link'|'reset'>('password');
   async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');
     try{assertBoundedInput({email,password});
     if(email.length>254)throw new Error('Ogiltig e-postadress.');
     if(alternative==='password'){
-      const input=parseLogin({email,password});const result=await supabase.auth.signInWithPassword(input);
-      if(result.error)throw new Error('Fel e-post eller lösenord. Försök igen.');
+      const input=parseLogin({email,password});const result=await login({data:input});
+      if(!result.ok)throw new Error('Fel e-post eller lösenord');
+      const session=await supabase.auth.setSession(result.session);
+      if(session.error)throw new Error('Fel e-post eller lösenord');
       try {const next=await workspace.refresh();await navigate({to:next?.platform?'/admin':'/',replace:true});}catch{await workspace.signOut();throw new Error('Kontot saknar åtkomst eller företaget är avaktiverat.');}
     }else{
       const result=alternative==='reset'?await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/reset-password?type=recovery'}):await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false,emailRedirectTo:window.location.origin+'/auth/callback'}});

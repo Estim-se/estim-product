@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { AuthPage } from '@/components/estim/auth-page';
 import { Outlet, useLocation } from '@tanstack/react-router';
-export const Route=createFileRoute('/auth')({head:()=>({meta:[{title:'estim · Logga in'},{name:'description',content:'Logga in med en engångslänk till din e-post.'},{property:'og:title',content:'estim · Logga in'},{property:'og:description',content:'Logga in med en engångslänk till din e-post.'},{property:'og:type',content:'website'},{name:'twitter:card',content:'summary_large_image'}]}),component:()=>useLocation().pathname==='/auth'?<><AuthPage/><Outlet/></>:<Outlet/>});
+export const Route=createFileRoute('/auth')({head:()=>({meta:[{title:'estim · Logga in'},{name:'description',content:'Logga in i estim med lösenord eller en engångslänk.'},{property:'og:title',content:'estim · Logga in'},{property:'og:description',content:'Logga in i estim med lösenord eller en engångslänk.'},{property:'og:type',content:'website'},{name:'twitter:card',content:'summary_large_image'}]}),component:()=>useLocation().pathname==='/auth'?<><AuthPage/><Outlet/></>:<Outlet/>});

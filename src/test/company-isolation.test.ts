@@ -11,11 +11,17 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
   const admin=createClient(url,secret,options);const users:string[]=[];const companies:string[]=[];
   const make=async(label:string)=>{
    const email=`r1-${label}-${crypto.randomUUID()}@example.com`,password=crypto.randomUUID();
-   const created=await admin.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{display_name:'R1 '+label}});
-   if(created.error||!created.data.user)throw new Error('Test account creation failed');users.push(created.data.user.id);
-   const client=createClient(url,key,options);const login=await client.auth.signInWithPassword({email,password});if(login.error)throw new Error('Test sign-in failed');
-   const onboard=await client.rpc('estim_onboard',{payload:{name:'R1 '+label,signature:label,hourly_rate_ex_vat:650,travel_fee:450,moments:electricianMoments}});
-   if(onboard.error)throw new Error('Test onboarding failed: '+onboard.error.message);companies.push(onboard.data);return {client,id:onboard.data};
+   const cid=crypto.randomUUID();companies.push(cid);
+   const company=await admin.from('companies').insert({id:cid,name:'R1 '+label,signature:label,inbound_address:cid+'@in.estim.se',created_by:crypto.randomUUID()});if(company.error)throw new Error(company.error.message);
+   const token=crypto.randomUUID(),hash=token.replaceAll('-','');
+   const inv=await admin.from('company_invitations').insert({company_id:cid,email,role:'ägare',token_hash:hash,invited_by:crypto.randomUUID()}).select('id').single();if(inv.error)throw new Error(inv.error.message);
+   const created=await admin.auth.admin.generateLink({type:'invite',email});
+   if(created.error||!created.data.user)throw new Error('Test invited account creation failed: '+created.error?.message);users.push(created.data.user.id);
+   const client=createClient(url,key,options);const verified=await client.auth.verifyOtp({token_hash:created.data.properties.hashed_token,type:'invite'});if(verified.error)throw new Error('Test invitation verification failed');
+   const accepted=await admin.rpc('estim_accept_invitation',{iid:inv.data.id,uid:created.data.user.id,expected_hash:hash,display:'R1 '+label});if(accepted.error)throw new Error(accepted.error.message);
+   await admin.auth.admin.updateUserById(created.data.user.id,{password});
+   const login=await client.auth.signInWithPassword({email,password});if(login.error)throw new Error('Test sign-in failed');
+   await admin.from('moments').insert(electricianMoments.map(m=>({...m,company_id:cid})));return {client,id:cid};
   };
   try {
    const a=await make('A'),b=await make('B');
@@ -40,7 +46,7 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
    const audit=await b.client.from('audit_log').select('approved_name,after').eq('event','Svar godkänt');expect(audit.data?.[0]?.approved_name).toBe('R1 B');
    const message=await b.client.from('messages').select('approved_by,attachments').eq('thread_id',tid).eq('from','vv');expect(message.data?.[0]?.approved_by).toBe(users[1]);expect(message.data?.[0]?.attachments).toEqual([]);
   } finally {
-   for(const cid of companies){for(const table of ['audit_log','drafts','quotes','messages','threads','customers','moments','company_members'] as const)await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
+   for(const cid of companies){for(const table of ['company_invitations','audit_log','drafts','quotes','messages','threads','customers','moments','company_members'] as const)await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
    for(const id of users)await admin.auth.admin.deleteUser(id);
   }
  },60000);

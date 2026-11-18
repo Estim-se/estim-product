@@ -20,36 +20,36 @@ export type Database = {
           after: Json | null
           approved_name: string
           before: Json | null
-          company_id: string
+          company_id: string | null
           created_at: string
           event: string
           id: string
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           actor_name?: string
           after?: Json | null
           approved_name?: string
           before?: Json | null
-          company_id: string
+          company_id?: string | null
           created_at?: string
           event: string
           id?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           actor_name?: string
           after?: Json | null
           approved_name?: string
           before?: Json | null
-          company_id?: string
+          company_id?: string | null
           created_at?: string
           event?: string
           id?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -300,6 +300,36 @@ export type Database = {
             referencedColumns: ["company_id", "id"]
           },
         ]
+      }
+      login_attempts: {
+        Row: {
+          created_at: string
+          email_hash: string
+          failures: number
+          lease_id: string | null
+          lease_until: string | null
+          locked_until: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email_hash: string
+          failures?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          locked_until?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email_hash?: string
+          failures?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          locked_until?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       messages: {
         Row: {
@@ -633,6 +663,16 @@ export type Database = {
       }
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_login_begin: { Args: { h: string }; Returns: string }
+      estim_login_finish: {
+        Args: {
+          email_address: string
+          h: string
+          lease: string
+          success: boolean
+        }
+        Returns: undefined
+      }
       estim_manage_member: {
         Args: { actor: string; cid: string; new_role: string; uid: string }
         Returns: undefined

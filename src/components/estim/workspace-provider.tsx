@@ -31,7 +31,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   },[mode,data?.company?.name,pathname]);
   async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);return next;}
   async function mutate(input:RealMutation){return write({data:parseMutation(input)});}
-  realStore.connect(mutate,refresh);
+  realStore.connect(mutate,async()=>{await refresh();});
   useEffect(()=>{
     let alive=true;let generation=0;
     async function resolve(){const own=++generation;setLoading(true);setError('');
