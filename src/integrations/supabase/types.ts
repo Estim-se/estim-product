@@ -14,13 +14,480 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_log: {
+        Row: {
+          after: Json | null
+          before: Json | null
+          company_id: string
+          created_at: string
+          event: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          after?: Json | null
+          before?: Json | null
+          company_id: string
+          created_at?: string
+          event: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          after?: Json | null
+          before?: Json | null
+          company_id?: string
+          created_at?: string
+          event?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          hourly_rate_ex_vat: number
+          id: string
+          inbound_address: string
+          name: string
+          reply_to_email: string | null
+          settings: Json
+          signature: string
+          travel_fee: number
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          hourly_rate_ex_vat?: number
+          id?: string
+          inbound_address: string
+          name: string
+          reply_to_email?: string | null
+          settings?: Json
+          signature?: string
+          travel_fee?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          hourly_rate_ex_vat?: number
+          id?: string
+          inbound_address?: string
+          name?: string
+          reply_to_email?: string | null
+          settings?: Json
+          signature?: string
+          travel_fee?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          role: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          address: string | null
+          company_id: string
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          place: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          company_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          place?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          company_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          place?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drafts: {
+        Row: {
+          attachments: Json
+          channel: string
+          company_id: string
+          created_at: string
+          edited: boolean
+          id: string
+          needs_review: boolean
+          text: string
+          thread_id: string
+          updated_at: string
+          variant: string
+          warnings: Json
+        }
+        Insert: {
+          attachments?: Json
+          channel?: string
+          company_id: string
+          created_at?: string
+          edited?: boolean
+          id?: string
+          needs_review?: boolean
+          text?: string
+          thread_id: string
+          updated_at?: string
+          variant?: string
+          warnings?: Json
+        }
+        Update: {
+          attachments?: Json
+          channel?: string
+          company_id?: string
+          created_at?: string
+          edited?: boolean
+          id?: string
+          needs_review?: boolean
+          text?: string
+          thread_id?: string
+          updated_at?: string
+          variant?: string
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drafts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "drafts_company_id_thread_id_fkey"
+            columns: ["company_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          approved_by: string | null
+          attachments: Json
+          channel: string | null
+          company_id: string
+          created_at: string
+          from: string
+          id: string
+          in_reply_to: string | null
+          provider_message_id: string | null
+          sent_at: string
+          text: string
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_by?: string | null
+          attachments?: Json
+          channel?: string | null
+          company_id: string
+          created_at?: string
+          from: string
+          id?: string
+          in_reply_to?: string | null
+          provider_message_id?: string | null
+          sent_at?: string
+          text: string
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_by?: string | null
+          attachments?: Json
+          channel?: string | null
+          company_id?: string
+          created_at?: string
+          from?: string
+          id?: string
+          in_reply_to?: string | null
+          provider_message_id?: string | null
+          sent_at?: string
+          text?: string
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_company_id_thread_id_fkey"
+            columns: ["company_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+        ]
+      }
+      moments: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          hours_per_unit: number
+          id: string
+          material_per_unit_ex_vat: number
+          name: string
+          role: string
+          rot_eligible: boolean
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          hours_per_unit: number
+          id?: string
+          material_per_unit_ex_vat: number
+          name: string
+          role?: string
+          rot_eligible?: boolean
+          unit: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          hours_per_unit?: number
+          id?: string
+          material_per_unit_ex_vat?: number
+          name?: string
+          role?: string
+          rot_eligible?: boolean
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "moments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotes: {
+        Row: {
+          add_on: boolean
+          company_id: string
+          created_at: string
+          id: string
+          lines: Json
+          nr: string
+          owners: number
+          prisform: string
+          status: string
+          thread_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          add_on?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          lines?: Json
+          nr: string
+          owners?: number
+          prisform?: string
+          status?: string
+          thread_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          add_on?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          lines?: Json
+          nr?: string
+          owners?: number
+          prisform?: string
+          status?: string
+          thread_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotes_company_id_thread_id_fkey"
+            columns: ["company_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+        ]
+      }
+      threads: {
+        Row: {
+          asks: Json
+          autopilot: boolean
+          channel: string
+          company_id: string
+          created_at: string
+          customer_id: string
+          facts: Json
+          id: string
+          job: string
+          last_message_at: string
+          place: string | null
+          read: boolean
+          status: string
+          updated_at: string
+          why: string
+        }
+        Insert: {
+          asks?: Json
+          autopilot?: boolean
+          channel: string
+          company_id: string
+          created_at?: string
+          customer_id: string
+          facts?: Json
+          id?: string
+          job: string
+          last_message_at?: string
+          place?: string | null
+          read?: boolean
+          status?: string
+          updated_at?: string
+          why?: string
+        }
+        Update: {
+          asks?: Json
+          autopilot?: boolean
+          channel?: string
+          company_id?: string
+          created_at?: string
+          customer_id?: string
+          facts?: Json
+          id?: string
+          job?: string
+          last_message_at?: string
+          place?: string | null
+          read?: boolean
+          status?: string
+          updated_at?: string
+          why?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "threads_company_id_customer_id_fkey"
+            columns: ["company_id", "customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "threads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      estim_approve: { Args: { tid: string }; Returns: string }
+      estim_onboard: { Args: { payload: Json }; Returns: string }
+      estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
+      estim_request: { Args: { payload: Json }; Returns: string }
+      my_company: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never
