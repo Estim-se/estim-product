@@ -10,7 +10,7 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
   const options={auth:{persistSession:false,autoRefreshToken:false}};
   const admin=createClient(url,secret,options);const users:string[]=[];const companies:string[]=[];
   const make=async(label:string)=>{
-   const email=`r1-${label}-${crypto.randomUUID()}@example.com`,password=crypto.randomUUID();
+   const email=`r1-${label.toLowerCase()}-${crypto.randomUUID()}@example.com`,password=crypto.randomUUID();
    const cid=crypto.randomUUID();companies.push(cid);
    const company=await admin.from('companies').insert({id:cid,name:'R1 '+label,signature:label,inbound_address:cid+'@in.estim.se',created_by:crypto.randomUUID()});if(company.error)throw new Error(company.error.message);
    const token=crypto.randomUUID(),hash=token.replaceAll('-','');
