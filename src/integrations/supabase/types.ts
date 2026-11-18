@@ -59,6 +59,7 @@ export type Database = {
         Row: {
           company_id: string | null
           created_at: string
+          created_by: string
           hourly_rate_ex_vat: number
           id: string
           inbound_address: string
@@ -72,6 +73,7 @@ export type Database = {
         Insert: {
           company_id?: string | null
           created_at?: string
+          created_by?: string
           hourly_rate_ex_vat?: number
           id?: string
           inbound_address: string
@@ -85,6 +87,7 @@ export type Database = {
         Update: {
           company_id?: string | null
           created_at?: string
+          created_by?: string
           hourly_rate_ex_vat?: number
           id?: string
           inbound_address?: string
