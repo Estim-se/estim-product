@@ -30,13 +30,20 @@ describe.skipIf(!configured)('R1b live access boundaries', () => {
       expect((await admin.rpc('estim_accept_invitation', args)).error).not.toBeNull();
       await expect(requireManager(publicClient, uid, cid)).resolves.toMatchObject({ platform: false });
       await expect(requireManager(publicClient, uid, other)).rejects.toThrow();
+      expect((await admin.rpc('estim_save_invitation',{cid:other,actor:uid,recipient:'denied@example.com',invited_role:'användare',hashed:crypto.randomUUID(),expiry:new Date(Date.now()+86400000).toISOString()})).error).not.toBeNull();
       await expect(requireManager(publicClient, uid)).rejects.toThrow();
       expect((await admin.rpc('estim_manage_member', { cid, uid, new_role: '', actor: uid })).error).not.toBeNull();
       await admin.from('company_members').update({ role: 'användare' }).eq('user_id', uid);
+      expect((await admin.rpc('estim_manage_member',{cid,uid,new_role:'ägare',actor:uid})).error).not.toBeNull();
       await expect(requireManager(publicClient, uid, cid)).rejects.toThrow();
       expect((await publicClient.rpc('estim_manage_member', { cid, uid, new_role: 'ägare', actor: uid })).error).not.toBeNull();
       await admin.from('companies').update({ active: false }).eq('id', cid);
       expect((await publicClient.from('companies').select('id').eq('id', cid)).data).toEqual([]);
+      expect((await publicClient.from('companies').update({active:true}).eq('id',cid)).error).not.toBeNull();
+      const session=await publicClient.auth.getSession();
+      if(!session.data.session)throw new Error('Missing session');
+      await admin.auth.admin.signOut(session.data.session.access_token,'global');
+      expect((await publicClient.rpc('estim_session_valid')).data).toBe(false);
     } finally {
       for (const id of [cid, other]) {
         for (const table of ['company_invitations', 'audit_log', 'company_members']) await admin.from(table).delete().eq('company_id', id);

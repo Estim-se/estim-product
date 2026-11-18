@@ -60,7 +60,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     const token_hash = await hashInvitation(token);
     const expires_at = new Date(Date.now() + INVITATION_DAYS * 86400000).toISOString();
     const recipient = email.toLowerCase();
-    const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,previous_id:previousId??''});
+    const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,...(previousId?{previous_id:previousId}:{})});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
     const redirectTo = `${origin}/inbjudan?token=${token}`;
     let sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });

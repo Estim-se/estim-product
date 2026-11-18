@@ -691,7 +691,7 @@ export type Database = {
           expiry: string
           hashed: string
           invited_role: string
-          previous_id: string
+          previous_id?: string
           recipient: string
         }
         Returns: string

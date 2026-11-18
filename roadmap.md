@@ -1,10 +1,12 @@
 # Prototype rebuild
 
-- [ ] R1b: real-mode invitation-only accounts, seven-day invitations, password/recovery login and global password-change logout.
-- [ ] R1b: server-authorized platform administration and owner team management with immutable audit history and unchanged tenant isolation.
-- [ ] R1b: regression tests, invitation/role denial tests, live two-company isolation and desktop/phone checks.
-- [ ] R1b: lock an email for 15 minutes after 5 failed logins, return “Fel e-post eller lösenord” for every denial, audit locks, and preserve Supabase limits.
-- [ ] R1b: assign platform admins moi-ali@hotmail.com, selden.dennis@gmail.com and hassan@futureventures.se; custom login limiting awaits the user's choice; external Supabase email settings require verification.
+- [x] R1b: real-mode password/recovery screens, invitation-bound acceptance, seven-day application invitation expiry and global logout with session validity checks.
+- [x] R1b: server-authorized platform administration and owner team management; atomic owner checks, last-owner protection, immutable audit history, activation-only admin rights and unchanged tenant isolation.
+- [x] R1b: 77 tests passed, including live two-company isolation, expired/revoked/single-use invitations, role denials, last-owner and revoked-session checks; real password-login owner/admin desktop and phone flows verified.
+- [x] R1b: application login locks after 5 failures for 15 minutes, identical “Fel e-post eller lösenord” errors, audited locks including unknown emails, Supabase limits retained.
+- [x] R1b: moi-ali@hotmail.com assigned as verified platform admin; seven-day protected pending admin invitations created for selden.dennis@gmail.com and hassan@futureventures.se.
+- [ ] R1b: two admin invitation emails blocked by external Supabase email rate limit; resend after delivery settings allow it. Invitation/recovery email click-through remains unverified.
+- [ ] R1b: external Supabase dashboard must disable “Allow new users to sign up”, set matching email-token expiry/redirect allowlists, and configure a provider-side password-attempt hook for non-bypassable custom limiting; app counters alone do not cover direct Auth calls.
 
 - [x] Security-only fixes: revoked elevated trigger execution; patched dependencies without migrating direct Zod 3; bounded requests and inputs before validation; 66 tests including live two-company isolation passed; signed-in desktop/phone regression and oversized HTTP/form rejection passed; deep scan found no code-security issues. Password protection remains for the user to enable; direct Zod 3 advisory remains with input-limit mitigation.
 
