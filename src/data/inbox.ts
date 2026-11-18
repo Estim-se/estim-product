@@ -16,8 +16,8 @@ export interface Thread {
   job: string; status: string; read: boolean; autopilot: boolean; waWin: boolean;
   msgs: Message[]; asks: (string | number)[][]; facts: string[][];
   why: string; att: string[]; events: string[][];
-  q: (typeof demo.threads)[number]['q'];
-  opened?: boolean; briefSent?: boolean; week?: string;
+  q: { nr: string; owners: number; addOn: boolean; prisform: string; lines: { t: string; typ: string; q: number; u: string; p: number; rot: boolean; opt?: boolean }[] } | null;
+  opened?: boolean; briefSent?: boolean; week?: string; stage2?: boolean; lastSent?: string;
 }
 export type InboxFilter = 'alla' | 'mig' | 'ai' | 'vunna';
 
@@ -50,5 +50,5 @@ export function simulatedRequest(): Thread {
   const time = new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
   const request = structuredClone(demo.newRequest);
   return { ...request, time, msgs: request.msgs.map(m => ({ ...m, time })), waWin: false,
-    asks: [], facts: [], why: '', att: [], q: null, events: [[time, 'SMS från Sofia']] };
+    asks: [['Pris för uttag och belysning', 0]], facts: [['warn', 'Saknas: antal lampor och avstånd'], ['spark', 'Autopilot: AI ställer följdfrågor direkt']], why: '', att: [], q: null, events: [[time, 'SMS från Sofia']] };
 }

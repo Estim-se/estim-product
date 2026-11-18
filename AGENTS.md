@@ -32,3 +32,5 @@ use the editor.
 ## App structure
 - Keep prototype demo records in one browser-safe data module and render the shell and Inbox through focused React components and TanStack routes; this keeps staged implementation separate from connected services.
 - Do not initialize backend or AI clients in prototype screens; the staged rebuild uses local mock data only.
+- Keep mutable prototype state in one per-app external store provided above the route outlet; store-owned timers preserve scripted replies across navigation without sharing state between SSR requests.
+- Generate draft amounts through pure quote helpers rather than embedded prices; quote edits must update unedited variants consistently.

@@ -1,0 +1,15 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createEstimStore } from '@/lib/estim-store';
+
+describe('Prototype scripted thread flows', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  it('hides toasts after 3200 ms', () => { const s = createEstimStore(); s.actions.toast('test'); vi.advanceTimersByTime(3199); expect(s.getSnapshot().toast).toBe('test'); vi.advanceTimersByTime(1); expect(s.getSnapshot().toast).toBe(''); });
+  it('opens Sara’s sent quote after 2400 ms even on another page', () => { const s = createEstimStore(); s.actions.send('lind'); s.actions.update(s => { s.page = 'offerter'; }); vi.advanceTimersByTime(2400); expect(s.getSnapshot().threads.find(t => t.id === 'lind')?.opened).toBe(true); expect(s.getSnapshot().stats.ai).toBe(15); });
+  it('books Wallin’s visit after the customer reply and AI confirmation', () => { const s = createEstimStore(); s.actions.send('wallin'); vi.advanceTimersByTime(3200); expect(s.getSnapshot().threads.find(t => t.id === 'wallin')?.status).toBe('ai'); vi.advanceTimersByTime(1400); expect(s.getSnapshot().threads.find(t => t.id === 'wallin')?.status).toBe('bokat'); });
+  it('wins Jonas and sends his handover', () => { const s = createEstimStore(); s.actions.send('jonas'); vi.advanceTimersByTime(3000); expect(s.getSnapshot().threads.find(t => t.id === 'jonas')?.week).toBe('v. 48'); s.actions.sendBrief('jonas'); expect(s.getSnapshot().threads.find(t => t.id === 'jonas')?.briefSent).toBe(true); });
+  it('pauses Karl’s autopilot for booking before winning week 49', () => { const s = createEstimStore(); s.actions.send('karl'); vi.advanceTimersByTime(3000); const t = s.getSnapshot().threads.find(t => t.id === 'karl'); expect(t?.autopilot).toBe(false); expect(t?.status).toBe('svar'); expect(s.getSnapshot().drafts['karl']?.ch).toBe('sms'); s.actions.send('karl'); vi.advanceTimersByTime(2800); expect(s.getSnapshot().threads.find(t => t.id === 'karl')?.week).toBe('v. 49'); });
+  it('answers Sofia after 1800 ms without duplicating her thread', () => { const s = createEstimStore(); s.actions.simNew(); s.actions.simNew(); expect(s.getSnapshot().threads.filter(t => t.id === 'sofia')).toHaveLength(1); vi.advanceTimersByTime(1800); expect(s.getSnapshot().threads.find(t => t.id === 'sofia')?.status).toBe('ai'); expect(s.getSnapshot().stats.ai).toBe(15); });
+  it('cancels scripted events when the demo resets', () => { const s = createEstimStore(); s.actions.send('jonas'); s.actions.reset(); vi.advanceTimersByTime(5000); expect(s.getSnapshot().threads.find(t => t.id === 'jonas')?.status).toBe('svar'); });
+  it('blocks channels without customer contact details', () => { const s = createEstimStore(); s.actions.setCh('wallin', 'sms'); expect(s.getSnapshot().drafts['wallin']?.ch).toBe('email'); s.actions.setCh('jonas', 'email'); expect(s.getSnapshot().drafts['jonas']?.ch).toBe('wa'); });
+});
