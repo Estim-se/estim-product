@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InstallningarRouteImport } from './routes/installningar'
+import { Route as KanalerRouteImport } from './routes/kanaler'
+import { Route as OfferterRouteImport } from './routes/offerter'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InstallningarRoute = InstallningarRouteImport.update({
+  id: '/installningar',
+  path: '/installningar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KanalerRoute = KanalerRouteImport.update({
+  id: '/kanaler',
+  path: '/kanaler',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfferterRoute = OfferterRouteImport.update({
+  id: '/offerter',
+  path: '/offerter',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/installningar': typeof InstallningarRoute
+  '/kanaler': typeof KanalerRoute
+  '/offerter': typeof OfferterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/installningar': typeof InstallningarRoute
+  '/kanaler': typeof KanalerRoute
+  '/offerter': typeof OfferterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/installningar': typeof InstallningarRoute
+  '/kanaler': typeof KanalerRoute
+  '/offerter': typeof OfferterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/installningar' | '/kanaler' | '/offerter'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/installningar' | '/kanaler' | '/offerter'
+  id: '__root__' | '/' | '/installningar' | '/kanaler' | '/offerter'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  InstallningarRoute: typeof InstallningarRoute
+  KanalerRoute: typeof KanalerRoute
+  OfferterRoute: typeof OfferterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/installningar': {
+      id: '/installningar'
+      path: '/installningar'
+      fullPath: '/installningar'
+      preLoaderRoute: typeof InstallningarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kanaler': {
+      id: '/kanaler'
+      path: '/kanaler'
+      fullPath: '/kanaler'
+      preLoaderRoute: typeof KanalerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/offerter': {
+      id: '/offerter'
+      path: '/offerter'
+      fullPath: '/offerter'
+      preLoaderRoute: typeof OfferterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  InstallningarRoute: InstallningarRoute,
+  KanalerRoute: KanalerRoute,
+  OfferterRoute: OfferterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
