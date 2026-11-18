@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { supabase } from '@/integrations/supabase/client';
-import { logoutEverywhere, acceptInvitation } from '@/lib/access.functions';
+import { logoutEverywhere, acceptInvitation, loadAccess } from '@/lib/access.functions';
 import { MIN_PASSWORD_LENGTH, parseAccept } from '@/lib/access-rules';
 import { assertBoundedInput } from '@/lib/input-limits';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Logo } from './logo';
 
 export function PasswordPage({ invitation = false }: { invitation?: boolean }) {
   const workspace = useWorkspace(), navigate = useNavigate();
-  const accept = useServerFn(acceptInvitation), logout = useServerFn(logoutEverywhere);
+  const accept = useServerFn(acceptInvitation), logout = useServerFn(logoutEverywhere), readAccess = useServerFn(loadAccess);
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [name, setName] = useState(''), [password, setPassword] = useState(''), [repeat, setRepeat] = useState('');
   useEffect(() => {
@@ -34,8 +34,7 @@ export function PasswordPage({ invitation = false }: { invitation?: boolean }) {
       const user = await supabase.auth.getUser();
       if (!user.data.user) throw new Error('Länken är ogiltig eller har gått ut.');
       if (invitation && !query.get('token')) {
-        const platform = await import('@/lib/access.functions');
-        const access = await platform.loadAccess();
+        const access = await readAccess();
         if (!access.platform) throw new Error('Inbjudan saknas.');
       }
       if (alive) setReady(true);

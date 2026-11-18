@@ -1,0 +1,3 @@
+ALTER FUNCTION public.estim_accept_invitation(uuid,uuid,text,text) SECURITY DEFINER;
+ALTER FUNCTION public.estim_login_finish(text,uuid,boolean,text) SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public.estim_accept_invitation(uuid,uuid,text,text),public.estim_login_finish(text,uuid,boolean,text) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.estim_accept_invitation(uuid,uuid,text,text),public.estim_login_finish(text,uuid,boolean,text) TO service_role;
