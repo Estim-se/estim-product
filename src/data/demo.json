@@ -1,0 +1,693 @@
+{
+  "company": {
+    "name": "Volt Vision AB",
+    "initials": "VV",
+    "users": "3 användare"
+  },
+  "threads": [
+    {
+      "id": "lind",
+      "name": "Sara Lind",
+      "ini": "SL",
+      "ch": "email",
+      "chs": [
+        "email"
+      ],
+      "time": "07:58",
+      "place": "BRF-lägenhet, Södermalm",
+      "addr": "Bergsundsgatan 5, lgh 1102",
+      "phone": "070-412 33 18",
+      "email": "sara.lind@mail.se",
+      "job": "El vid köksflytt",
+      "status": "svar",
+      "read": false,
+      "autopilot": false,
+      "waWin": false,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "form",
+          "time": "Fre 14:20",
+          "text": "Hej! Vi ska flytta köket i vår lägenhet och behöver ny el till det nya köket, plus jordade uttag i sovrummet. Kan ni ge en offert?"
+        },
+        {
+          "from": "ai",
+          "ch": "email",
+          "time": "Fre 14:21",
+          "text": "Hej Sara! Tack för förfrågan. Vi tittar på det och återkommer med en offert inom kort. /Volt Vision",
+          "auto": true
+        },
+        {
+          "from": "vv",
+          "ch": "email",
+          "time": "Mån 10:05",
+          "text": "Hej Sara! Här kommer offerten på elen till ert nya kök och jordning i sovrummet. Godkänn direkt i länken om allt ser bra ut. /Volt Vision",
+          "quote": true
+        },
+        {
+          "from": "kund",
+          "ch": "email",
+          "time": "07:58",
+          "text": "Hej!\nTack för offerten. Har jag förstått rätt att det blir 28 962 kr efter ROT?\nOm vi också vill ha golvvärme i badrummet, vad kostar det före ROT?\nVi är två som äger lägenheten, men Johan har redan använt ROT i år när vi bytte fönster. Räcker det?\nFöreningen vill också se ert försäkringsbevis och behörighet innan de godkänner.\n/Sara"
+        }
+      ],
+      "asks": [
+        [
+          "Bekräfta totalen efter ROT",
+          1
+        ],
+        [
+          "Pris på golvvärme före ROT",
+          1
+        ],
+        [
+          "Räcker ROT-utrymmet med två ägare?",
+          1
+        ],
+        [
+          "Dokument till föreningen",
+          1
+        ]
+      ],
+      "facts": [
+        [
+          "info",
+          "BRF-lägenhet: föreningen ska godkänna innan start"
+        ],
+        [
+          "info",
+          "Två ägare, Johan har använt en del av sitt ROT i år"
+        ],
+        [
+          "spark",
+          "AI lade till golvvärme som tillval i offerten"
+        ]
+      ],
+      "why": "Sara ställde fyra frågor. Alla är besvarade med siffror från offerten, och dokumenten föreningen bad om är bifogade.",
+      "att": [
+        "Offert #1052 (uppdaterad)",
+        "Försäkringsbevis.pdf",
+        "Auktorisation Elsäkerhetsverket.pdf"
+      ],
+      "q": {
+        "nr": "1052",
+        "owners": 2,
+        "addOn": false,
+        "prisform": "fast",
+        "lines": [
+          {
+            "t": "Rivning av gammal el i befintligt kök",
+            "typ": "arbete",
+            "q": 4,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Inspårning och dragning till ny köksplacering",
+            "typ": "arbete",
+            "q": 14,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Uttag, strömbrytare och 3 hörnboxar i nytt kök",
+            "typ": "arbete",
+            "q": 8,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Jordning av sovrum och byte till jordade uttag",
+            "typ": "arbete",
+            "q": 6,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Driftsättning och egenkontroll",
+            "typ": "arbete",
+            "q": 2,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Material: kabel, dosor, uttag, hörnboxar",
+            "typ": "material",
+            "q": 1,
+            "u": "st",
+            "p": 6800,
+            "rot": false
+          },
+          {
+            "t": "Framkörning och etablering",
+            "typ": "ovrigt",
+            "q": 1,
+            "u": "st",
+            "p": 900,
+            "rot": false
+          },
+          {
+            "t": "Tillval: golvvärme i badrummet, material",
+            "typ": "material",
+            "q": 1,
+            "u": "st",
+            "p": 4200,
+            "rot": false,
+            "opt": true
+          },
+          {
+            "t": "Tillval: golvvärme i badrummet, installation",
+            "typ": "arbete",
+            "q": 5,
+            "u": "h",
+            "p": 650,
+            "rot": true,
+            "opt": true
+          }
+        ]
+      },
+      "events": [
+        [
+          "Fre 14:20",
+          "Förfrågan via formuläret"
+        ],
+        [
+          "Mån 10:05",
+          "Offert #1052 skickad"
+        ],
+        [
+          "Mån 18:40",
+          "Sara öppnade offerten"
+        ],
+        [
+          "07:58",
+          "Ny fråga från Sara"
+        ]
+      ]
+    },
+    {
+      "id": "wallin",
+      "name": "Erik och Nora Wallin",
+      "ini": "EW",
+      "ch": "email",
+      "chs": [
+        "email"
+      ],
+      "time": "07:12",
+      "place": "Bostadsrätt 74 kvm, Vasastan",
+      "addr": "Vikingagatan 8, Stockholm",
+      "phone": "—",
+      "email": "erik.wallin@mail.se",
+      "job": "Köksflytt, ny planlösning",
+      "status": "svar",
+      "read": false,
+      "autopilot": false,
+      "waWin": false,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "email",
+          "time": "07:12",
+          "text": "Hej!\nVi bor i en bostadsrätt på 74 kvm och vill flytta köket till mitten av lägenheten för att bygga om till en trea. Det betyder ny el i köket, flytt av några uttag och belysning i det nya sovrummet.\nBifogar en planritning med tänkta ändringar.\nÄr det här något ni kan hjälpa till med, och vad kan vi förvänta oss i kostnad? Godkännande från styrelsen har inte påbörjats än.\nMed vänlig hälsning,\nErik och Nora",
+          "att": [
+            "Planritning_ny.pdf"
+          ]
+        }
+      ],
+      "asks": [
+        [
+          "Kan ni hjälpa till?",
+          1
+        ],
+        [
+          "Vad krävs?",
+          1
+        ],
+        [
+          "Ungefärlig kostnad",
+          0
+        ]
+      ],
+      "facts": [
+        [
+          "warn",
+          "För lite underlag för fast pris. AI föreslår platsbesök och ställer tre frågor."
+        ],
+        [
+          "info",
+          "Styrelsens godkännande är inte påbörjat"
+        ],
+        [
+          "info",
+          "Inget telefonnummer. AI föreslår tider i stället för att be om nummer."
+        ],
+        [
+          "spark",
+          "Prisbild internt: liknande köksflyttar 25–40 000 kr efter ROT"
+        ]
+      ],
+      "why": "Lång förfrågan utan nummer. I stället för \"skicka ditt nummer så ringer vi\" ställer AI:n de tre frågor som behövs och föreslår två tider från er kalender.",
+      "att": [],
+      "q": null,
+      "events": [
+        [
+          "07:12",
+          "Mejl till info@voltvision.se med planritning"
+        ]
+      ]
+    },
+    {
+      "id": "jonas",
+      "name": "Jonas Ek",
+      "ini": "JE",
+      "ch": "wa",
+      "chs": [
+        "wa"
+      ],
+      "time": "09:31",
+      "place": "Villa, Tumba",
+      "addr": "Lövvägen 14, Tumba",
+      "phone": "073-551 08 14",
+      "email": "—",
+      "job": "Jordade uttag",
+      "status": "svar",
+      "read": false,
+      "autopilot": false,
+      "waWin": true,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "wa",
+          "time": "09:14",
+          "text": "Hej! Kan ni byta 6 gamla uttag till jordade i sovrum och vardagsrum? Villa i Tumba."
+        },
+        {
+          "from": "ai",
+          "ch": "wa",
+          "time": "09:14",
+          "text": "Hej Jonas! Absolut. Skicka gärna en bild på ett av uttagen och elcentralen, så ger vi ett fast pris direkt. /Volt Vision",
+          "auto": true
+        },
+        {
+          "from": "kund",
+          "ch": "wa",
+          "time": "09:31",
+          "text": "Här!",
+          "att": [
+            "uttag.jpg",
+            "central.jpg"
+          ]
+        }
+      ],
+      "asks": [
+        [
+          "Pris för 6 jordade uttag",
+          1
+        ],
+        [
+          "När kan ni komma?",
+          1
+        ]
+      ],
+      "facts": [
+        [
+          "info",
+          "Bilderna visar ojordade uttag och en central med jordfelsbrytare"
+        ],
+        [
+          "spark",
+          "Standardjobb: fast pris från era tidigare offerter"
+        ],
+        [
+          "info",
+          "WhatsApp-fönstret är öppet i 23 h till"
+        ]
+      ],
+      "why": "Standardjobb med bilder. AI:n har räknat fast pris med ert timpris och föreslår en tid.",
+      "att": [
+        "Offert #1055"
+      ],
+      "q": {
+        "nr": "1055",
+        "owners": 1,
+        "addOn": false,
+        "prisform": "fast",
+        "lines": [
+          {
+            "t": "Byte till jordade uttag, 6 st",
+            "typ": "arbete",
+            "q": 4,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Jordade uttag",
+            "typ": "material",
+            "q": 6,
+            "u": "st",
+            "p": 120,
+            "rot": false
+          },
+          {
+            "t": "Framkörning",
+            "typ": "ovrigt",
+            "q": 1,
+            "u": "st",
+            "p": 450,
+            "rot": false
+          }
+        ]
+      },
+      "events": [
+        [
+          "09:14",
+          "Meddelande i WhatsApp"
+        ],
+        [
+          "09:14",
+          "AI bad om bilder"
+        ],
+        [
+          "09:31",
+          "Kunden skickade bilder"
+        ]
+      ]
+    },
+    {
+      "id": "karl",
+      "name": "Karl Nyberg",
+      "ini": "KN",
+      "ch": "email",
+      "chs": [
+        "email",
+        "sms"
+      ],
+      "time": "Igår",
+      "place": "Villa, Huddinge",
+      "addr": "Ekbacken 3, Huddinge",
+      "phone": "070-118 40 22",
+      "email": "karl.n@mail.se",
+      "job": "Utebelysning",
+      "status": "oppnad",
+      "read": true,
+      "autopilot": true,
+      "opened": true,
+      "waWin": false,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "sms",
+          "time": "Tor 17:02",
+          "text": "Hej, vad kostar 6 lampor runt huset med skymningsrelä?"
+        },
+        {
+          "from": "vv",
+          "ch": "email",
+          "time": "Fre 09:10",
+          "text": "Hej Karl! Här är offerten på 6 utomhuslampor med skymningsrelä och timer. Godkänn direkt i länken. /Volt Vision",
+          "quote": true
+        }
+      ],
+      "asks": [],
+      "facts": [
+        [
+          "warn",
+          "Öppnad 3 gånger på 4 dagar utan svar"
+        ],
+        [
+          "info",
+          "Karl jämför troligen med andra offerter"
+        ],
+        [
+          "spark",
+          "AI sköter uppföljningen i den här tråden"
+        ]
+      ],
+      "why": "Karl har öppnat offerten tre gånger utan att svara. Ett vänligt och hjälpsamt svar nu ökar chansen, utan att tjata.",
+      "att": [],
+      "q": {
+        "nr": "1049",
+        "owners": 1,
+        "addOn": false,
+        "prisform": "fast",
+        "lines": [
+          {
+            "t": "Utomhusarmaturer IP44",
+            "typ": "material",
+            "q": 6,
+            "u": "st",
+            "p": 790,
+            "rot": false
+          },
+          {
+            "t": "Montering och kabeldragning",
+            "typ": "arbete",
+            "q": 10,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Skymningsrelä och timer",
+            "typ": "material",
+            "q": 1,
+            "u": "st",
+            "p": 890,
+            "rot": false
+          },
+          {
+            "t": "Framkörning",
+            "typ": "ovrigt",
+            "q": 1,
+            "u": "st",
+            "p": 450,
+            "rot": false
+          }
+        ]
+      },
+      "events": [
+        [
+          "Tor 17:02",
+          "SMS från Karl"
+        ],
+        [
+          "Fre 09:10",
+          "Offert #1049 skickad"
+        ],
+        [
+          "Fre 19:30",
+          "Öppnad"
+        ],
+        [
+          "Lör 10:12",
+          "Öppnad"
+        ],
+        [
+          "Igår 21:05",
+          "Öppnad"
+        ]
+      ]
+    },
+    {
+      "id": "anna",
+      "name": "Anna Berg",
+      "ini": "AB",
+      "ch": "sms",
+      "chs": [
+        "sms",
+        "sida"
+      ],
+      "time": "Mån",
+      "place": "Villa, Segeltorp",
+      "addr": "Ängsvägen 3, Segeltorp",
+      "phone": "072-310 77 05",
+      "email": "—",
+      "job": "Laddbox",
+      "status": "vunnen",
+      "read": true,
+      "autopilot": true,
+      "waWin": false,
+      "briefSent": true,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "sms",
+          "time": "Fre 11:20",
+          "text": "Hej! Vi vill ha laddbox vid carporten. 25 A huvudsäkring."
+        },
+        {
+          "from": "vv",
+          "ch": "sms",
+          "time": "Fre 13:05",
+          "text": "Hej Anna! Här är offerten på laddbox med lastbalansering: estim.se/o/1046 /Volt Vision",
+          "quote": true
+        },
+        {
+          "from": "sys",
+          "time": "Mån 08:42",
+          "text": "Anna godkände med BankID och fyllde i uppgifter för avdraget"
+        },
+        {
+          "from": "ai",
+          "ch": "sms",
+          "time": "Mån 08:43",
+          "text": "Tack Anna! Vi har fått ditt godkännande. Vår elektriker hör av sig i veckan för att boka tid. /Volt Vision",
+          "auto": true
+        }
+      ],
+      "asks": [],
+      "facts": [
+        [
+          "trygg",
+          "Personnummer och fastighet lämnade via BankID, inte i mejl"
+        ],
+        [
+          "spark",
+          "AI skrev överlämningen till elektrikern"
+        ]
+      ],
+      "why": "",
+      "att": [],
+      "q": {
+        "nr": "1046",
+        "owners": 2,
+        "addOn": true,
+        "prisform": "fast",
+        "lines": [
+          {
+            "t": "Laddbox 11 kW med lastbalansering, installation",
+            "typ": "arbete",
+            "q": 5,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          },
+          {
+            "t": "Laddbox och lastbalanserare",
+            "typ": "material",
+            "q": 1,
+            "u": "st",
+            "p": 11300,
+            "rot": false
+          },
+          {
+            "t": "Framkörning",
+            "typ": "ovrigt",
+            "q": 1,
+            "u": "st",
+            "p": 450,
+            "rot": false
+          }
+        ]
+      },
+      "week": "v. 48",
+      "events": [
+        [
+          "Fre 11:20",
+          "SMS från Anna"
+        ],
+        [
+          "Fre 13:05",
+          "Offert #1046 skickad"
+        ],
+        [
+          "Mån 08:42",
+          "Godkänd med BankID"
+        ],
+        [
+          "Mån 08:43",
+          "Överlämnad till elektrikern"
+        ]
+      ]
+    }
+  ],
+  "stats": {
+    "ai": 14,
+    "sek": 47
+  },
+  "channels": {
+    "email": [
+      "E-post",
+      "mail"
+    ],
+    "sms": [
+      "SMS",
+      "chatt"
+    ],
+    "wa": [
+      "WhatsApp",
+      "wa"
+    ],
+    "form": [
+      "Formulär",
+      "form"
+    ],
+    "sida": [
+      "Offertsida",
+      "eye"
+    ]
+  },
+  "statuses": {
+    "bokat": [
+      "Platsbesök bokat",
+      "chip-sage"
+    ],
+    "svar": [
+      "Väntar på dig",
+      "chip-lime"
+    ],
+    "analys": [
+      "AI skriver…",
+      "chip-lime"
+    ],
+    "ai": [
+      "AI väntar på kund",
+      "chip-line"
+    ],
+    "skickad": [
+      "Offert skickad",
+      "chip-line"
+    ],
+    "oppnad": [
+      "Öppnad 3 ggr",
+      "chip-pink"
+    ],
+    "vunnen": [
+      "Vunnen",
+      "chip-sage"
+    ]
+  },
+  "newRequest": {
+    "id": "sofia",
+    "name": "Sofia Nyström",
+    "ini": "SN",
+    "ch": "sms",
+    "chs": [
+      "sms"
+    ],
+    "time": "",
+    "place": "Villa, Huddinge",
+    "addr": "Huddinge",
+    "phone": "070-112 98 76",
+    "email": "—",
+    "job": "Uttag och trädgårdsbelysning",
+    "status": "analys",
+    "read": true,
+    "autopilot": true,
+    "msgs": [
+      {
+        "from": "kund",
+        "ch": "sms",
+        "time": "",
+        "text": "Hej! Vi behöver två nya eluttag på altanen och lite belysning i trädgården. Bor i Huddinge. Vad kostar det?"
+      }
+    ]
+  },
+  "newReply": "Hej Sofia! Tack, det fixar vi. Hur många lampor tänker du dig i trädgården, och hur långt är det från husväggen? En bild på altanen hjälper oss att ge ett fast pris direkt. /Volt Vision"
+}
