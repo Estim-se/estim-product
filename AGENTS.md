@@ -36,3 +36,4 @@ use the editor.
 - Generate draft amounts through pure quote helpers rather than embedded prices; quote edits must update unedited variants consistently.
 - Render quote and customer overlays through focused components backed by central store actions; keep signing timers visit-scoped and customer form values ephemeral because all approvals are mock-only.
 - Mount shared overlays beside the root outlet and use leaf routes for each prototype page; route navigation must preserve store-backed settings and quote edits.
+- Keep the mobile scene in its own leaf route with central-store screen actions and a stable phone scroll container; approvals reuse desktop send timers and navigation resets only the phone screen.

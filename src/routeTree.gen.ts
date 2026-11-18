@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InstallningarRouteImport } from './routes/installningar'
 import { Route as KanalerRouteImport } from './routes/kanaler'
+import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as OfferterRouteImport } from './routes/offerter'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const KanalerRoute = KanalerRouteImport.update({
   path: '/kanaler',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MobilRoute = MobilRouteImport.update({
+  id: '/mobil',
+  path: '/mobil',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OfferterRoute = OfferterRouteImport.update({
   id: '/offerter',
   path: '/offerter',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
+  '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
+  '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
+  '/mobil': typeof MobilRoute
   '/offerter': typeof OfferterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/installningar' | '/kanaler' | '/offerter'
+  fullPaths: '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/installningar' | '/kanaler' | '/offerter'
-  id: '__root__' | '/' | '/installningar' | '/kanaler' | '/offerter'
+  to: '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
+  id: '__root__' | '/' | '/installningar' | '/kanaler' | '/mobil' | '/offerter'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InstallningarRoute: typeof InstallningarRoute
   KanalerRoute: typeof KanalerRoute
+  MobilRoute: typeof MobilRoute
   OfferterRoute: typeof OfferterRoute
 }
 
@@ -92,6 +102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KanalerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mobil': {
+      id: '/mobil'
+      path: '/mobil'
+      fullPath: '/mobil'
+      preLoaderRoute: typeof MobilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/offerter': {
       id: '/offerter'
       path: '/offerter'
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InstallningarRoute: InstallningarRoute,
   KanalerRoute: KanalerRoute,
+  MobilRoute: MobilRoute,
   OfferterRoute: OfferterRoute,
 }
 export const routeTree = rootRouteImport

@@ -4,14 +4,16 @@ import type { Quote } from './quote';
 import { settings } from '@/data/prototype-pages';
 
 export interface Draft { text: string; v: DraftVariant; ch: string; att: string[]; edited: boolean }
+export type MobileScreen = 'lock' | 'list' | 'thread' | 'done';
+export type DesktopPath = '/' | '/offerter' | '/kanaler' | '/installningar';
 export function initial() {
   const threads = initialThreads();
   const drafts: Record<string, Draft> = {};
   threads.forEach(t => { const generator = DRAFTS[t.id]; if (generator) drafts[t.id] = { text: generator(t), v: 'std', ch: t.ch === 'form' ? 'email' : t.ch, att: t.att.slice(), edited: false }; });
-  return { view: 'desk', page: 'inkorg', sel: 'lind', filter: 'alla' as InboxFilter, threads, drafts,
+  return { view: 'desk', page: 'inkorg', desktopPath: '/' as DesktopPath, sel: 'lind', filter: 'alla' as InboxFilter, threads, drafts,
     settings: settings.map(s => s.on), drawer: null as string | null, modal: null as { type: string; id: string; preview?: boolean } | null,
     toast: '', hl: null as string | null, guide: { on: false, step: 0 },
-    m: { scr: 'lock', id: null as string | null, editing: false }, cust: { step: 'view' }, stats: { ai: 14, sek: 47 } };
+    m: { scr: 'lock' as MobileScreen, id: null as string | null, editing: false }, cust: { step: 'view' }, stats: { ai: 14, sek: 47 } };
 }
 export type EstimState = ReturnType<typeof initial>;
 const now = () => new Date().toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
@@ -42,6 +44,11 @@ export function createEstimStore() {
   };
   const actions = {
     update, toast,
+    openMobile(path?: string) { update(s => { if (path === '/' || path === '/offerter' || path === '/kanaler' || path === '/installningar') s.desktopPath = path; s.view = 'mob'; s.m = { scr: 'lock', id: null, editing: false }; }); },
+    mobileGo(scr: MobileScreen, id?: string) { update(s => { s.m = { scr, id: id || s.m.id, editing: false }; }); },
+    mobileEdit() { update(s => { s.m.editing = !s.m.editing; }); },
+    mobileApprove(id: string) { if (!state.drafts[id]) return; actions.send(id, { silent: true }); actions.mobileGo('done', id); },
+    mobilePrice(id: string) { actions.select(id); actions.openDrawer(id); },
     toggleSetting(index: number) { update(s => { if (index >= 0 && index < s.settings.length) s.settings[index] = !s.settings[index]; }); },
     reset() { timers.forEach(clearTimeout); timers.clear(); clearTimeout(toastTimer); state = initial(); toast('Demon är återställd'); },
     select(id: string) { update(s => { const t = s.threads.find(t => t.id === id); if (!t) return; t.read = true; s.sel = id; s.page = 'inkorg'; s.view = 'desk'; s.hl = null; }); },
