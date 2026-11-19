@@ -25,6 +25,12 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
   };
   try {
    const a=await make('A'),b=await make('B');
+   // Price files: each company reads and writes only its own folder.
+   const ownFile=await a.client.storage.from('price-files').upload(`${a.id}/faktura.pdf`,new TextEncoder().encode('%PDF-1.4 test'),{contentType:'application/pdf'});expect(ownFile.error).toBeNull();
+   expect((await a.client.storage.from('price-files').download(`${a.id}/faktura.pdf`)).error).toBeNull();
+   expect((await b.client.storage.from('price-files').download(`${a.id}/faktura.pdf`)).error).not.toBeNull();
+   expect((await b.client.storage.from('price-files').list(a.id)).data ?? []).toEqual([]);
+   expect((await b.client.storage.from('price-files').upload(`${a.id}/intrang.pdf`,new TextEncoder().encode('x'),{contentType:'application/pdf'})).error).not.toBeNull();
    const request=await b.client.rpc('estim_request',{payload:{name:'Isolerad kund',text:'Byt uttag',job:'Uttag',channel:'email',email:'customer@example.com'}});expect(request.error).toBeNull();const tid=request.data;
    for(const table of ['companies','company_members','moments','customers','threads','messages','quotes','drafts','audit_log','profiles'] as const){const denied=await a.client.from(table).select('*').eq('company_id',b.id);expect(denied.error).toBeNull();expect(denied.data).toEqual([]);}
    const attack=await a.client.rpc('estim_approve',{tid});expect(attack.error).not.toBeNull();
@@ -47,6 +53,7 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
    const message=await b.client.from('messages').select('approved_by,attachments').eq('thread_id',tid).eq('from','vv');expect(message.data?.[0]?.approved_by).toBe(users[1]);expect(message.data?.[0]?.attachments).toEqual([]);
   } finally {
    for(const cid of companies){for(const table of ['company_invitations','audit_log','drafts','quotes','messages','threads','customers','moments','company_members'] as const)await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
+   for(const cid of companies){const listed=await admin.storage.from('price-files').list(cid);if(listed.data?.length)await admin.storage.from('price-files').remove(listed.data.map(f=>`${cid}/${f.name}`));}
    for(const id of users)await admin.auth.admin.deleteUser(id);
   }
  },60000);

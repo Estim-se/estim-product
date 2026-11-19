@@ -119,6 +119,7 @@ export type Database = {
           id: string
           inbound_address: string
           name: string
+          rate_source: Json
           reply_to_email: string | null
           settings: Json
           signature: string
@@ -134,6 +135,7 @@ export type Database = {
           id?: string
           inbound_address: string
           name: string
+          rate_source?: Json
           reply_to_email?: string | null
           settings?: Json
           signature?: string
@@ -149,6 +151,7 @@ export type Database = {
           id?: string
           inbound_address?: string
           name?: string
+          rate_source?: Json
           reply_to_email?: string | null
           settings?: Json
           signature?: string
@@ -453,6 +456,7 @@ export type Database = {
           name: string
           role: string
           rot_eligible: boolean
+          source: Json
           unit: string
           updated_at: string
         }
@@ -466,6 +470,7 @@ export type Database = {
           name: string
           role?: string
           rot_eligible?: boolean
+          source?: Json
           unit: string
           updated_at?: string
         }
@@ -479,6 +484,7 @@ export type Database = {
           name?: string
           role?: string
           rot_eligible?: boolean
+          source?: Json
           unit?: string
           updated_at?: string
         }
@@ -714,6 +720,7 @@ export type Database = {
       }
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_import_prices: { Args: { payload: Json }; Returns: number }
       estim_login_begin: { Args: { h: string }; Returns: string }
       estim_login_finish: {
         Args: {

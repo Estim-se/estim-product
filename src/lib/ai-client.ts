@@ -25,7 +25,7 @@ export async function extractPrices(file: File) {
   return call<{
     document_type: string; document_date: string | null;
     items: Array<{ description: string; quantity: number | null; unit: string | null; unit_price_ex_vat: number | null;
-      typ: "arbete" | "material" | "ovrigt"; role: string | null; rot: boolean; source: { file: string; page: number; row: number } }>;
+      typ: "arbete" | "material" | "ovrigt"; role: string | null; rot: boolean; source: { file: string; page: number; row: number }; date: string | null }>;
     rate_suggestions: Array<{ role: string; hourly_rate_ex_vat: number | null; based_on: number }>;
   }>("extract-prices", {
     file: { name: file.name, media_type: file.type, data: await fileToBase64(file) },
