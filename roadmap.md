@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] WhatsApp sending: exact n8n request/acknowledgement, saved provider ID, persistent thread errors, connection indicator, regression checks and publication.
+
 - [x] Nylas merge checklist: all seven paths and merge confirmed; deployed functions untouched; requested notes and URL secrets saved; 115 application tests and 12 mail tests passed; application typecheck/build passed. Existing EdgeRuntime check error is reported without changing functions.
 
 - [x] Shared channels: secret-verified incoming endpoint, atomic deduplication/company routing, shared background AI and manual requests.
