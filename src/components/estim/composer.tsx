@@ -37,5 +37,6 @@ export function Composer({ thread: t }: { thread: Thread }) {
     <div className="cmp-f"><div className="chpills"><span className="xs muted b">Skicka via</span>{(['email', 'sms', 'wa'] as const).map(ch => <Button key={ch} variant="prototype" className={`chpill ${d.ch === ch ? 'on' : ''}`} aria-pressed={d.ch === ch} disabled={ch === 'email' ? t.email === '—' : t.phone === '—'} onClick={() => actions.setCh(t.id, ch)}><Icon name={channelIcon(ch)} />{demo.channels[ch][0]}</Button>)}</div>
       <Button variant="prototype" className="btn btn-primary btn-sm" disabled={real&&(d.busy||(d.review&&!d.edited))} onClick={() => actions.send(t.id)}><Icon name="send" />{t.autopilot ? 'Skicka nu' : 'Godkänn och skicka'}</Button></div>
     {(!real&&note) && <div className="xs muted channel-note"><Icon name="info" />{note}</div>}
+    {real&&d.ch==='wa'&&!t.waWin&&<div className="xs muted channel-note"><Icon name="info" />Utanför 24 h: skickas som godkänd mall</div>}
   </div>;
 }

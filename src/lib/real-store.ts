@@ -4,6 +4,7 @@ import type { RealMutation } from './real.schemas';
 import type { Thread } from '@/data/inbox';
 import type { Quote } from './quote';
 import { auditTimeline } from './real-presentation';
+import { waWindowOpen } from './channel-rules';
 
 // AI steps are injected so the store stays testable without network access.
 export interface RealAi { interpret(id:string):Promise<unknown>; write(id:string,v:Draft['v'],ch:'email'|'sms'|'wa'):Promise<unknown> }
@@ -19,8 +20,8 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
   const threads:Thread[]=data.threads.map(t=>{
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
-    const msgs=data.messages.filter(m=>m.thread_id===t.id).map(m=>({from:m.from,ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
-    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.autopilot,waWin:false,msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
+    const msgs=data.messages.filter(m=>m.thread_id===t.id&&m.delivery_status!=='not_sent'&&m.delivery_status!=='sending').map(m=>({from:m.from,ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
+    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
 }
@@ -34,6 +35,7 @@ export function createRealStore() {
   let queue=Promise.resolve(); let toastTimer:ReturnType<typeof setTimeout>|undefined;
   let writeError=false;
   let ai:RealAi|undefined;
+  let delivery: ((id:string)=>Promise<{sent:boolean;error:string|null}>)|undefined;
   const AI_TIMEOUT_MS=60000;
   const withTimeout=<T,>(p:Promise<T>)=>new Promise<T>((res,rej)=>{const t=setTimeout(()=>rej(new Error('timeout')),AI_TIMEOUT_MS);p.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);});});
   // Any AI failure or timeout returns the thread to "svar" so the user can write by hand.
@@ -92,7 +94,7 @@ export function createRealStore() {
     addL(opt=false){changeQuote(q=>{q.lines.push({t:opt?'Nytt tillval':'Ny rad',typ:'arbete',q:1,u:'h',p:data?.company?.hourly_rate_ex_vat??0,rot:true,...(opt?{opt:true}:{})});});},
     setOwners(owners:number){changeQuote(q=>{q.owners=owners;});},setPriceForm(prisform:string){changeQuote(q=>{q.prisform=prisform;});},
     openCustomer(_id:string,_preview?:boolean){toast('Kundens godkännande ansluts i ett senare steg.');},closeCustomer(){},toggleAddOn(id:string){dirtyQuotes.add(id);update(s=>{const q=s.threads.find(t=>t.id===id)?.q;if(q)q.addOn=!q.addOn;});},approveCustomer(){},submitCustomer(){},sendBrief(_id:string){toast('Överlämning är inte ansluten ännu.');},
-    send(id:string,_options?:{silent?:boolean}){if(!state.drafts[id]?.text.trim()){toast('Skriv ett svar först.');return;}void persist({kind:'approve',id},true).then(()=>toast('Svaret är sparat som skickat. Ingen leverans har gjorts.')).catch(()=>{});},
+    send(id:string,_options?:{silent?:boolean}){const d=state.drafts[id];if(!d?.text.trim()){toast('Skriv ett svar först.');return;}if(d.busy)return;update(s=>{const draft=s.drafts[id];if(draft)draft.busy=true;});void (async()=>{try{await queue;if(!delivery)throw new Error('Ingen anslutning.');const result=await delivery(id);await reload?.();toast(result.error??'Svaret är sparat som skickat.');}catch(error){toast(error instanceof Error?error.message:'Svaret kunde inte skickas.');}finally{update(s=>{const draft=s.drafts[id];if(draft)draft.busy=false;});}})();},
     simNew(){toast('Använd Ny förfrågan.');},
     openMobile(path?:string){update(s=>{if(path==='/'||path==='/offerter'||path==='/kanaler'||path==='/installningar')s.desktopPath=path as DesktopPath;s.view='mob';s.m={scr:'lock',id:null,editing:false};});},
     mobileGo(scr:EstimState['m']['scr'],id?:string){update(s=>{s.m={scr,id:id||s.m.id,editing:false};});},mobileEdit(){update(s=>{s.m.editing=!s.m.editing;});},
@@ -100,6 +102,7 @@ export function createRealStore() {
   };
   return {getSnapshot:()=>state,subscribe:(l:()=>void)=>{listeners.add(l);return()=>{listeners.delete(l);};},actions,
     connectAi(next:RealAi){ai=next;},
+    connectDelivery(next:(id:string)=>Promise<{sent:boolean;error:string|null}>){delivery=next;},
     // "Försök igen": rerun only the missing steps (a saved quote means interpretation already ran).
     retryAi(id:string){const t=state.threads.find(t=>t.id===id);if(!t)return;if(t.q){const d=state.drafts[id];if(d&&!d.busy)void aiReply(id,d.v);}else void actions_runRequest(id);},
     // New request flow: analys -> interpret -> code-built quote -> reply draft -> svar. Never sends.

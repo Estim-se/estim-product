@@ -1,0 +1,6 @@
+ALTER FUNCTION public.estim_finish_send(uuid,boolean,text,text) SECURITY INVOKER;
+REVOKE EXECUTE ON FUNCTION public.estim_finish_send(uuid,boolean,text,text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.estim_finish_send(uuid,boolean,text,text) TO service_role;
+CREATE OR REPLACE FUNCTION public.estim_finish_send(mid uuid,delivered boolean,failure text DEFAULT NULL,provider_id text DEFAULT NULL) RETURNS void LANGUAGE plpgsql SET search_path=public AS $$ DECLARE m public.messages; BEGIN SELECT * INTO m FROM public.messages WHERE id=mid AND delivery_status='sending' FOR UPDATE; IF NOT FOUND THEN RAISE EXCEPTION 'Not allowed'; END IF;
+UPDATE public.messages SET delivery_status=CASE WHEN delivered THEN 'sent' ELSE 'not_sent' END,delivery_error=failure,provider_message_id=provider_id WHERE id=mid;
+IF delivered THEN UPDATE public.threads SET status='skickad',read=true,last_message_at=now() WHERE id=m.thread_id AND company_id=m.company_id; DELETE FROM public.drafts WHERE thread_id=m.thread_id AND company_id=m.company_id AND text=m.text AND attachments=m.attachments; ELSE UPDATE public.threads SET status='svar' WHERE id=m.thread_id AND company_id=m.company_id; END IF; END $$;

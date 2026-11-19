@@ -9,6 +9,7 @@ import type { RealMutation } from '@/lib/real.schemas';
 import { parseMutation } from '@/lib/real.schemas';
 import { WorkspaceContext } from './workspace-context';
 import { interpretRequest, writeReply } from '@/lib/ai-client';
+import { sendMessage } from '@/lib/channel.functions';
 export { useWorkspace } from './workspace-context';
 
 export function WorkspaceProvider({children}:{children:ReactNode}) {
@@ -18,6 +19,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   const [error,setError]=useState('');const [data,setData]=useState<WorkspaceData|null>(null);
   const identityEpoch=useRef(0);
   const read=useServerFn(loadWorkspace),write=useServerFn(mutateWorkspace);
+  const send = useServerFn(sendMessage);
   const router=useRouter(),navigate=useNavigate(),queryClient=useQueryClient();
   const pathname=useRouterState({select:s=>s.location.pathname});
   // Preserve prototype metadata in demo; company identity replaces it only in real mode.
@@ -34,6 +36,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   async function mutate(input:RealMutation){return write({data:parseMutation(input)});}
   realStore.connect(mutate,async()=>{await refresh();});
   realStore.connectAi({interpret:interpretRequest,write:writeReply});
+  realStore.connectDelivery(id => send({ data: { id } }));
   useEffect(()=>{
     let alive=true;let generation=0;
     async function resolve(){const own=++generation;setLoading(true);setError('');
@@ -55,7 +58,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   },[realStore]);
   // Poll while any thread is being analysed so drafts appear without a reload.
   const analysing=useSyncAnalysing(realStore);
-  useEffect(()=>{if(mode!=='real'||!analysing)return;const timer=setInterval(()=>{void refresh().catch(()=>{});},4000);return()=>clearInterval(timer);},[mode,analysing]);
+  useEffect(()=>{if(mode!=='real'||!signedIn)return;let inFlight=false;const timer=setInterval(()=>{if(inFlight)return;inFlight=true;void refresh().catch(()=>{}).finally(()=>{inFlight=false;});},analysing?4000:10000);return()=>clearInterval(timer);},[mode,analysing,signedIn]);
   async function signOut(){identityEpoch.current++;await queryClient.cancelQueries();queryClient.clear();await supabase.auth.signOut();realStore.clear();setData(null);setSignedIn(false);setMode('demo');await navigate({to:'/auth',replace:true});}
   return <WorkspaceContext.Provider value={{mode,setMode,signedIn,loading,error,data,realStore,refresh,mutate,signOut}}>{children}</WorkspaceContext.Provider>;
 }

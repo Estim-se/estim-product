@@ -10,7 +10,7 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
   const membership = await db.from('company_members').select('*').eq('user_id',context.userId).maybeSingle();
   const profile = await db.from('profiles').select('display_name').eq('id',context.userId).maybeSingle();
   if (membership.error || profile.error) throw new Error('Kunde inte läsa ditt konto.');
-  if (!membership.data) return { platform:access.platform,role:null,company: null, profile: profile.data, threads: [], customers: [], messages: [], quotes: [], drafts: [], moments: [], audit: [] };
+  if (!membership.data) return { platform:access.platform,role:null,company: null, profile: profile.data, threads: [], customers: [], messages: [], quotes: [], drafts: [], moments: [], audit: [], channels: [] };
   const cid = membership.data.company_id;
   const [company, threads, customers, messages, quotes, drafts, moments, audit] = await Promise.all([
     db.from('companies').select('*').eq('id',cid).single(),
@@ -24,7 +24,9 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
   ]);
   if ([company,threads,customers,messages,quotes,drafts,moments,audit].some(result=>result.error)) throw new Error('Kunde inte läsa företagets uppgifter.');
   if(!company.data?.active)throw new Error('Företaget är avaktiverat.');
-  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [] };
+  const channels = await db.from('channels').select('*').eq('company_id', cid);
+  if (channels.error) throw new Error('Kunde inte läsa kanalerna.');
+  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [], channels: channels.data ?? [] };
 });
 export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 
@@ -48,7 +50,17 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
   if(!active.data?.active)throw new Error('Företaget är avaktiverat.');
   let result;
   switch(data.kind) {
-    case 'request': result=await db.rpc('estim_request',{payload:data.request}); break;
+    case 'request': {
+      const r = data.request;
+      const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
+      const saved = await supabaseAdmin.rpc('estim_receive', { cid, actor: context.userId, payload: { channel: r.channel, customer_name: r.name, customer_phone: r.phone, customer_email: r.email, text: r.text, job: r.job, address: r.address, place: r.place } });
+      if (saved.error) throw new Error('Kunde inte skapa förfrågan.');
+      const received = saved.data as { id: string; job_id: string };
+      const { dispatchAiJob } = await import('./channel.server');
+      try { await dispatchAiJob(received.job_id); }
+      catch { await db.from('threads').update({ status: 'svar' }).eq('id', received.id).eq('company_id', cid); }
+      return { id: received.id };
+    }
     case 'quote': result=await db.rpc('estim_quote',{tid:data.id,payload:data.quote}); break;
     case 'approve': result=await db.rpc('estim_approve',{tid:data.id}); break;
     case 'draft': result=await db.from('drafts').update({text:data.draft.text,variant:data.draft.v,channel:data.draft.ch,attachments:data.draft.att,edited:data.draft.edited}).eq('thread_id',data.id).eq('company_id',cid); break;
