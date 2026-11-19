@@ -10,3 +10,12 @@ verify_jwt = false
 
 [functions.triage-email]
 verify_jwt = false
+
+[functions.nylas-webhook]
+verify_jwt = false
+
+[functions.nylas-connect]
+verify_jwt = false
+
+[functions.email-send]
+verify_jwt = false

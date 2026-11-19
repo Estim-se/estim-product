@@ -30,7 +30,8 @@ export const sendMessage = createServerFn({ method: 'POST' }).middleware([requir
       db.from('customers').select('phone').eq('id', thread.data.customer_id).single(),
     ]);
     const delivered = await deliverChannel({ channel: draft.data.channel, text: draft.data.text,
-      lastCustomerWaAt: thread.data.last_customer_wa_at,
+      lastCustomerWaAt: thread.data.last_customer_wa_at, messageId: prepared.data,
+      ...(process.env['SUPABASE_URL'] && process.env['INTERNAL_FUNCTION_KEY'] ? { emailTarget: `${process.env['SUPABASE_URL']}/functions/v1/email-send`, internalKey: process.env['INTERNAL_FUNCTION_KEY'] } : {}),
       ...(process.env['N8N_WA_SEND_URL'] ? { target: process.env['N8N_WA_SEND_URL'] } : {}),
       ...(process.env['N8N_SHARED_SECRET'] ? { secret: process.env['N8N_SHARED_SECRET'] } : {}),
       ...(channel.data ? { phoneNumberId: channel.data.phone_number_id } : {}),

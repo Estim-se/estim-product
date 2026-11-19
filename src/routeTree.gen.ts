@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as EpostKlarRouteImport } from './routes/epost-klar'
 import { Route as InbjudanRouteImport } from './routes/inbjudan'
 import { Route as InstallningarRouteImport } from './routes/installningar'
 import { Route as KanalerRouteImport } from './routes/kanaler'
@@ -35,6 +36,11 @@ const AdminRoute = AdminRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EpostKlarRoute = EpostKlarRouteImport.update({
+  id: '/epost-klar',
+  path: '/epost-klar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InbjudanRoute = InbjudanRouteImport.update({
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRouteWithChildren
+  '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
   '/installningar': typeof InstallningarRoute
   '/kanaler': typeof KanalerRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/auth'
+    | '/epost-klar'
     | '/inbjudan'
     | '/installningar'
     | '/kanaler'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/auth'
+    | '/epost-klar'
     | '/inbjudan'
     | '/installningar'
     | '/kanaler'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/auth'
+    | '/epost-klar'
     | '/inbjudan'
     | '/installningar'
     | '/kanaler'
@@ -175,6 +187,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRouteWithChildren
+  EpostKlarRoute: typeof EpostKlarRoute
   InbjudanRoute: typeof InbjudanRoute
   InstallningarRoute: typeof InstallningarRoute
   KanalerRoute: typeof KanalerRoute
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/epost-klar': {
+      id: '/epost-klar'
+      path: '/epost-klar'
+      fullPath: '/epost-klar'
+      preLoaderRoute: typeof EpostKlarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbjudan': {
@@ -288,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   AuthRoute: AuthRouteWithChildren,
+  EpostKlarRoute: EpostKlarRoute,
   InbjudanRoute: InbjudanRoute,
   InstallningarRoute: InstallningarRoute,
   KanalerRoute: KanalerRoute,
