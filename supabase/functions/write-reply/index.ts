@@ -1,3 +1,4 @@
+import { wordsBeforeSignature, KORT_MAX_WORDS } from "../_shared/length.ts";
 // POST /write-reply
 // Step 3 of the core flow: the AI writes the reply text. Amounts come ONLY
 // from the calculation engine (step 2, plain code). Before the draft is
@@ -97,10 +98,15 @@ Deno.serve(async (req) => {
       attempts++;
       last = await callClaudeTool<Reply>({ system, messages, tool: WRITE_REPLY_TOOL, maxTokens: 1500 });
       problems = check(last.data.text, quote, fixedPrice, channel);
+      // The short variant must stay within 80 words before the signature.
+      if (body.variant === "kort") {
+        const words = wordsBeforeSignature(last.data.text, body.company.signature ?? body.company.name);
+        if (words > KORT_MAX_WORDS) problems.push(`För långt: ${words} ord före signaturen, max ${KORT_MAX_WORDS}`);
+      }
       if (!problems.length) break;
       messages.push(
         { role: "assistant", content: last.data.text },
-        { role: "user", content: `Svaret bryter mot reglerna: ${problems.join("; ")}. Skriv om det och använd bara belopp ur FAKTA.` },
+        { role: "user", content: `Svaret bryter mot reglerna: ${problems.join("; ")}. Skriv om det och använd bara belopp ur FAKTA.${body.variant === "kort" ? ` Högst ${KORT_MAX_WORDS} ord före signaturen, högst en följdfråga, inga antaganden.` : ""}` },
       );
     }
 

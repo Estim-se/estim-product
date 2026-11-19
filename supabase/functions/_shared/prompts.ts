@@ -139,7 +139,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@2";
+export const WRITE_REPLY_VERSION = "write-reply@3";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -155,7 +155,7 @@ export function writeReplySystem(o: {
   }[o.channel];
   const variantRule = {
     std: "Normal längd. Svara på alla kundens frågor.",
-    kort: "Så kort som möjligt, men svara ändå på alla kundens frågor.",
+    kort: "KORT VARIANT (går före övriga regler): högst 80 ord före signaturen. Totalpris, ROT-avdrag och att betala i en enda mening. Högst en följdfråga, den viktigaste, plus förslag på platsbesök. Förklara inga antaganden och räkna inte upp vad som ingår.",
     formell: "Formell ton: 'Hej <namn>,' och 'Med vänliga hälsningar,' följt av firmans fullständiga namn.",
   }[o.variant];
 
