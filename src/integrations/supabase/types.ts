@@ -432,6 +432,56 @@ export type Database = {
           },
         ]
       }
+      email_connections: {
+        Row: {
+          company_id: string
+          connected_by: string | null
+          created_at: string
+          email: string
+          grant_id: string
+          id: string
+          last_event_at: string | null
+          provider: string
+          status: string
+          updated_at: string
+          watch_address: string | null
+        }
+        Insert: {
+          company_id: string
+          connected_by?: string | null
+          created_at?: string
+          email: string
+          grant_id: string
+          id?: string
+          last_event_at?: string | null
+          provider: string
+          status?: string
+          updated_at?: string
+          watch_address?: string | null
+        }
+        Update: {
+          company_id?: string
+          connected_by?: string | null
+          created_at?: string
+          email?: string
+          grant_id?: string
+          id?: string
+          last_event_at?: string | null
+          provider?: string
+          status?: string
+          updated_at?: string
+          watch_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_connections_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       login_attempts: {
         Row: {
           created_at: string
@@ -465,12 +515,14 @@ export type Database = {
       messages: {
         Row: {
           approved_by: string | null
+          attachment_files: Json
           attachments: Json
           channel: string | null
           company_id: string
           created_at: string
           delivery_error: string | null
           delivery_status: string
+          email_subject: string | null
           from: string
           id: string
           in_reply_to: string | null
@@ -482,12 +534,14 @@ export type Database = {
         }
         Insert: {
           approved_by?: string | null
+          attachment_files?: Json
           attachments?: Json
           channel?: string | null
           company_id: string
           created_at?: string
           delivery_error?: string | null
           delivery_status?: string
+          email_subject?: string | null
           from: string
           id?: string
           in_reply_to?: string | null
@@ -499,12 +553,14 @@ export type Database = {
         }
         Update: {
           approved_by?: string | null
+          attachment_files?: Json
           attachments?: Json
           channel?: string | null
           company_id?: string
           created_at?: string
           delivery_error?: string | null
           delivery_status?: string
+          email_subject?: string | null
           from?: string
           id?: string
           in_reply_to?: string | null
@@ -577,6 +633,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "moments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      oauth_states: {
+        Row: {
+          company_id: string
+          created_at: string
+          expires_at: string
+          state_hash: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          expires_at: string
+          state_hash: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          expires_at?: string
+          state_hash?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oauth_states_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -810,6 +901,20 @@ export type Database = {
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_claim_job: { Args: { jid: string }; Returns: boolean }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_email_connection: { Args: never; Returns: Json }
+      estim_email_grant_state: {
+        Args: { new_state: string; p_grant: string }
+        Returns: undefined
+      }
+      estim_email_status: {
+        Args: {
+          err?: string
+          new_status: string
+          p_grant: string
+          p_msg: string
+        }
+        Returns: undefined
+      }
       estim_finish_send: {
         Args: {
           delivered: boolean
