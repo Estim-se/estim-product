@@ -58,7 +58,7 @@ export const EXTRACT_PRICES_TOOL: ToolSpec = {
 /* 2. interpret-request: inquiry thread -> moments, quantities, risks  */
 /* ------------------------------------------------------------------ */
 
-export const INTERPRET_VERSION = "interpret-request@1";
+export const INTERPRET_VERSION = "interpret-request@2";
 
 export const INTERPRET_SYSTEM = `Du är estim och hjälper ett svenskt hantverksföretag att förstå en kundförfrågan.
 Du tolkar, du räknar aldrig pengar. Priser och summor räknas av annan kod.
@@ -69,8 +69,10 @@ Gör så här:
 - Förstå vardagsspråk och byggtermer ("öppna upp", "köksö", "ca 40 kvm", "3,5 meter").
 - Lista kundens egna frågor i customer_questions och om de går att besvara nu.
 - Flagga risker. Ge aldrig säkra besked om bärande konstruktion, elbehörighet, fukt och våtrum, asbest eller bygglov. I bostadsrätt: större ingrepp kräver föreningens godkännande.
-- Föreslå högst tre följdfrågor, bara de som behövs för att kunna ge ett pris.
-- recommended_action: "offert" om underlaget räcker, "fragor" om några svar saknas, "platsbesok" om det är för osäkert för ett pris.
+- Läs hela konversationen och använd kundens senaste svar. Fråga inte igen om sådant kunden redan besvarat.
+- Matcha vanliga jobb till motsvarande katalogmoment även när kundens ord skiljer sig från katalogens namn. Hitta aldrig på moment-id eller priser.
+- Föreslå högst två följdfrågor, bara obesvarade frågor som faktiskt ändrar priset. Antal, materialval och behov av ny kabel kan påverka priset; fråga inte rutinmässigt om tider eller adress för att kunna uppskatta ett enkelt jobb.
+- recommended_action: "offert" när mängd och arbetsomfattning räcker för en grov uppskattning, även med korta antaganden. "fragor" bara när prisavgörande uppgifter saknas. "platsbesok" endast för större eller verkligt oklara jobb, till exempel väggöppning eller bärande konstruktion. Enkla uttag, spotlights och dimmer kräver inte rutinmässigt platsbesök. Allmänt krav på behörig elektriker är inte i sig skäl till platsbesök.
 - why: en mening till hantverkaren om vad du gjort och varför, på svenska.`;
 
 export const INTERPRET_TOOL: ToolSpec = {
@@ -116,7 +118,7 @@ export const INTERPRET_TOOL: ToolSpec = {
           required: ["question", "answerable_now"],
         },
       },
-      follow_up_questions: { type: "array", items: { type: "string" }, maxItems: 3 },
+      follow_up_questions: { type: "array", items: { type: "string" }, maxItems: 2 },
       facts: {
         type: "array",
         description: "Det som visas under 'AI har koll på'",
@@ -139,7 +141,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@3";
+export const WRITE_REPLY_VERSION = "write-reply@4";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -147,16 +149,17 @@ export function writeReplySystem(o: {
   channel: "email" | "sms" | "wa";
   variant: "std" | "kort" | "formell";
   fixedPrice: boolean;
+  firstReply?: boolean;
 }): string {
   const channelRule = {
     email: "Mejl: hälsning, korta stycken, signatur på egen rad.",
     sms: "SMS: kort, helst under 300 tecken, signatur som '/" + o.signature + "'.",
-    wa: "WhatsApp: kort och personligt, signatur som '/" + o.signature + "'.",
+    wa: o.firstReply === false ? "WhatsApp, pågående samtal: ingen hälsning och ingen signatur. Fortsätt direkt på kundens senaste meddelande." : "WhatsApp, första svaret: kort personlig hälsning och signatur som '/" + o.signature + "'.",
   }[o.channel];
   const variantRule = {
     std: "Normal längd. Svara på alla kundens frågor.",
-    kort: "KORT VARIANT (går före övriga regler): högst 80 ord före signaturen. Totalpris, ROT-avdrag och att betala i en enda mening. Högst en följdfråga, den viktigaste, plus förslag på platsbesök. Förklara inga antaganden och räkna inte upp vad som ingår.",
-    formell: "Formell ton: 'Hej <namn>,' och 'Med vänliga hälsningar,' följt av firmans fullständiga namn.",
+    kort: "KORT VARIANT: högst 80 ord före signaturen. Prisintervall inkl. moms och efter ROT i en enda mening. Högst en prisavgörande följdfråga. Prisets viktigaste förutsättning i en kort bisats. Inget rutinmässigt platsbesök.",
+    formell: o.channel === 'wa' ? "Saklig men naturlig WhatsApp-ton; följ samtalets regler för hälsning och signatur." : "Formell ton: 'Hej <namn>,' och 'Med vänliga hälsningar,' följt av firmans fullständiga namn.",
   }[o.variant];
 
   return `Du skriver svar till slutkunder åt ${o.companyName}, ett svenskt hantverksföretag. Skriv som hantverkaren själv, på svenska, varmt och rakt, utan säljspråk.
@@ -170,25 +173,24 @@ ${o.fixedPrice
 
 Innehåll:
 - Svara på varje fråga kunden ställt, i den ordning de ställdes.
-- Ge aldrig säkra besked om bärande konstruktion, elbehörighet, fukt och våtrum, asbest eller bygglov. Föreslå platsbesök.
+- Ge aldrig säkra besked om bärande konstruktion, elbehörighet, fukt och våtrum, asbest eller bygglov. Platsbesök föreslås ENDAST när PLATSBESÖK anger ja, aldrig rutinmässigt för enkla uttag, spotlights eller dimmer.
 - Nämn bara nästa steg som finns i listan TILLGÄNGLIGT. Nämn aldrig länkar, godkännande i länk, BankID, bifogad offert eller andra funktioner som inte står där.
 - Nämn bifogade dokument bara om de står under BIFOGAT.
-- Finns ANTAGANDEN: skriv kort vad priset bygger på. Finns FÖLJDFRÅGOR: ställ dem. Är REKOMMENDATION platsbesök: föreslå ett platsbesök.
+- Finns en kalkyl: ge alltid priset nu, även om någon detalj behöver bekräftas. Uppskattningar visas som PRISINTERVALL inkl. moms, och efter ROT när kalkylen har ROT. Säg villkorligt att ROT gäller om kunden har rätt till avdraget; lova inte behörighet.
+- Skriv kort den viktigaste förutsättningen som priset bygger på. Ställ högst 1–2 obesvarade frågor som ändrar priset, inte alla frågor i tidigare tolkningar. Fråga aldrig på nytt om det kunden redan berättat.
 
 Priser i texten:
-- Lista inte offertens rader med belopp. Ge bara totalt inkl. moms, ROT-avdrag och att betala efter ROT.
+- Lista inte offertens rader med belopp. Ge endast intervallet inkl. moms och belopp efter ROT (avdraget kan nämnas i samma mening). Fast pris som hantverkaren valt ska behållas.
 - Säg i en mening vad som ingår (t.ex. arbete, material och framkörning).
 
 Format: ${channelRule} ${variantRule}
-Avsluta med signaturen "${o.signature}" om inget annat sägs ovan.
+${o.channel === 'wa' && o.firstReply === false ? 'Ingen signatur eller hälsning i det här svaret.' : `Avsluta med signaturen "${o.signature}".`}
 
-Exempel på ton (från en annan firma, kopiera inte siffror):
-"""
-Hej Jonas! Tack för bilden.
-Byte till 6 jordade uttag i sovrum och vardagsrum blir ca 7 900 kr efter ROT, arbete och material inräknat.
-Svara gärna med en tid som passar för ett kort platsbesök.
-/Elfirman
-"""`;
+Samtalston:
+- Skriv som en hantverkare som sms:ar, inte ett formulär. Matcha kundens ton och längd: en kort fråga får ett kort direkt svar. WhatsApp: normalt högst 80 ord före signaturen, gärna betydligt färre.
+- Upprepa inte kundens senaste meddelande. Besvara det och för samtalet framåt.
+- Variera formuleringarna utifrån tidigare skickade svar. Upprepa inte fraser som "Föreslå gärna en tid" eller "så vi slipper överraskningar".
+- Undvik punktlistor i WhatsApp; använd löpande text, utom om flera frågor blir tydligare i en kort lista.`;
 }
 
 export const WRITE_REPLY_TOOL: ToolSpec = {

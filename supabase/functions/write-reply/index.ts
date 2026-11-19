@@ -18,6 +18,7 @@ import { requireCompany } from "../_shared/auth.ts";
 import { WRITE_REPLY_TOOL, WRITE_REPLY_VERSION, writeReplySystem } from "../_shared/prompts.ts";
 import { calc, type Quote } from "../_shared/calc.ts";
 import { factSheet, findUnknownAmounts, usesFixedPriceWording } from "../_shared/amounts.ts";
+import { continueReply, firstCompanyReply, visitNeeded } from '../_shared/reply-policy.ts';
 
 interface Reply { text: string; why: string; answered_questions: string[] }
 
@@ -54,12 +55,15 @@ Deno.serve(async (req) => {
   const quote: Quote | null = body.quote ?? null;
   const fixedPrice = quote?.prisform === "fast";
   const channel = body.channel ?? "email";
+  const firstReply = firstCompanyReply(body.messages);
+  const needsVisit = visitNeeded(body.interpretation);
   const system = writeReplySystem({
     companyName: body.company.name,
     signature: body.company.signature ?? body.company.name,
     channel,
     variant: body.variant ?? "std",
     fixedPrice,
+    firstReply,
   });
 
   const thread = body.messages
@@ -72,15 +76,16 @@ Deno.serve(async (req) => {
     quote ? `FAKTA (offert #${quote.nr}, enda tillåtna belopp):\n${factSheet(quote)}` : "FAKTA: Ingen offert ännu. Nämn inga belopp.",
     quote ? `OFFERTRADER:\n${quote.lines.map((l) => `- ${l.t}${l.opt ? " (tillval)" : ""}`).join("\n")}` : "",
     i?.customer_questions?.length ? `KUNDENS FRÅGOR:\n${i.customer_questions.map((q: { question: string }) => "- " + q.question).join("\n")}` : "",
-    i?.follow_up_questions?.length ? `FÖLJDFRÅGOR ATT STÄLLA:\n${i.follow_up_questions.map((q: string) => "- " + q).join("\n")}` : "",
+    i?.follow_up_questions?.length ? `MÖJLIGA PRISAVGÖRANDE FÖLJDFRÅGOR (välj bara obesvarade):\n${i.follow_up_questions.slice(0, body.variant === 'kort' ? 1 : 2).map((q: string) => "- " + q).join("\n")}` : "",
     i?.risks?.length ? `RISKER:\n${i.risks.map((r: { text: string }) => "- " + r.text).join("\n")}` : "",
     i?.assumptions?.length ? `ANTAGANDEN:\n${i.assumptions.map((a: string) => "- " + a).join("\n")}` : "",
     i?.recommended_action ? `REKOMMENDATION: ${({ offert: "offert", fragor: "följdfrågor", platsbesok: "platsbesök" } as Record<string, string>)[i.recommended_action] ?? i.recommended_action}` : "",
     body.attachments?.length ? `BIFOGAT: ${body.attachments.join(", ")}` : "",
+    `PLATSBESÖK: ${needsVisit ? 'ja, större eller oklart jobb' : 'nej, föreslå inte platsbesök'}`,
     // Only features that exist today; no approval link and no quote file yet.
     `TILLGÄNGLIGT (enda nästa steg du får nämna):\n${[
       "Kunden svarar på det här meddelandet",
-      "Kunden föreslår tider för ett platsbesök",
+      ...(needsVisit ? ["Kunden föreslår tider för ett platsbesök"] : []),
       ...(body.attachments?.length ? ["Bifogade dokument: " + body.attachments.join(", ")] : []),
     ].map((x) => "- " + x).join("\n")}`,
     body.suggested_times?.length ? `LEDIGA TIDER FÖR PLATSBESÖK: ${body.suggested_times.join(" eller ")}` : "",
@@ -97,16 +102,22 @@ Deno.serve(async (req) => {
     while (attempts < 2) {
       attempts++;
       last = await callClaudeTool<Reply>({ system, messages, tool: WRITE_REPLY_TOOL, maxTokens: 1500 });
+      if (channel === 'wa') last.data.text = continueReply(last.data.text, body.company.signature, firstReply);
       problems = check(last.data.text, quote, fixedPrice, channel);
       // The short variant must stay within 80 words before the signature.
-      if (body.variant === "kort") {
+      if (body.variant === "kort" || channel === 'wa') {
         const words = wordsBeforeSignature(last.data.text, body.company.signature ?? body.company.name);
         if (words > KORT_MAX_WORDS) problems.push(`För långt: ${words} ord före signaturen, max ${KORT_MAX_WORDS}`);
       }
+      const questions = (last.data.text.match(/\?/g) ?? []).length;
+      if (questions > (body.variant === 'kort' ? 1 : 2)) problems.push('För många följdfrågor: välj bara de viktigaste som ändrar priset');
+      if (quote && calc(quote).inkl > 0 && !/\d[\d\s–—-]*\s*(?:kr|kronor)/i.test(last.data.text)) problems.push('Pris saknas: ge priset från FAKTA nu');
+      if (quote && !fixedPrice && !/\d[^\n]*[–—-][^\n]*\d/.test(last.data.text)) problems.push('Prisintervall saknas: använd båda ändpunkterna från PRISINTERVALL');
+      if (!needsVisit && /platsbesök/i.test(last.data.text)) problems.push('Inget platsbesök för det här jobbet');
       if (!problems.length) break;
       messages.push(
         { role: "assistant", content: last.data.text },
-        { role: "user", content: `Svaret bryter mot reglerna: ${problems.join("; ")}. Skriv om det och använd bara belopp ur FAKTA.${body.variant === "kort" ? ` Högst ${KORT_MAX_WORDS} ord före signaturen, högst en följdfråga, inga antaganden.` : ""}` },
+        { role: "user", content: `Svaret bryter mot reglerna: ${problems.join("; ")}. Skriv om det och använd bara belopp ur FAKTA.${body.variant === "kort" || channel === 'wa' ? ` Högst ${KORT_MAX_WORDS} ord före signaturen, ${body.variant === 'kort' ? 'högst en' : 'högst två'} prisavgörande följdfrågor, kort prisförutsättning.` : ""}` },
       );
     }
 

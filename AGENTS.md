@@ -30,6 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## App structure
+- Refresh incoming AI interpretation before drafting; derive estimate ranges in code so follow-ups use current job details and catalog prices.
 - Save company WhatsApp settings through authenticated RLS with a returned row; grant only the setting column and expose structural error codes, so denied/no-row writes cannot appear successful.
 - Pin the shared Edge Supabase client to the available npm version used by the app; floating JSR versions can reference unpublished dependencies and block deployments.
 - Authorize invitation and administration operations against RLS-readable role rows before loading privileged clients; company activation gates the existing tenant key and never grants platform-wide customer RLS access.

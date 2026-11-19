@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { json } from './cors.ts';
 import { autoSend } from './auto-send.ts';
+import { incomingAiSteps } from './reply-policy.ts';
 
 // The existing interpreter doubles as a secret-authenticated background dispatcher.
 export async function startMessageJob(req: Request): Promise<Response | null> {
@@ -25,7 +26,7 @@ export async function startMessageJob(req: Request): Promise<Response | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
-      for (const step of j.interpret ? ['interpret-request', 'write-reply'] : ['write-reply']) {
+      for (const step of incomingAiSteps()) {
         const res = await fetch(`${url}/functions/v1/${step}`, { method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-estim-job-secret': expected },
           body: JSON.stringify({ job_id: j.id, thread_id: j.thread_id }), signal: controller.signal });

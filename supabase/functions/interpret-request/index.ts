@@ -6,7 +6,7 @@
 // Body: { thread_id }. Company, catalog, customer and messages are loaded
 // from the database for the logged-in user's company (RLS applies).
 // Saves asks, facts, why and the interpretation on the thread, then builds
-// the quote in code when the recommended action is "offert".
+// the quote in code whenever at least one item matches the catalog.
 // Returns the interpretation plus validation warnings.
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     db.from("companies").select("hourly_rate_ex_vat,travel_fee").eq("id", companyId).single(),
     db.from("moments").select("id,name,unit,role,hours_per_unit,material_per_unit_ex_vat,rot_eligible").eq("company_id", companyId).eq("active", true),
     db.from("customers").select("name,place").eq("id", thread.data.customer_id).maybeSingle(),
-    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).order("sent_at"),
+    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).eq('delivery_status', 'sent').order("sent_at"),
   ]);
   if (company.error || moments.error || msgs.error || !msgs.data?.length) return json({ error: "Kunde inte läsa tråden" }, 400);
   await db.from("threads").update({ status: "analys" }).eq("id", threadId);
