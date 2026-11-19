@@ -19,24 +19,22 @@ export const sendMessage = createServerFn({ method: 'POST' }).middleware([requir
   .handler(async ({ data, context }) => {
     const db = context.supabase;
     const thread = await db.from('threads').select('company_id,customer_id,last_customer_wa_at').eq('id', data.id).single();
-    const draft = await db.from('drafts').select('channel,text').eq('thread_id', data.id).single();
-    if (!thread.data || !draft.data?.text.trim()) throw new Error('Skriv ett svar först.');
+    if (!thread.data) throw new Error('Förfrågan kunde inte läsas.');
     // RLS-readable thread and draft are verified before loading the privileged finaliser.
     const prepared = await db.rpc('estim_prepare_send', { tid: data.id });
     if (prepared.error || !prepared.data) throw new Error('Svaret kunde inte sparas. Försök igen.');
     const { supabaseAdmin: admin } = await import('@/integrations/supabase/client.server');
-    const [channel, customer] = await Promise.all([
-      db.from('channels').select('phone_number_id').eq('company_id', thread.data.company_id).eq('type', 'wa').maybeSingle(),
+    const [message, customer] = await Promise.all([
+      db.from('messages').select('channel,text').eq('id', prepared.data).eq('company_id', thread.data.company_id).single(),
       db.from('customers').select('phone').eq('id', thread.data.customer_id).single(),
     ]);
-    const delivered = await deliverChannel({ channel: draft.data.channel, text: draft.data.text,
+    const delivered = message.data ? await deliverChannel({ channel: message.data.channel ?? '', text: message.data.text,
       lastCustomerWaAt: thread.data.last_customer_wa_at, messageId: prepared.data,
       ...(process.env['SUPABASE_URL'] && process.env['INTERNAL_FUNCTION_KEY'] ? { emailTarget: `${process.env['SUPABASE_URL']}/functions/v1/email-send`, internalKey: process.env['INTERNAL_FUNCTION_KEY'] } : {}),
       ...(process.env['N8N_WA_SEND_URL'] ? { target: process.env['N8N_WA_SEND_URL'] } : {}),
       ...(process.env['N8N_SHARED_SECRET'] ? { secret: process.env['N8N_SHARED_SECRET'] } : {}),
-      ...(channel.data ? { phoneNumberId: channel.data.phone_number_id } : {}),
       ...(customer.data?.phone ? { to: customer.data.phone } : {}),
-    });
+    }) : { sent: false, error: 'Svaret kunde inte läsas. Försök igen.', providerId: null };
     const finished = await admin.rpc('estim_finish_send', { mid: prepared.data, delivered: delivered.sent,
       ...(delivered.error ? { failure: delivered.error } : {}), ...(delivered.providerId ? { provider_id: delivered.providerId } : {}) });
     if (finished.error) throw new Error('Kunde inte spara leveransstatus.');

@@ -26,7 +26,7 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
   if(!company.data?.active)throw new Error('Företaget är avaktiverat.');
   const channels = await db.from('channels').select('*').eq('company_id', cid);
   if (channels.error) throw new Error('Kunde inte läsa kanalerna.');
-  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [], channels: channels.data ?? [] };
+  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [], channels: channels.data ?? [], whatsAppSendingConnected: Boolean(process.env['N8N_WA_SEND_URL']?.trim()) };
 });
 export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 

@@ -51,6 +51,17 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
    expect((await b.client.rpc('estim_approve',{tid})).error).toBeNull();
    const audit=await b.client.from('audit_log').select('approved_name,after').eq('event','Svar godkänt');expect(audit.data?.[0]?.approved_name).toBe('R1 B');
    const message=await b.client.from('messages').select('approved_by,attachments').eq('thread_id',tid).eq('from','vv');expect(message.data?.[0]?.approved_by).toBe(users[1]);expect(message.data?.[0]?.attachments).toEqual([]);
+   // WhatsApp finalisation preserves failure status and saves the n8n acknowledgement on success.
+   expect((await b.client.from('threads').update({status:'oppnad'}).eq('id',tid)).error).toBeNull();
+   expect((await b.client.from('drafts').insert({company_id:b.id,thread_id:tid,text:'WhatsApp-test',channel:'wa',edited:true})).error).toBeNull();
+   const failed=await b.client.rpc('estim_prepare_send',{tid});expect(failed.error).toBeNull();
+   expect((await admin.rpc('estim_finish_send',{mid:failed.data,delivered:false,failure:'Testfel'})).error).toBeNull();
+   expect((await b.client.from('threads').select('status').eq('id',tid).single()).data?.status).toBe('oppnad');
+   expect((await b.client.from('drafts').select('text').eq('thread_id',tid).single()).data?.text).toBe('WhatsApp-test');
+   const sent=await b.client.rpc('estim_prepare_send',{tid});expect(sent.error).toBeNull();
+   expect((await admin.rpc('estim_finish_send',{mid:sent.data,delivered:true,provider_id:'n8n-message-id'})).error).toBeNull();
+   expect((await b.client.from('messages').select('delivery_status,provider_message_id').eq('id',sent.data).single()).data).toEqual({delivery_status:'sent',provider_message_id:'n8n-message-id'});
+   expect((await b.client.from('threads').select('status').eq('id',tid).single()).data?.status).toBe('skickad');
   } finally {
    for(const cid of companies){for(const table of ['company_invitations','audit_log','drafts','quotes','messages','threads','customers','moments','company_members'] as const)await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
    for(const cid of companies){const listed=await admin.storage.from('price-files').list(cid);if(listed.data?.length)await admin.storage.from('price-files').remove(listed.data.map(f=>`${cid}/${f.name}`));}

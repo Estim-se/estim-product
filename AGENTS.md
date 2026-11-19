@@ -48,6 +48,7 @@ use the editor.
 - AI steps run as Supabase Edge Functions (user-requested) that verify the JWT, resolve company_id from company_members and read/write under the user's RLS; quotes are built in code from the moments catalog and the server calc must match src/lib/quote.ts (parity test).
 - Price import uploads originals to the private `price-files` bucket under `<company_id>/`, reviews rows with pure helpers in `src/lib/price-import.ts`, and writes only via `estim_import_prices` on "Spara prislista"; this keeps AI suggestions out of the price list until approved and keeps each value's source.
 - Receive external channel messages through a secret-verified TanStack public route and atomic tenant-scoped ingestion; dispatch private durable AI jobs to the existing Edge worker so incoming requests return before Claude finishes.
+- WhatsApp delivery posts only digit-normalized to/text with x-estim-secret, requires ok:true/message_id, and displays persisted delivery errors; connection UI reads only a server-side configuration boolean so secrets remain private.
 - Separate incoming shared-secret authentication from private AI-job authentication; bind each AI job to its persisted company/thread and never accept company identity from untrusted payloads.
 - Log incoming-message failures with stage, database code and allowlisted validation fields only; request data and provider error text may contain personal data or secrets.
 

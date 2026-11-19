@@ -23,6 +23,6 @@ export function RealChannels() {
       <label className="field">WhatsApp phone_number_id<input className="input" inputMode="numeric" pattern="[0-9]{1,100}" required maxLength={100} value={number} onChange={e => setNumber(e.target.value)} /></label>
       <Button variant="prototype" className="btn btn-primary mt12" type="submit" disabled={busy}>{busy ? 'Sparar…' : 'Spara'}</Button>
     </form>{message && <p className="mt12" role="status">{message}</p>}
-    <p className="mt16 muted">WhatsApp-utskick är inte kopplat än</p>
+    <p className="mt16 muted">{workspace.data && 'whatsAppSendingConnected' in workspace.data && workspace.data.whatsAppSendingConnected ? 'WhatsApp-utskick är anslutet' : 'WhatsApp-utskick är inte kopplat än'}</p>
   </section><EmailChannelCard isOwner={workspace.data?.role==='ägare'}/></>;
 }

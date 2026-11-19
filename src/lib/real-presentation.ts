@@ -5,6 +5,7 @@ export function companyInitials(name: string) {
 }
 
 export function realSentStatus(thread: Thread): string[] {
+  if (thread.waSent) return ['Svar skickat', 'chip-line'];
   const sent = thread.msgs.filter(message => message.from !== 'kund' && message.from !== 'sys').at(-1);
   return [sent?.quote ? 'Offert skickad' : 'Svar skickat', 'chip-line'];
 }

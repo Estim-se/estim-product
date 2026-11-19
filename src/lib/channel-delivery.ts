@@ -12,19 +12,20 @@ export async function deliverChannel(input: DeliveryInput, request: typeof fetch
   if (input.channel !== 'wa') return { sent: true, error: null, providerId: null };
   const fail = (error: string) => ({ sent: false, error, providerId: null });
   if (!input.target) return fail('WhatsApp-utskick är inte kopplat än');
-  if (!waWindowOpen(input.lastCustomerWaAt)) return fail('Utanför 24 h: skickas som godkänd mall');
-  if (!input.secret || !input.phoneNumberId || !input.to) return fail('WhatsApp-kanalen är inte ansluten.');
+  if (!waWindowOpen(input.lastCustomerWaAt)) return fail('WhatsApp-svaret kunde inte skickas: kunden måste skriva igen eftersom mer än 24 timmar har gått.');
+  const to = input.to?.replace(/\D/g, '');
+  if (!input.secret || !to) return fail('WhatsApp-kanalen eller kundens telefonnummer saknas.');
   try {
     if (new URL(input.target).protocol !== 'https:') throw new Error('Invalid URL');
     const response = await request(input.target, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-estim-secret': input.secret },
-      body: JSON.stringify({ phone_number_id: input.phoneNumberId, to: input.to, text: input.text }),
+      body: JSON.stringify({ to, text: input.text }),
       signal: AbortSignal.timeout(20000), redirect: 'error',
     });
     if (!response.ok) throw new Error('Delivery failed');
     const result = await response.json();
-    const providerId: unknown = result.provider_message_id ?? result.message_id ?? result.id;
-    if (result.ok === false || typeof providerId !== 'string' || !providerId) throw new Error('Missing message id');
+    const providerId: unknown = result.message_id;
+    if (result.ok !== true || typeof providerId !== 'string' || !providerId.trim()) throw new Error('Missing message id');
     return { sent: true, error: null, providerId };
   } catch { return fail('WhatsApp-svaret kunde inte skickas. Försök igen.'); }
 }
@@ -33,10 +34,12 @@ export async function deliverChannel(input: DeliveryInput, request: typeof fetch
 // the behaviour is unchanged: e-mail is saved without external delivery.
 async function deliverEmail(input: DeliveryInput, request: typeof fetch) {
   const fail = (error: string) => ({ sent: false, error, providerId: null });
+  const { emailTarget, internalKey } = input;
+  if (!emailTarget || !internalKey) return fail('E-post är inte ansluten. Anslut e-post under Kanaler.');
   try {
-    if (new URL(input.emailTarget!).protocol !== 'https:') throw new Error('Invalid URL');
-    const response = await request(input.emailTarget!, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-internal-key': input.internalKey! },
+    if (new URL(emailTarget).protocol !== 'https:') throw new Error('Invalid URL');
+    const response = await request(emailTarget, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-internal-key': internalKey },
       body: JSON.stringify({ message_id: input.messageId }), signal: AbortSignal.timeout(30000), redirect: 'error',
     });
     const result = await response.json().catch(() => null);

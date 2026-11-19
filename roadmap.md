@@ -1,11 +1,11 @@
 # Prototype rebuild
 
-- [ ] WhatsApp sending: exact n8n request/acknowledgement, saved provider ID, persistent thread errors, connection indicator, regression checks and publication.
+- [x] WhatsApp sending: exact n8n request/acknowledgement, saved provider ID, persistent thread errors and configuration-based connection indicator; 120 tests and preview build pass, including live finalisation/isolation. Signed-in customer delivery is unverified on external Supabase; publication requested.
 
 - [x] Nylas merge checklist: all seven paths and merge confirmed; deployed functions untouched; requested notes and URL secrets saved; 115 application tests and 12 mail tests passed; application typecheck/build passed. Existing EdgeRuntime check error is reported without changing functions.
 
 - [x] Shared channels: secret-verified incoming endpoint, atomic deduplication/company routing, shared background AI and manual requests.
-- [x] Shared channels: approval delivery adapters, WhatsApp 24-hour window and real-mode channel settings; delivery URL remains intentionally unset.
+- [x] Shared channels: approval delivery adapters, WhatsApp 24-hour window and real-mode channel settings; delivery URL is configured securely.
 - [x] Shared channels: saved shared secret; live wrong-secret/WhatsApp/duplicate/AI-draft checks passed.
 - [ ] Shared channels: signed-in channel settings and approval UI verification — external Supabase cannot mint a preview session.
 - [x] Shared channels final audit: delivery adapter tests cover all channels, failed delivery and the 24-hour cutoff; AI startup failures preserve a manual draft and displayed endpoint follows the app origin.
