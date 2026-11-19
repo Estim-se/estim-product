@@ -67,6 +67,7 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          incoming_message_id: string | null
           interpret: boolean
           state: string
           thread_id: string
@@ -76,6 +77,7 @@ export type Database = {
           company_id: string
           created_at?: string
           id?: string
+          incoming_message_id?: string | null
           interpret?: boolean
           state?: string
           thread_id: string
@@ -85,6 +87,7 @@ export type Database = {
           company_id?: string
           created_at?: string
           id?: string
+          incoming_message_id?: string | null
           interpret?: boolean
           state?: string
           thread_id?: string
@@ -96,6 +99,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_jobs_incoming_message_id_fkey"
+            columns: ["incoming_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
@@ -944,6 +954,7 @@ export type Database = {
         Returns: undefined
       }
       estim_onboard: { Args: { payload: Json }; Returns: string }
+      estim_prepare_auto_send: { Args: { jid: string }; Returns: string }
       estim_prepare_send: { Args: { tid: string }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
       estim_receive: {
