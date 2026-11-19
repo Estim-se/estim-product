@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Company-wide WhatsApp auto-reply: default-off company setting, inherited new threads and explicit per-thread on/off overrides; preserve delivery safeguards and receive-message, test and publish.
+
 - [x] Automatic WhatsApp replies: per-thread opt-in, shared delivery adapter, durable provider-message reservation, AI attribution and retained failed drafts; 122 app tests and 12 mail tests pass, including live isolation/reservation and deployed AI-to-failure flow; preview build and desktop/narrow demo checks pass. Receive-message and demo logic unchanged.
 - [ ] Automatic WhatsApp replies: signed-in UI/customer delivery verification — external Supabase does not allow a preview session to be minted; user must test their WhatsApp thread.
 
