@@ -3,7 +3,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 
-async function call<T>(name: string, body: unknown): Promise<T> {
+async function call<T>(name: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
   if (error) throw new Error(`${name}: ${error.message}`);
   if (data?.error) throw new Error(`${name}: ${data.error}`);
@@ -14,7 +14,7 @@ async function call<T>(name: string, body: unknown): Promise<T> {
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
     r.onerror = () => reject(new Error("Kunde inte läsa filen"));
     r.readAsDataURL(file);
   });

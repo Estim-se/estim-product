@@ -8,7 +8,8 @@ const API_VERSION = "2023-06-01";
 
 // Models can be overridden with secrets, so we can switch without a deploy.
 export const MODELS = {
-  main: Deno.env.get("ANTHROPIC_MODEL_MAIN") ?? "claude-sonnet-5-5",
+  // claude-sonnet-5-5 rejects forced tool_choice, so the main default is claude-sonnet-5.
+  main: Deno.env.get("ANTHROPIC_MODEL_MAIN") ?? "claude-sonnet-5",
   fast: Deno.env.get("ANTHROPIC_MODEL_FAST") ?? "claude-haiku-5-5",
 };
 

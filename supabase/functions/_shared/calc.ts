@@ -56,7 +56,7 @@ export function calc(q: Quote, withAdd?: boolean): CalcResult {
   return { lines, exkl, moms: inkl - exkl, inkl: inklR, arb, mat, av: avR, betala: inklR - avR, rotCapped: rotRaw > cap };
 }
 
-export function calcAdd(q: Quote): { inkl: number; av: number; betala: number; name?: string } | null {
+export function calcAdd(q: Quote): { inkl: number; av: number; betala: number; name?: string | undefined } | null {
   const A = q.lines.filter((l) => l.opt);
   if (!A.length) return null;
   let ex = 0, rb = 0;
@@ -66,7 +66,7 @@ export function calcAdd(q: Quote): { inkl: number; av: number; betala: number; n
   }
   const inkl = Math.round(ex * (1 + RULES.vat));
   const av = Math.round(rb * (1 + RULES.vat) * RULES.rotPct);
-  return { inkl, av, betala: inkl - av, name: A[0].t };
+  return { inkl, av, betala: inkl - av, name: A[0]?.t };
 }
 
 /** Same formatting as the prototype: "28 900 kr". */

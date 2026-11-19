@@ -1,5 +1,8 @@
 # Prototype rebuild
 
+- [x] R2: Claude edge functions with JWT/company checks, code-built quotes, guarded drafts, composer variants/warnings/regeneration; calc parity tests pass; Maria request run through Claude with farax catalog.
+- [ ] R2: signed-in in-app run of the full flow — cannot sign in to the external Supabase from here; user to test via Ny förfrågan.
+
 - [x] R1b: real-mode password/recovery screens, invitation-bound acceptance, seven-day application invitation expiry and global logout with session validity checks.
 - [x] R1b: server-authorized platform administration and owner team management; atomic owner checks, last-owner protection, immutable audit history, activation-only admin rights and unchanged tenant isolation.
 - [x] R1b: 77 tests passed, including live two-company isolation, expired/revoked/single-use invitations, role denials, last-owner and revoked-session checks; real password-login owner/admin desktop and phone flows verified.
