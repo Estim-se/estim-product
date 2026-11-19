@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Complete paginated, tenant-scoped chronological customer/manual/automatic history in interpretation and replies; write-reply@6 checks unchanged sent prices and prompts against already-answered questions. 146 app tests and 12 mail tests pass; deployed disposable manual/AI histories verify earlier answers, no repeated unchanged prices and explicit price reminders. Intake/delivery/demo unchanged; publication requested. Signed-in customer UI verification remains unavailable on external Supabase.
+
 - [x] Reverified deployed WhatsApp pricing in standard/short/formal variants, short acknowledgement one turn later and structural-risk visit suggestion; made ROT explicitly conditional and removed forced repeat estimates for acknowledgements. 138 app tests pass; desktop/phone public views checked in the single theme, build passes. Signed-in real-mode browser access remains unavailable on external Supabase; no customer delivery attempted.
 
 - [x] Update real AI pricing and WhatsApp conversation style for drafts and automatic replies: refreshed follow-up interpretation, code-derived ±10% estimate ranges with VAT/ROT, selective questions/visits and first-reply-only greeting/signature. 137 app tests and 12 mail tests pass, including company isolation; deployed greeting-to-eight-spots flow with farax catalog/rates passed without delivery, and preview build passes. Intake and delivery untouched; signed-in browser/customer-delivery checks unavailable on external Supabase.

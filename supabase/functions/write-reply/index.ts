@@ -19,6 +19,7 @@ import { WRITE_REPLY_TOOL, WRITE_REPLY_VERSION, writeReplySystem } from "../_sha
 import { calc, type Quote } from "../_shared/calc.ts";
 import { factSheet, findUnknownAmounts, usesFixedPriceWording } from "../_shared/amounts.ts";
 import { continueReply, firstCompanyReply, visitNeeded, priceNeeded } from '../_shared/reply-policy.ts';
+import { loadConversation, formatConversation } from '../_shared/conversation.ts';
 
 interface Reply { text: string; why: string; answered_questions: string[] }
 
@@ -33,7 +34,7 @@ Deno.serve(async (req) => {
   const [company, customer, msgs, q, draft] = await Promise.all([
     db.from("companies").select("name,signature").eq("id", companyId).single(),
     db.from("customers").select("name").eq("id", threadRow.data.customer_id).maybeSingle(),
-    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).eq("delivery_status", "sent").order("sent_at"),
+    loadConversation(db, threadId, companyId).then(data => ({ data, error: null })).catch(() => ({ data: null, error: true })),
     db.from("quotes").select("nr,owners,add_on,prisform,lines").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle(),
     db.from("drafts").select("channel,variant,attachments").eq("thread_id", threadId).maybeSingle(),
   ]);
@@ -57,6 +58,7 @@ Deno.serve(async (req) => {
   const channel = body.channel ?? "email";
   const firstReply = firstCompanyReply(body.messages);
   const needsVisit = visitNeeded(body.interpretation);
+  const needsPrice = priceNeeded(body.messages, quote);
   const system = writeReplySystem({
     companyName: body.company.name,
     signature: body.company.signature ?? body.company.name,
@@ -66,17 +68,15 @@ Deno.serve(async (req) => {
     firstReply,
   });
 
-  const thread = body.messages
-    .map((m: { from: string; text: string; time?: string }) =>
-      `[${m.from === "kund" ? "Kund" : "Firman"}${m.time ? " " + m.time : ""}]\n${m.text}`)
-    .join("\n\n");
+  const thread = formatConversation(body.messages);
   const i = body.interpretation;
   const context = [
     `KUND: ${body.customer?.first_name ?? ""}`,
+    `PRIS NU: ${needsPrice ? 'Ge första eller ändrade priset, eller besvara kundens prisfråga, om kalkyl finns.' : 'Kunden har redan fått detta pris. Upprepa inte beloppen; svara bara på det nya meddelandet.'}`,
     quote ? `FAKTA (offert #${quote.nr}, enda tillåtna belopp):\n${factSheet(quote)}` : "FAKTA: Ingen offert ännu. Nämn inga belopp.",
     quote ? `OFFERTRADER:\n${quote.lines.map((l) => `- ${l.t}${l.opt ? " (tillval)" : ""}`).join("\n")}` : "",
     i?.customer_questions?.length ? `KUNDENS FRÅGOR:\n${i.customer_questions.map((q: { question: string }) => "- " + q.question).join("\n")}` : "",
-    i?.follow_up_questions?.length ? `MÖJLIGA PRISAVGÖRANDE FÖLJDFRÅGOR (välj bara obesvarade):\n${i.follow_up_questions.slice(0, body.variant === 'kort' ? 1 : 2).map((q: string) => "- " + q).join("\n")}` : "",
+    i?.follow_up_questions?.length ? `MÖJLIGA PRISAVGÖRANDE FÖLJDFRÅGOR (kontrollera hela konversationen först; välj högst ${body.variant === 'kort' ? 1 : 2} faktiskt obesvarade):\n${i.follow_up_questions.map((q: string) => "- " + q).join("\n")}` : "",
     i?.risks?.length ? `RISKER:\n${i.risks.map((r: { text: string }) => "- " + r.text).join("\n")}` : "",
     i?.assumptions?.length ? `ANTAGANDEN:\n${i.assumptions.map((a: string) => "- " + a).join("\n")}` : "",
     i?.recommended_action ? `REKOMMENDATION: ${({ offert: "offert", fragor: "följdfrågor", platsbesok: "platsbesök" } as Record<string, string>)[i.recommended_action] ?? i.recommended_action}` : "",
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       ...(body.attachments?.length ? ["Bifogade dokument: " + body.attachments.join(", ")] : []),
     ].map((x) => "- " + x).join("\n")}`,
     body.suggested_times?.length ? `LEDIGA TIDER FÖR PLATSBESÖK: ${body.suggested_times.join(" eller ")}` : "",
-    `KONVERSATION:\n${thread}`,
+    `HELA KONVERSATIONEN I TIDSORDNING (kund och faktiskt skickade svar, manuella och automatiska):\n${thread}`,
     "Skriv nästa svar från firman.",
   ].filter(Boolean).join("\n\n");
 
@@ -111,8 +111,9 @@ Deno.serve(async (req) => {
       }
       const questions = (last.data.text.match(/\?/g) ?? []).length;
       if (questions > (body.variant === 'kort' ? 1 : 2)) problems.push('För många följdfrågor: välj bara de viktigaste som ändrar priset');
-      if (priceNeeded(body.messages) && quote && calc(quote).inkl > 0 && !/\d[\d\s–—-]*\s*(?:kr|kronor)/i.test(last.data.text)) problems.push('Pris saknas: ge priset från FAKTA nu');
-      if (priceNeeded(body.messages) && quote && !fixedPrice && !/\d[^\n]*[–—-][^\n]*\d/.test(last.data.text)) problems.push('Prisintervall saknas: använd båda ändpunkterna från PRISINTERVALL');
+      if (needsPrice && quote && calc(quote).inkl > 0 && !/\d[\d\s–—-]*\s*(?:kr|kronor)/i.test(last.data.text)) problems.push('Pris saknas: ge priset från FAKTA nu');
+      if (needsPrice && quote && !fixedPrice && !/\d[^\n]*[–—-][^\n]*\d/.test(last.data.text)) problems.push('Prisintervall saknas: använd båda ändpunkterna från PRISINTERVALL');
+      if (!needsPrice && /\d\s*(?:kr\b|kronor|:-)/i.test(last.data.text)) problems.push('Priset är redan skickat och oförändrat: upprepa inte beloppen');
       if (!needsVisit && /platsbesök/i.test(last.data.text)) problems.push('Inget platsbesök för det här jobbet');
       if (!problems.length) break;
       messages.push(

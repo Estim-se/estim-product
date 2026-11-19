@@ -16,6 +16,7 @@ import { requireCompany } from "../_shared/auth.ts";
 import { buildQuoteLines } from "../_shared/build-quote.ts";
 import { INTERPRET_SYSTEM, INTERPRET_TOOL, INTERPRET_VERSION } from "../_shared/prompts.ts";
 import { startMessageJob } from '../_shared/message-job.ts';
+import { loadConversation, formatConversation } from '../_shared/conversation.ts';
 
 interface Interpretation {
   job_title: string; place: string | null;
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
     db.from("companies").select("hourly_rate_ex_vat,travel_fee").eq("id", companyId).single(),
     db.from("moments").select("id,name,unit,role,hours_per_unit,material_per_unit_ex_vat,rot_eligible").eq("company_id", companyId).eq("active", true),
     db.from("customers").select("name,place").eq("id", thread.data.customer_id).maybeSingle(),
-    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).eq('delivery_status', 'sent').order("sent_at"),
+    loadConversation(db, threadId, companyId).then(data => ({ data, error: null })).catch(() => ({ data: null, error: true })),
   ]);
   if (company.error || moments.error || msgs.error || !msgs.data?.length) return json({ error: "Kunde inte läsa tråden" }, 400);
   await db.from("threads").update({ status: "analys" }).eq("id", threadId);
@@ -59,15 +60,12 @@ Deno.serve(async (req) => {
   const catalogText = body.catalog
     .map((m: { id: string; name: string; unit: string; role?: string }) => `${m.id} | ${m.name} | ${m.unit}${m.role ? " | " + m.role : ""}`)
     .join("\n");
-  const threadText = body.messages
-    .map((m: { from: string; text: string; time?: string }) =>
-      `[${m.from === "kund" ? "Kund" : "Firman"}${m.time ? " " + m.time : ""}]\n${m.text}`)
-    .join("\n\n");
+  const threadText = formatConversation(body.messages);
 
   const content: ContentBlock[] = [];
   content.push({
     type: "text",
-    text: `MOMENTKATALOG (id | namn | enhet | roll):\n${catalogText}\n\nKUND: ${body.customer?.name ?? "okänd"}${body.customer?.housing ? ", " + body.customer.housing : ""}\n\nKONVERSATION:\n${threadText}`,
+    text: `MOMENTKATALOG (id | namn | enhet | roll):\n${catalogText}\n\nKUND: ${body.customer?.name ?? "okänd"}${body.customer?.housing ? ", " + body.customer.housing : ""}\n\nHELA KONVERSATIONEN I TIDSORDNING:\n${threadText}\n\nBehåll tidigare bekräftade kunduppgifter om kunden inte korrigerat dem. Kundens senaste besked gäller vid ändringar. Ta aldrig med följdfrågor som kunden redan har besvarat någonstans i konversationen. Firmans antaganden är inte kundbekräftelser.`,
   });
 
   try {

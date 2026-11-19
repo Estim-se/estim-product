@@ -48,4 +48,18 @@ describe('real AI estimate and conversation rules', () => {
     expect(priceNeeded([{ from: 'kund', text: 'Tack!' }])).toBe(false);
     expect(priceNeeded([{ from: 'kund', text: 'Vad kostar två extra uttag?' }])).toBe(true);
   });
+  for (const from of ['vv', 'ai']) {
+    it(`does not repeat an unchanged estimate previously sent by ${from}`, () => {
+      expect(priceNeeded([{ from, text: 'Ca 6 419–7 706 kr inkl. moms, 5 356–6 407 kr efter ROT.' }, { from: 'kund', text: 'Befintlig kabel och dosor kan användas.' }], quote)).toBe(false);
+    });
+  }
+  it('gives the price again when the customer asks about it', () => {
+    expect(priceNeeded([{ from: 'vv', text: 'Ca 6 419–7 706 kr.' }, { from: 'kund', text: 'Vad var priset efter ROT?' }], quote)).toBe(true);
+  });
+  it('gives an updated estimate when the calculated total actually changes', () => {
+    expect(priceNeeded([{ from: 'ai', text: 'Ca 6 419–7 706 kr.' }, { from: 'kund', text: 'Lägg till fyra till.' }], { ...quote, lines: lines.map(line => ({ ...line, q: line.q * 2 })) })).toBe(true);
+  });
+  it('keeps an unchanged manually quoted fixed total without repeating it', () => {
+    expect(priceNeeded([{ from: 'vv', text: 'Fast pris 7 063 kr.' }, { from: 'kund', text: 'Det är på bottenvåningen.' }], { ...quote, prisform: 'fast' })).toBe(false);
+  });
 });

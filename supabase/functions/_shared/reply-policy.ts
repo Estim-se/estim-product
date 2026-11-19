@@ -16,9 +16,24 @@ export function firstCompanyReply(messages: { from: string }[]): boolean {
   return !messages.some(message => message.from !== 'kund');
 }
 
-// Acknowledgements do not need another estimate; substantive job details still do.
-export function priceNeeded(messages: { from: string; text: string }[]): boolean {
+// Only require a first/changed estimate or an explicit customer price question.
+export function priceNeeded(messages: { from: string; text: string }[], quote?: Quote | null): boolean {
   const latest = messages.filter(message => message.from === 'kund').at(-1)?.text.trim() ?? '';
+  if (/(?:pris|kost(?:ar|nad)|hur mycket|vad blir|ROT|avdrag|att betala|price|cost)/i.test(latest)) return true;
+  const previous = messages.filter(message => ['vv', 'ai'].includes(message.from)).reverse()
+    .find(message => /\d\s*(?:kr\b|kronor|:-)/i.test(message.text));
+  if (previous) {
+    if (!quote) return false;
+    const amounts = [...previous.text.matchAll(/(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)\s*(?:kr\b|kronor|:-|(?=[–—-]\s*\d))/gi)]
+      .map(match => Number(match[1]?.replace(/[ \u00a0\u202f]/g, '')));
+    const current = calc(quote);
+    const { low, high } = estimateRange(quote);
+    const has = (value: number) => amounts.some(amount => Math.abs(amount - value) <= 1);
+    // Compare the quoted total/range, not incidental line prices or ROT caps.
+    return quote.prisform === 'fast' ? !has(current.inkl) :
+      !(has(low.inkl) && has(high.inkl) || has(current.inkl)) ||
+      (/ROT|avdrag/i.test(previous.text) && current.av > 0 && !(has(low.betala) && has(high.betala) || has(current.betala)));
+  }
   return !/^(?:tack(?: så mycket)?|toppen|perfekt|okej|ok|ja|nej|bra|det låter bra|det blir bra)[\s!.]*$/i.test(latest);
 }
 
