@@ -7,6 +7,14 @@ import { finishEmailConnect } from '@/lib/email-client';
 // Landing page after the mailbox login at Google/Microsoft. A top-level path on purpose: /kanaler has no <Outlet/>,
 // so a child route under it would never render.
 export const Route = createFileRoute('/epost-klar')({
+  head: () => ({ meta: [
+    { title: 'estim · Anslut e-post' },
+    { name: 'description', content: 'Slutför anslutningen av din brevlåda till estim.' },
+    { property: 'og:title', content: 'estim · Anslut e-post' },
+    { property: 'og:description', content: 'Slutför anslutningen av din brevlåda till estim.' },
+    { property: 'og:type', content: 'website' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+  ] }),
   component: () => <PrototypePageShell><EmailDone /></PrototypePageShell>,
 });
 

@@ -50,3 +50,15 @@ use the editor.
 - Receive external channel messages through a secret-verified TanStack public route and atomic tenant-scoped ingestion; dispatch private durable AI jobs to the existing Edge worker so incoming requests return before Claude finishes.
 - Separate incoming shared-secret authentication from private AI-job authentication; bind each AI job to its persisted company/thread and never accept company identity from untrusted payloads.
 - Log incoming-message failures with stage, database code and allowlisted validation fields only; request data and provider error text may contain personal data or secrets.
+
+Email (Nylas): Nylas notifications arrive at the nylas-webhook edge function (verify_jwt = false; the HMAC over the raw, possibly gzipped bytes is the authentication).
+
+Received mail is stored through the existing estim_receive (same path as other channels), which queues the AI job; the webhook then starts it through interpret-request with {start_job} and x-estim-job-secret.
+
+triage-email may be called in system mode (requireSystem in _shared/system-auth.ts, header x-internal-key = INTERNAL_FUNCTION_KEY, company id from our own database); no other AI function has system mode and _shared/auth.ts is not changed for mail.
+
+Approved e-mail replies are delivered by deliverChannel -> the email-send edge function (internal key; recipient always from the database; escaped HTML from mail-format.ts); delivery status is saved by estim_finish_send and by Nylas status events.
+
+Received attachments (PDF/images, max 10 MB) are stored in the private bucket mail-attachments and referenced from messages.attachment_files.
+
+A notification mail (link only, no customer text) is sent when the AI job is done. The model only writes drafts.
