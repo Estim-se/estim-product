@@ -5,6 +5,7 @@ import { receiveMessageUrl } from '@/lib/channel-rules';
 import { Button } from '@/components/ui/button';
 import { TopHeader } from './top-header';
 import { useWorkspace } from './workspace-provider';
+import { EmailChannelCard } from './email-channel-card';
 
 export function RealChannels() {
   const workspace = useWorkspace();
@@ -23,5 +24,5 @@ export function RealChannels() {
       <Button variant="prototype" className="btn btn-primary mt12" type="submit" disabled={busy}>{busy ? 'Sparar…' : 'Spara'}</Button>
     </form>{message && <p className="mt12" role="status">{message}</p>}
     <p className="mt16 muted">WhatsApp-utskick är inte kopplat än</p>
-  </section><section className="mt24"><h2>Inkommande e-post</h2><p className="mt8">{workspace.data?.company?.inbound_address}</p><span className="chip chip-line mt12">Inte ansluten</span></section></>;
+  </section><EmailChannelCard isOwner={workspace.data?.role==='ägare'}/></>;
 }

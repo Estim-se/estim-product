@@ -1,0 +1,139 @@
+// The part of "receive mail" after Nylas has delivered and we fetched the message:
+//   duplicate check -> flood guard -> triage (existing AI function, new threads only) -> save attachments
+//   -> estim_receive (the existing function that creates customer, thread, message, draft and the AI job)
+//   -> AFTER the answer to Nylas: start the existing AI job (interpret-request + write-reply), then the notification mail.
+// The AI steps themselves are the other developer's Edge Functions and are only called over HTTP.
+
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
+import { callAiFunction, dispatchAiJob, isNoReplySender, optNumber, sha256Hex } from "./nylas.ts";
+import { notifyDraftReady } from "./notify.ts";
+import { pickAttachments, safeFileName } from "./mail-format.ts";
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const AI_FAIL_TEXT = "AI kunde inte svara just nu";
+
+export interface InboundAttachmentIn { name: string; type: string; size: number; load: () => Promise<Uint8Array> }
+export interface InboundMail {
+  companyId: string;
+  messageKey: string;               // the Nylas message id: unique per mail, identical on provider retries
+  fromEmail: string; fromName: string | null;
+  subject: string; text: string;    // text is already cleaned and cut
+  ts: number | null;
+  attachments: InboundAttachmentIn[];
+}
+export interface Outcome { retry?: boolean; after?: () => Promise<void> }
+
+interface Triage {
+  category: "forfragan" | "svar" | "ovrigt"; is_form_mail: boolean;
+  customer: { name: string | null; email: string | null; phone: string | null };
+}
+
+export async function aiAllowed(db: SupabaseClient, companyId: string): Promise<boolean> {
+  if (Deno.env.get("AI_ENABLED") === "false") return false;
+  const since = new Date(Date.now() - 86_400_000).toISOString();
+  const used = await db.from("ai_calls").select("id", { count: "exact", head: true }).eq("company_id", companyId).gte("created_at", since);
+  return (used.count ?? 0) < optNumber("AI_DAILY_CAP", 150);
+}
+
+/** Does this sender already have an open mail thread? Then the mail is a continuation and needs no triage. */
+async function hasOpenThread(db: SupabaseClient, companyId: string, email: string): Promise<boolean | null> {
+  const pattern = email.replace(/[\\%_]/g, (c) => "\\" + c); // exact match, case-insensitive
+  const customers = await db.from("customers").select("id").eq("company_id", companyId).ilike("email", pattern).limit(5);
+  if (customers.error) return null;
+  const ids = (customers.data ?? []).map((c: { id: string }) => c.id);
+  if (!ids.length) return false;
+  const threads = await db.from("threads").select("id").eq("company_id", companyId).eq("channel", "email")
+    .in("customer_id", ids).not("status", "in", "(vunnen,stangd)").limit(1);
+  if (threads.error) return null;
+  return (threads.data ?? []).length > 0;
+}
+
+async function failJob(db: SupabaseClient, companyId: string, threadId: string, jobId: string) {
+  await db.from("ai_jobs").update({ state: "failed" }).eq("id", jobId);
+  await db.from("drafts").update({ text: "", warnings: [AI_FAIL_TEXT], needs_review: true }).eq("thread_id", threadId).eq("company_id", companyId);
+  await db.from("threads").update({ status: "svar" }).eq("id", threadId).eq("company_id", companyId);
+}
+
+export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: string): Promise<Outcome> {
+  const companyId = mail.companyId;
+
+  const dup = await db.from("messages").select("id").eq("company_id", companyId).eq("channel", "email").eq("provider_message_id", mail.messageKey).maybeSingle();
+  if (dup.error) return { retry: true };
+  if (dup.data) return {};
+
+  // Flood guard: many mails in an hour never turn into many AI calls or threads.
+  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const inbound = await db.from("messages").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("from", "kund").eq("channel", "email").gte("created_at", hourAgo);
+  if ((inbound.count ?? 0) >= optNumber("EMAIL_INBOUND_HOURLY_CAP", 60)) { console.info(`[${tag}] skipped message: inbound_rate_limited`); return {}; }
+
+  const known = await hasOpenThread(db, companyId, mail.fromEmail);
+  if (known === null) return { retry: true };
+
+  let customer: { email?: string; name?: string; phone?: string } = {};
+  const noReply = isNoReplySender(mail.fromEmail);
+  if (!known && await aiAllowed(db, companyId)) {
+    try {
+      const triage = await callAiFunction<Triage>("triage-email", companyId, { from: mail.fromEmail, subject: mail.subject, text: mail.text }, 60_000);
+      if (triage.category === "ovrigt") { console.info(`[${tag}] skipped message: triage_other`); return {}; }
+      const found = triage.customer?.email?.trim().toLowerCase();
+      if ((triage.is_form_mail || noReply) && found && EMAIL_RE.test(found)) {
+        customer = { email: found, ...(triage.customer.name ? { name: triage.customer.name } : {}), ...(triage.customer.phone ? { phone: triage.customer.phone } : {}) };
+      }
+    } catch { /* triage unavailable: keep the mail rather than lose a customer */ }
+  }
+  if (!known && noReply && !customer.email) { console.info(`[${tag}] skipped message: no_reply_address`); return {}; }
+
+  // Attachments: only PDF and images, size limited, saved in the private bucket. The AI developer reads them from there.
+  const files: { name: string; type: string; size: number; path: string }[] = [];
+  const { kept, dropped } = pickAttachments(mail.attachments);
+  if (dropped > 0) console.info(`[${tag}] attachments dropped: ${dropped}`);
+  const folder = `${companyId}/inbox/${(await sha256Hex(mail.messageKey)).slice(0, 24)}`;
+  for (const [i, a] of kept.entries()) {
+    try {
+      const bytes = await a.load();
+      if (bytes.length === 0 || bytes.length > 10 * 1024 * 1024) continue; // the declared size is never trusted
+      const path = `${folder}/${i + 1}-${safeFileName(a.name)}`;
+      const up = await db.storage.from("mail-attachments").upload(path, bytes, { contentType: a.type.split(";")[0]!.trim(), upsert: true });
+      if (up.error) { console.error(`[${tag}] attachment upload failed`); continue; }
+      files.push({ name: a.name.slice(0, 120), type: a.type.split(";")[0]!.trim().toLowerCase(), size: bytes.length, path });
+    } catch { console.error(`[${tag}] attachment fetch failed`); } // the mail is still stored without it
+  }
+
+  // The existing receive function: customer, thread, message, empty draft and the queued AI job, in one transaction.
+  const payload = {
+    channel: "email", customer_email: customer.email ?? mail.fromEmail, text: mail.text, provider_message_id: mail.messageKey,
+    ...(customer.name ?? mail.fromName ? { customer_name: (customer.name ?? mail.fromName)!.slice(0, 200) } : {}),
+    ...(customer.phone ? { customer_phone: customer.phone.slice(0, 100) } : {}),
+    ...(mail.ts != null ? { sent_at: new Date(mail.ts * 1000).toISOString() } : {}),
+    job: (mail.subject || "E-postförfrågan").slice(0, 120),
+  };
+  const stored = await db.rpc("estim_receive", { cid: companyId, payload });
+  if (stored.error) {
+    // Invalid or inactive: acknowledge (a retry would fail the same way). Anything else is transient.
+    if (/Invalid message|Inactive company/.test(stored.error.message)) { console.error(`[${tag}] receive rejected`); return {}; }
+    console.error(`[${tag}] receive failed`); return { retry: true };
+  }
+  const result = stored.data as { duplicate?: boolean; id?: string; job_id?: string } | null;
+  if (!result || result.duplicate || !result.id || !result.job_id) return {};
+  const threadId = result.id, jobId = result.job_id;
+
+  // Mail-only columns on the message that estim_receive just created.
+  const names = files.map((f) => f.name);
+  const extra = await db.from("messages").update({ attachments: names, attachment_files: files, email_subject: mail.subject.slice(0, 300) })
+    .eq("company_id", companyId).eq("channel", "email").eq("provider_message_id", mail.messageKey);
+  if (extra.error) console.error(`[${tag}] could not save attachment info`);
+
+  return {
+    after: async () => {
+      if (!(await aiAllowed(db, companyId))) { await failJob(db, companyId, threadId, jobId); return; }
+      try { await dispatchAiJob(jobId); } catch { await failJob(db, companyId, threadId, jobId); return; }
+      // The job runs in the background: wait for it, then notify (once) when the draft is ready.
+      for (let i = 0; i < 28; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const job = await db.from("ai_jobs").select("state").eq("id", jobId).maybeSingle();
+        if (job.data?.state === "done") { await notifyDraftReady(db, companyId, threadId, jobId); return; }
+        if (job.data?.state === "failed") return;
+      }
+    },
+  };
+}

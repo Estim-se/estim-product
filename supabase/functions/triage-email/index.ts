@@ -16,6 +16,7 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { AiError, callClaudeTool, MODELS } from "../_shared/anthropic.ts";
 import { logAiCall } from "../_shared/log.ts";
 import { requireCompany } from "../_shared/auth.ts";
+import { requireSystem } from "../_shared/system-auth.ts";
 import { TRIAGE_SYSTEM, TRIAGE_TOOL, TRIAGE_VERSION } from "../_shared/prompts.ts";
 
 interface Triage {
@@ -26,7 +27,9 @@ interface Triage {
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req); if (pre) return pre;
-  const auth = await requireCompany(req); if (auth instanceof Response) return auth;
+  // Mail flow: the webhook calls this function in system mode (internal key); everyone else must be a logged-in user.
+  const system = await requireSystem(req);
+  const auth = system ?? await requireCompany(req); if (auth instanceof Response) return auth;
   const raw = await req.json().catch(() => null);
   // company_id always comes from the verified membership, never the body.
   const body = raw ? { ...raw, company_id: auth.companyId } : null;
