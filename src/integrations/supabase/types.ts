@@ -809,6 +809,15 @@ export type Database = {
       }
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_finish_send: {
+        Args: {
+          delivered: boolean
+          failure?: string
+          mid: string
+          provider_id?: string
+        }
+        Returns: undefined
+      }
       estim_import_prices: { Args: { payload: Json }; Returns: number }
       estim_job_quote: {
         Args: { cid: string; payload: Json; tid: string }
