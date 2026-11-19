@@ -1,5 +1,9 @@
 # Prototype rebuild
 
+- [ ] Shared channels: secure incoming endpoint, atomic deduplication/company routing, shared background AI and manual requests.
+- [ ] Shared channels: approval delivery adapters, WhatsApp 24-hour window and real-mode channel settings.
+- [ ] Shared channels: request shared secret, test incoming/duplicate/failure flows and report endpoint.
+
 - [x] R2: Claude edge functions with JWT/company checks, code-built quotes, guarded drafts, composer variants/warnings/regeneration; calc parity tests pass; Maria request run through Claude with farax catalog.
 - [ ] R2: signed-in in-app run of the full flow — cannot sign in to the external Supabase from here; user to test via Ny förfrågan.
 
