@@ -8,15 +8,21 @@ export const Route = createFileRoute('/api/public/receive-message')({
     const supplied = request.headers.get('x-estim-secret') ?? '';
     if (!secret || Buffer.byteLength(supplied) !== Buffer.byteLength(secret) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
       return Response.json({ error: 'Åtkomst nekad.' }, { status: 401 });
+    let stage = 'body';
     try {
       const reader = request.body?.getReader(); let size = 0; const chunks: Uint8Array[] = [];
       if (!reader) return Response.json({ error: 'Ogiltigt meddelande.' }, { status: 400 });
       while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength;
         if (size > 150000) { await reader.cancel(); return Response.json({ error: 'Meddelandet är för stort.' }, { status: 413 }); } chunks.push(value); }
-      const input = parseIncoming(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      stage = 'validation';
+      const input = parseIncoming(body);
+      stage = 'channel';
       const { supabaseAdmin: db } = await import('@/integrations/supabase/client.server');
       const channel = await db.from('channels').select('company_id').eq('type', input.channel).eq('phone_number_id', input.phone_number_id).maybeSingle();
+      if (channel.error) throw channel.error;
       if (!channel.data) return Response.json({ error: 'Kanalen är inte ansluten.' }, { status: 404 });
+      stage = 'ingestion';
       const saved = await db.rpc('estim_receive', { cid: channel.data.company_id, payload: input });
       if (saved.error) throw saved.error;
       const result = saved.data as { duplicate?: boolean; job_id?: string; id?: string };
@@ -28,6 +34,11 @@ export const Route = createFileRoute('/api/public/receive-message')({
           await db.from('threads').update({ status: 'svar' }).eq('id', result.id ?? '').eq('company_id', channel.data.company_id); }
       }
       return Response.json({ ok: true, duplicate: Boolean(result.duplicate) });
-    } catch { return Response.json({ error: 'Kunde inte ta emot meddelandet.' }, { status: 400 }); }
+    } catch (error) {
+      // Log only the failing step and structured codes, never request contents or secrets.
+      const { receiveFailureDetails } = await import('@/lib/receive-diagnostics');
+      console.error('[receive-message]', receiveFailureDetails(stage, error));
+      return Response.json({ error: 'Kunde inte ta emot meddelandet.' }, { status: 400 });
+    }
   } } },
 });
