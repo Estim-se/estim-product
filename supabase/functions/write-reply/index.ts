@@ -18,7 +18,7 @@ import { requireCompany } from "../_shared/auth.ts";
 import { WRITE_REPLY_TOOL, WRITE_REPLY_VERSION, writeReplySystem } from "../_shared/prompts.ts";
 import { calc, type Quote } from "../_shared/calc.ts";
 import { factSheet, findUnknownAmounts, usesFixedPriceWording } from "../_shared/amounts.ts";
-import { continueReply, firstCompanyReply, visitNeeded } from '../_shared/reply-policy.ts';
+import { continueReply, firstCompanyReply, visitNeeded, priceNeeded } from '../_shared/reply-policy.ts';
 
 interface Reply { text: string; why: string; answered_questions: string[] }
 
@@ -111,8 +111,8 @@ Deno.serve(async (req) => {
       }
       const questions = (last.data.text.match(/\?/g) ?? []).length;
       if (questions > (body.variant === 'kort' ? 1 : 2)) problems.push('För många följdfrågor: välj bara de viktigaste som ändrar priset');
-      if (quote && calc(quote).inkl > 0 && !/\d[\d\s–—-]*\s*(?:kr|kronor)/i.test(last.data.text)) problems.push('Pris saknas: ge priset från FAKTA nu');
-      if (quote && !fixedPrice && !/\d[^\n]*[–—-][^\n]*\d/.test(last.data.text)) problems.push('Prisintervall saknas: använd båda ändpunkterna från PRISINTERVALL');
+      if (priceNeeded(body.messages) && quote && calc(quote).inkl > 0 && !/\d[\d\s–—-]*\s*(?:kr|kronor)/i.test(last.data.text)) problems.push('Pris saknas: ge priset från FAKTA nu');
+      if (priceNeeded(body.messages) && quote && !fixedPrice && !/\d[^\n]*[–—-][^\n]*\d/.test(last.data.text)) problems.push('Prisintervall saknas: använd båda ändpunkterna från PRISINTERVALL');
       if (!needsVisit && /platsbesök/i.test(last.data.text)) problems.push('Inget platsbesök för det här jobbet');
       if (!problems.length) break;
       messages.push(

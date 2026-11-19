@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estimateRange, firstCompanyReply, continueReply, visitNeeded, incomingAiSteps } from '../../supabase/functions/_shared/reply-policy';
+import { estimateRange, firstCompanyReply, continueReply, visitNeeded, incomingAiSteps, priceNeeded } from '../../supabase/functions/_shared/reply-policy';
 import { findUnknownAmounts } from '../../supabase/functions/_shared/amounts';
 import { buildQuoteLines } from '../../supabase/functions/_shared/build-quote';
 
@@ -43,5 +43,9 @@ describe('real AI estimate and conversation rules', () => {
   it('requires a visit for structural uncertainty but not routine electrical qualifications', () => {
     expect(visitNeeded({ recommended_action: 'offert', risks: [{ type: 'el_behorighet' }] })).toBe(false);
     expect(visitNeeded({ recommended_action: 'fragor', risks: [{ type: 'barande' }] })).toBe(true);
+  });
+  it('answers short acknowledgements without forcing another price but still prices changed scope', () => {
+    expect(priceNeeded([{ from: 'kund', text: 'Tack!' }])).toBe(false);
+    expect(priceNeeded([{ from: 'kund', text: 'Vad kostar två extra uttag?' }])).toBe(true);
   });
 });

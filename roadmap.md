@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Reverified deployed WhatsApp pricing in standard/short/formal variants, short acknowledgement one turn later and structural-risk visit suggestion; made ROT explicitly conditional and removed forced repeat estimates for acknowledgements. 138 app tests pass; desktop/phone public views checked in the single theme, build passes. Signed-in real-mode browser access remains unavailable on external Supabase; no customer delivery attempted.
+
 - [x] Update real AI pricing and WhatsApp conversation style for drafts and automatic replies: refreshed follow-up interpretation, code-derived ±10% estimate ranges with VAT/ROT, selective questions/visits and first-reply-only greeting/signature. 137 app tests and 12 mail tests pass, including company isolation; deployed greeting-to-eight-spots flow with farax catalog/rates passed without delivery, and preview build passes. Intake and delivery untouched; signed-in browser/customer-delivery checks unavailable on external Supabase.
 
 - [x] Fix company WhatsApp setting save: live migration existed but authenticated lacked UPDATE on its new column; added column-only grant, safe Swedish structural errors and confirmed returned-row saves. All 128 existing tests plus 3 new failure tests passed, including authenticated own-company on/off readback and cross-company denial; preview build passes. Farax remains off; signed-in browser verification unavailable on external Supabase.

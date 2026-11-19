@@ -16,6 +16,12 @@ export function firstCompanyReply(messages: { from: string }[]): boolean {
   return !messages.some(message => message.from !== 'kund');
 }
 
+// Acknowledgements do not need another estimate; substantive job details still do.
+export function priceNeeded(messages: { from: string; text: string }[]): boolean {
+  const latest = messages.filter(message => message.from === 'kund').at(-1)?.text.trim() ?? '';
+  return !/^(?:tack(?: så mycket)?|toppen|perfekt|okej|ok|ja|nej|bra|det låter bra|det blir bra)[\s!.]*$/i.test(latest);
+}
+
 export function visitNeeded(interpretation: { recommended_action?: string; risks?: { type: string }[] } | null): boolean {
   return interpretation?.recommended_action === 'platsbesok' ||
     Boolean(interpretation?.risks?.some(risk => ['barande', 'fukt_vatrum', 'asbest', 'bygglov'].includes(risk.type)));

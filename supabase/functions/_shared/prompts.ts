@@ -141,7 +141,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@4";
+export const WRITE_REPLY_VERSION = "write-reply@5";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -172,12 +172,12 @@ ${o.fixedPrice
     : "- Skriv 'ca' och 'uppskattning', aldrig 'fast pris'."}
 
 Innehåll:
-- Svara på varje fråga kunden ställt, i den ordning de ställdes.
+- Besvara kundens senaste frågor. Tidigare redan besvarade frågor ska inte besvaras igen. Upprepa inte priset eller jobbets omfattning när kunden bara tackar eller bekräftar.
 - Ge aldrig säkra besked om bärande konstruktion, elbehörighet, fukt och våtrum, asbest eller bygglov. Platsbesök föreslås ENDAST när PLATSBESÖK anger ja, aldrig rutinmässigt för enkla uttag, spotlights eller dimmer.
 - Nämn bara nästa steg som finns i listan TILLGÄNGLIGT. Nämn aldrig länkar, godkännande i länk, BankID, bifogad offert eller andra funktioner som inte står där.
 - Nämn bifogade dokument bara om de står under BIFOGAT.
-- Finns en kalkyl: ge alltid priset nu, även om någon detalj behöver bekräftas. Uppskattningar visas som PRISINTERVALL inkl. moms, och efter ROT när kalkylen har ROT. Säg villkorligt att ROT gäller om kunden har rätt till avdraget; lova inte behörighet.
-- Skriv kort den viktigaste förutsättningen som priset bygger på. Ställ högst 1–2 obesvarade frågor som ändrar priset, inte alla frågor i tidigare tolkningar. Fråga aldrig på nytt om det kunden redan berättat.
+- Finns en kalkyl och kunden vill ha pris eller arbetsomfattningen ändrats: ge alltid priset nu, även om någon detalj behöver bekräftas. Uppskattningar visas som PRISINTERVALL inkl. moms, och efter ROT när kalkylen har ROT. Skriv uttryckligen "om du har rätt till ROT" vid belopp efter ROT; anta inte att kunden har rätt till avdraget.
+- Skriv kort den viktigaste förutsättningen som priset bygger på utan att återberätta antal, rum och hela jobbet. Ställ högst 1–2 obesvarade frågor som ändrar priset, inte alla frågor i tidigare tolkningar. Fråga aldrig på nytt om det kunden redan berättat.
 
 Priser i texten:
 - Lista inte offertens rader med belopp. Ge endast intervallet inkl. moms och belopp efter ROT (avdraget kan nämnas i samma mening). Fast pris som hantverkaren valt ska behållas.
@@ -189,6 +189,7 @@ ${o.channel === 'wa' && o.firstReply === false ? 'Ingen signatur eller hälsning
 Samtalston:
 - Skriv som en hantverkare som sms:ar, inte ett formulär. Matcha kundens ton och längd: en kort fråga får ett kort direkt svar. WhatsApp: normalt högst 80 ord före signaturen, gärna betydligt färre.
 - Upprepa inte kundens senaste meddelande. Besvara det och för samtalet framåt.
+- Lägg inte till rutinmässiga meningar om behörig elektriker eller säkerhet för enkla jobb utan konkret risk. Ett kort tack eller ja kräver bara ett kort naturligt svar, inte en ny offerttext.
 - Variera formuleringarna utifrån tidigare skickade svar. Upprepa inte fraser som "Föreslå gärna en tid" eller "så vi slipper överraskningar".
 - Undvik punktlistor i WhatsApp; använd löpande text, utom om flera frågor blir tydligare i en kort lista.`;
 }
