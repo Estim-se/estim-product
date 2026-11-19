@@ -77,10 +77,12 @@ Deno.serve(async (req) => {
     // Quote is built in code from the catalog, never by the AI.
     let quoteNr: string | null = null;
     const facts: string[][] = out.facts.map((f) => [f.kind, f.text]);
-    if (out.recommended_action === "offert") {
+    // A quote is created whenever at least one item matches the catalog,
+    // also for "fragor" and "platsbesok"; the reply then gives an approximate price.
+    {
       const { lines, unpriced } = buildQuoteLines(out.items, moments.data, company.data);
       unpriced.forEach((n) => facts.push(["warn", `Ej i prislista: ${n}`]));
-      if (lines.length) {
+      if (out.items.some((i) => i.moment_id)) {
         const saved = await db.rpc("estim_quote", { tid: threadId, payload: { nr: "auto", owners: 1, addOn: false, prisform: "ungefar", lines } });
         if (saved.error) throw new Error("quote save failed: " + saved.error.message);
         const latest = await db.from("quotes").select("nr").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle();
@@ -93,12 +95,6 @@ Deno.serve(async (req) => {
       ...(out.place && !thread.data.place ? { place: out.place } : {}),
     }).eq("id", threadId);
     if (saved.error) throw new Error("thread save failed: " + saved.error.message);
-    if (quoteNr) {
-      const draft = await db.from("drafts").select("attachments").eq("thread_id", threadId).maybeSingle();
-      const att = Array.isArray(draft.data?.attachments) ? draft.data.attachments as string[] : [];
-      const name = `Offert #${quoteNr}`;
-      if (!att.includes(name)) await db.from("drafts").update({ attachments: [...att, name] }).eq("thread_id", threadId);
-    }
     await logAiCall({ companyId: body.company_id, requestId: body.request_id, step: "interpret-request",
       model: r.model, promptVersion: INTERPRET_VERSION, input: body, output: out,
       durationMs: r.durationMs, inputTokens: r.inputTokens, outputTokens: r.outputTokens });

@@ -139,7 +139,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@1";
+export const WRITE_REPLY_VERSION = "write-reply@2";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -171,8 +171,13 @@ ${o.fixedPrice
 Innehåll:
 - Svara på varje fråga kunden ställt, i den ordning de ställdes.
 - Ge aldrig säkra besked om bärande konstruktion, elbehörighet, fukt och våtrum, asbest eller bygglov. Föreslå platsbesök.
-- Avsluta med ett tydligt nästa steg (godkänn i länken, svara på frågorna, välj en tid).
-- Nämn bifogade dokument om det finns några.
+- Nämn bara nästa steg som finns i listan TILLGÄNGLIGT. Nämn aldrig länkar, godkännande i länk, BankID, bifogad offert eller andra funktioner som inte står där.
+- Nämn bifogade dokument bara om de står under BIFOGAT.
+- Finns ANTAGANDEN: skriv kort vad priset bygger på. Finns FÖLJDFRÅGOR: ställ dem. Är REKOMMENDATION platsbesök: föreslå ett platsbesök.
+
+Priser i texten:
+- Lista inte offertens rader med belopp. Ge bara totalt inkl. moms, ROT-avdrag och att betala efter ROT.
+- Säg i en mening vad som ingår (t.ex. arbete, material och framkörning).
 
 Format: ${channelRule} ${variantRule}
 Avsluta med signaturen "${o.signature}" om inget annat sägs ovan.
@@ -180,8 +185,8 @@ Avsluta med signaturen "${o.signature}" om inget annat sägs ovan.
 Exempel på ton (från en annan firma, kopiera inte siffror):
 """
 Hej Jonas! Tack för bilden.
-Byte till 6 jordade uttag i sovrum och vardagsrum blir 7 900 kr efter ROT, allt inräknat.
-Vi kan komma onsdag nästa vecka. Godkänn direkt i länken så bokar vi.
+Byte till 6 jordade uttag i sovrum och vardagsrum blir ca 7 900 kr efter ROT, arbete och material inräknat.
+Svara gärna med en tid som passar för ett kort platsbesök.
 /Elfirman
 """`;
 }

@@ -98,7 +98,7 @@ export function createRealStore() {
     async saveQuote(){const id=state.drawer;if(!id||!dirtyQuotes.has(id))return;const q=state.threads.find(t=>t.id===id)?.q;if(!q)return;const quote={...q,owners:q.owners===2?2 as const:1 as const,prisform:q.prisform==='fast'?'fast' as const:'ungefar' as const,lines:q.lines.map(l=>({...l,typ:l.typ==='arbete'?'arbete' as const:l.typ==='material'?'material' as const:'resa' as const}))};await persist({kind:'quote',id,quote});dirtyQuotes.delete(id);try{await reload?.();}catch(error){dirtyQuotes.add(id);throw error;}
       // Regenerate the reply with the saved numbers unless the user edited the text by hand.
       const d=state.drafts[id];if(ai&&d&&!d.edited)void aiReply(id,d.v);},
-    async createQuote(id:string){await queue;dirtyQuotes.add(id);const nr=String(Math.max(1000,...(data?.quotes.map(q=>Number(q.nr))??[]))+1);update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.q={nr,owners:1,addOn:false,prisform:'fast',lines:[]};});actions.openDrawer(id);},
+    async createQuote(id:string){await queue;dirtyQuotes.add(id);const nr=String(Math.max(1000,...(data?.quotes.map(q=>Number(q.nr))??[]))+1);update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.q={nr,owners:1,addOn:false,prisform:'ungefar',lines:[]};});actions.openDrawer(id);},
     addMoment(id:string){const moment=data?.moments.find(m=>m.id===id);if(!moment)return;changeQuote(q=>{q.lines.push({t:moment.name,typ:'arbete',q:moment.hours_per_unit,u:'h',p:data?.company?.hourly_rate_ex_vat??0,rot:moment.rot_eligible});if(moment.material_per_unit_ex_vat)q.lines.push({t:moment.name+' · material',typ:'material',q:1,u:moment.unit,p:moment.material_per_unit_ex_vat,rot:false});});},
   };
 }

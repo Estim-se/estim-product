@@ -73,7 +73,15 @@ Deno.serve(async (req) => {
     i?.customer_questions?.length ? `KUNDENS FRÅGOR:\n${i.customer_questions.map((q: { question: string }) => "- " + q.question).join("\n")}` : "",
     i?.follow_up_questions?.length ? `FÖLJDFRÅGOR ATT STÄLLA:\n${i.follow_up_questions.map((q: string) => "- " + q).join("\n")}` : "",
     i?.risks?.length ? `RISKER:\n${i.risks.map((r: { text: string }) => "- " + r.text).join("\n")}` : "",
+    i?.assumptions?.length ? `ANTAGANDEN:\n${i.assumptions.map((a: string) => "- " + a).join("\n")}` : "",
+    i?.recommended_action ? `REKOMMENDATION: ${({ offert: "offert", fragor: "följdfrågor", platsbesok: "platsbesök" } as Record<string, string>)[i.recommended_action] ?? i.recommended_action}` : "",
     body.attachments?.length ? `BIFOGAT: ${body.attachments.join(", ")}` : "",
+    // Only features that exist today; no approval link and no quote file yet.
+    `TILLGÄNGLIGT (enda nästa steg du får nämna):\n${[
+      "Kunden svarar på det här meddelandet",
+      "Kunden föreslår tider för ett platsbesök",
+      ...(body.attachments?.length ? ["Bifogade dokument: " + body.attachments.join(", ")] : []),
+    ].map((x) => "- " + x).join("\n")}`,
     body.suggested_times?.length ? `LEDIGA TIDER FÖR PLATSBESÖK: ${body.suggested_times.join(" eller ")}` : "",
     `KONVERSATION:\n${thread}`,
     "Skriv nästa svar från firman.",
