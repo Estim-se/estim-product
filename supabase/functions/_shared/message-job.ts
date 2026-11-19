@@ -14,7 +14,10 @@ export async function startMessageJob(req: Request): Promise<Response | null> {
   const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !key) return json({ error: 'Ingen anslutning.' }, 503);
   const db = createClient(url, key, { auth: { persistSession: false } });
-  const job = await db.from('ai_jobs').update({ state: 'running' }).eq('id', input.start_job).eq('state', 'queued').select('*').maybeSingle();
+  const claim = await db.rpc('estim_claim_job', { jid: input.start_job });
+  if (claim.error) return json({ error: 'Kunde inte starta AI.' }, 500);
+  if (!claim.data) return json({ ok: true });
+  const job = await db.from('ai_jobs').select('*').eq('id', input.start_job).eq('state', 'running').maybeSingle();
   if (job.error || !job.data) return json({ ok: true });
   const j = job.data;
   const run = async () => {
@@ -32,7 +35,12 @@ export async function startMessageJob(req: Request): Promise<Response | null> {
       await db.from('ai_jobs').update({ state: 'failed' }).eq('id', j.id);
       await db.from('threads').update({ status: 'svar' }).eq('id', j.thread_id).eq('company_id', j.company_id);
       await db.from('drafts').update({ text: '', warnings: ['AI kunde inte svara just nu'], needs_review: true }).eq('thread_id', j.thread_id).eq('company_id', j.company_id);
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      const next = await db.from('ai_jobs').select('id').eq('thread_id', j.thread_id).eq('state', 'queued').order('created_at').limit(1).maybeSingle();
+      if (next.data) await fetch(`${url}/functions/v1/interpret-request`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-estim-job-secret': expected }, body: JSON.stringify({ start_job: next.data.id }) });
+    }
   };
   // Supabase retains the worker after the HTTP response.
   EdgeRuntime.waitUntil(run());

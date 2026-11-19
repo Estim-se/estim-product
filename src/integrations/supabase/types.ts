@@ -808,6 +808,7 @@ export type Database = {
         Returns: string
       }
       estim_approve: { Args: { tid: string }; Returns: string }
+      estim_claim_job: { Args: { jid: string }; Returns: boolean }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
       estim_finish_send: {
         Args: {

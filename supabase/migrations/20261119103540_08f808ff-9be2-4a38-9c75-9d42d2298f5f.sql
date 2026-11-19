@@ -1,0 +1,3 @@
+REVOKE EXECUTE ON FUNCTION public.estim_receive(uuid,jsonb,uuid) FROM authenticated;
+CREATE OR REPLACE FUNCTION public.estim_claim_job(jid uuid) RETURNS boolean LANGUAGE plpgsql SET search_path=public AS $$ DECLARE j public.ai_jobs; BEGIN SELECT * INTO j FROM public.ai_jobs WHERE id=jid AND state='queued'; IF NOT FOUND THEN RETURN false; END IF; PERFORM 1 FROM public.threads WHERE id=j.thread_id FOR UPDATE; IF EXISTS(SELECT 1 FROM public.ai_jobs WHERE thread_id=j.thread_id AND state='running') THEN RETURN false; END IF; UPDATE public.ai_jobs SET state='running' WHERE id=jid AND state='queued'; RETURN FOUND; END $$;
+REVOKE ALL ON FUNCTION public.estim_claim_job(uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.estim_claim_job(uuid) TO service_role;
