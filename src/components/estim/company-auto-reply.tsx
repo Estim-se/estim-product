@@ -12,7 +12,7 @@ export function CompanyAutoReply() {
     try {
       await workspace.mutate({ kind: 'whatsapp-auto', enabled: !enabled });
       await workspace.refresh();
-    } catch { setError('Ändringen kunde inte sparas. Försök igen.'); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Ändringen kunde inte sparas. Försök igen.'); }
     finally { setBusy(false); }
   }
   return <section className="mt16 mb16"><div className="kop"><b className="grow">AI svarar själv på alla WhatsApp-meddelanden</b><Button variant="prototype" role="switch" aria-label="AI svarar själv på alla WhatsApp-meddelanden" aria-checked={enabled} disabled={busy||!workspace.data?.company} className={`toggle ${enabled?'on':''}`} onClick={()=>void toggle()}/></div>{error&&<div className="flag" role="alert">{error}</div>}</section>;

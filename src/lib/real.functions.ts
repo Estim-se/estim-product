@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import { parseMutation } from './real.schemas';
+import { saveCompanyAutoReply } from './company-auto-reply';
 
 // Every read and write revalidates the caller; ordinary queries run under RLS.
 export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
@@ -50,7 +51,7 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
   if(!active.data?.active)throw new Error('Företaget är avaktiverat.');
   let result;
   switch(data.kind) {
-    case 'whatsapp-auto': result=await db.from('companies').update({whatsapp_auto_reply:data.enabled}).eq('id',cid); break;
+    case 'whatsapp-auto': return saveCompanyAutoReply(db,cid,data.enabled);
     case 'request': {
       const r = data.request;
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server');

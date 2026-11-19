@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Fix company WhatsApp setting save: live migration existed but authenticated lacked UPDATE on its new column; added column-only grant, safe Swedish structural errors and confirmed returned-row saves. All 128 existing tests plus 3 new failure tests passed, including authenticated own-company on/off readback and cross-company denial; preview build passes. Farax remains off; signed-in browser verification unavailable on external Supabase.
+
 - [x] Company-wide WhatsApp auto-reply: default-off company setting, inherited new threads and explicit per-thread on/off overrides; 126 tests pass including live company defaults, new customers, override precedence, failed drafts, duplicates and company isolation. Setting on/off visuals inspected at desktop and phone widths; preview build passes; farax verified off and receive-message unchanged. Signed-in setting-to-customer delivery remains unverified on external Supabase.
 
 - [x] Automatic WhatsApp replies: per-thread opt-in, shared delivery adapter, durable provider-message reservation, AI attribution and retained failed drafts; 122 app tests and 12 mail tests pass, including live isolation/reservation and deployed AI-to-failure flow; preview build and desktop/narrow demo checks pass. Receive-message and demo logic unchanged.

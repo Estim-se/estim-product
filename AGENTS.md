@@ -30,6 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## App structure
+- Save company WhatsApp settings through authenticated RLS with a returned row; grant only the setting column and expose structural error codes, so denied/no-row writes cannot appear successful.
 - Pin the shared Edge Supabase client to the available npm version used by the app; floating JSR versions can reference unpublished dependencies and block deployments.
 - Authorize invitation and administration operations against RLS-readable role rows before loading privileged clients; company activation gates the existing tenant key and never grants platform-wide customer RLS access.
 - Keep invite tokens hashed, email/company/role-bound and atomically single-use; permit Auth user creation only against a pending invitation and never trust user-editable role metadata.

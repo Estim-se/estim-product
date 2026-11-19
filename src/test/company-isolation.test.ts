@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { describe,it,expect } from 'vitest';
 import { electricianMoments } from '@/data/electrician-moments';
+import { saveCompanyAutoReply } from '@/lib/company-auto-reply';
 
 // Integration test uses disposable accounts and the real RLS boundary, not admin reads.
 const configured=Boolean(process.env['SUPABASE_URL']&&process.env['SUPABASE_SERVICE_ROLE_KEY']&&process.env['SUPABASE_PUBLISHABLE_KEY']);
@@ -25,6 +26,15 @@ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
   };
   try {
    const a=await make('A'),b=await make('B');
+   // Exercise the same setting save helper as the server using authenticated RLS.
+   expect((await a.client.from('companies').select('whatsapp_auto_reply').eq('id',a.id).single()).data?.whatsapp_auto_reply).toBe(false);
+   await expect(saveCompanyAutoReply(a.client,a.id,true)).resolves.toEqual({id:a.id});
+   expect((await a.client.from('companies').select('whatsapp_auto_reply').eq('id',a.id).single()).data?.whatsapp_auto_reply).toBe(true);
+   await expect(saveCompanyAutoReply(b.client,a.id,false)).rejects.toThrow();
+   expect((await a.client.from('companies').select('whatsapp_auto_reply').eq('id',a.id).single()).data?.whatsapp_auto_reply).toBe(true);
+   await expect(saveCompanyAutoReply(a.client,a.id,false)).resolves.toEqual({id:a.id});
+   expect((await a.client.from('companies').select('whatsapp_auto_reply').eq('id',a.id).single()).data?.whatsapp_auto_reply).toBe(false);
+   expect((await a.client.from('companies').update({active:false}).eq('id',a.id)).error?.code).toBe('42501');
    // Price files: each company reads and writes only its own folder.
    const ownFile=await a.client.storage.from('price-files').upload(`${a.id}/faktura.pdf`,new TextEncoder().encode('%PDF-1.4 test'),{contentType:'application/pdf'});expect(ownFile.error).toBeNull();
    expect((await a.client.storage.from('price-files').download(`${a.id}/faktura.pdf`)).error).toBeNull();

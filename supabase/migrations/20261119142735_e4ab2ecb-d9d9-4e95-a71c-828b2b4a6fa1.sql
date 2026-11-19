@@ -1,0 +1,1 @@
+GRANT UPDATE (whatsapp_auto_reply) ON public.companies TO authenticated;
