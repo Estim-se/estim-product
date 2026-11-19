@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { json } from './cors.ts';
+import { autoSend } from './auto-send.ts';
 
 // The existing interpreter doubles as a secret-authenticated background dispatcher.
 export async function startMessageJob(req: Request): Promise<Response | null> {
@@ -29,6 +30,15 @@ export async function startMessageJob(req: Request): Promise<Response | null> {
           headers: { 'Content-Type': 'application/json', 'x-estim-job-secret': expected },
           body: JSON.stringify({ job_id: j.id, thread_id: j.thread_id }), signal: controller.signal });
         if (!res.ok) throw new Error('AI step failed');
+      }
+      clearTimeout(timer);
+      // Delivery failure is separate from AI failure: keep the completed draft for manual sending.
+      try { await autoSend(db, j.id); } catch {
+        console.error('Automatic send failed to finalise');
+        const error = 'WhatsApp-svaret kunde inte skickas. Försök igen.';
+        await db.from('messages').update({ delivery_status: 'not_sent', delivery_error: error }).eq('thread_id', j.thread_id).eq('company_id', j.company_id).eq('from', 'ai').eq('delivery_status', 'sending');
+        await db.from('drafts').update({ warnings: [error] }).eq('thread_id', j.thread_id).eq('company_id', j.company_id);
+        await db.from('threads').update({ status: 'svar' }).eq('id', j.thread_id).eq('company_id', j.company_id).neq('status', 'analys');
       }
       await db.from('ai_jobs').update({ state: 'done' }).eq('id', j.id);
     } catch {

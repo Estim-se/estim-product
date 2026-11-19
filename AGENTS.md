@@ -62,4 +62,5 @@ Approved e-mail replies are delivered by deliverChannel -> the email-send edge f
 
 Received attachments (PDF/images, max 10 MB) are stored in the private bucket mail-attachments and referenced from messages.attachment_files.
 
-A notification mail (link only, no customer text) is sent when the AI job is done. The model only writes drafts.
+A notification mail (link only, no customer text) is sent when the AI job is done. Email drafts require human approval.
+- Automatic WhatsApp sends are per-thread opt-in; bind jobs to incoming messages and atomically reserve one AI attempt per provider ID before using the same runtime-neutral delivery adapter as human approval, so duplicates cannot trigger delivery and failed attempts preserve the draft.

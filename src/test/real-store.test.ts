@@ -8,6 +8,16 @@ import type { RealMutation } from '@/lib/real.schemas';
 describe('R1 real-mode rules',()=>{
  afterEach(()=>vi.useRealTimers());
  it('contains no mock customers or drafts',()=>{const store=createRealStore();expect(store.getSnapshot().threads).toEqual([]);expect(store.getSnapshot().drafts).toEqual({});expect(store.getSnapshot().stats.ai).toBe(0);});
+ it('persists WhatsApp opt-in per thread and does not enable other channels',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null);store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,ch:'wa',autopilot:false}];});
+  store.actions.toggleAuto(t.id);await store.flush();await vi.waitFor(()=>expect(store.getSnapshot().threads[0]?.autopilot).toBe(true));
+  expect(write).toHaveBeenLastCalledWith({kind:'thread',id:t.id,autopilot:true});
+  store.actions.toggleAuto(t.id);await store.flush();await vi.waitFor(()=>expect(store.getSnapshot().threads[0]?.autopilot).toBe(false));
+  expect(write).toHaveBeenLastCalledWith({kind:'thread',id:t.id,autopilot:false});
+  store.actions.update(s=>{const thread=s.threads[0];if(thread)thread.ch='email';});store.actions.toggleAuto(t.id);await store.flush();expect(write).toHaveBeenCalledTimes(2);
+ });
  it('preserves status and draft on failed WhatsApp delivery and stays on the thread',async()=>{
   const store=createRealStore();const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
   store.actions.update(s=>{s.threads=[{...t,status:'oppnad'}];s.drafts[t.id]={text:'Hej',v:'std',ch:'wa',att:[],edited:true};s.m={scr:'thread',id:t.id,editing:false};});

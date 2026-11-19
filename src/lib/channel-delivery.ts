@@ -1,4 +1,4 @@
-import { waWindowOpen } from './channel-rules';
+import { deliverWhatsApp } from '../../supabase/functions/_shared/whatsapp';
 
 interface DeliveryInput {
   channel: string; text: string; lastCustomerWaAt: string | null;
@@ -10,24 +10,7 @@ interface DeliveryInput {
 export async function deliverChannel(input: DeliveryInput, request: typeof fetch = fetch) {
   if (input.channel === 'email' && input.emailTarget && input.internalKey && input.messageId) return deliverEmail(input, request);
   if (input.channel !== 'wa') return { sent: true, error: null, providerId: null };
-  const fail = (error: string) => ({ sent: false, error, providerId: null });
-  if (!input.target) return fail('WhatsApp-utskick är inte kopplat än');
-  if (!waWindowOpen(input.lastCustomerWaAt)) return fail('WhatsApp-svaret kunde inte skickas: kunden måste skriva igen eftersom mer än 24 timmar har gått.');
-  const to = input.to?.replace(/\D/g, '');
-  if (!input.secret || !to) return fail('WhatsApp-kanalen eller kundens telefonnummer saknas.');
-  try {
-    if (new URL(input.target).protocol !== 'https:') throw new Error('Invalid URL');
-    const response = await request(input.target, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-estim-secret': input.secret },
-      body: JSON.stringify({ to, text: input.text }),
-      signal: AbortSignal.timeout(20000), redirect: 'error',
-    });
-    if (!response.ok) throw new Error('Delivery failed');
-    const result = await response.json();
-    const providerId: unknown = result.message_id;
-    if (result.ok !== true || typeof providerId !== 'string' || !providerId.trim()) throw new Error('Missing message id');
-    return { sent: true, error: null, providerId };
-  } catch { return fail('WhatsApp-svaret kunde inte skickas. Försök igen.'); }
+  return deliverWhatsApp(input, request);
 }
 
 // E-mail goes through the company's connected mailbox (edge function email-send, internal key). Without the target and key

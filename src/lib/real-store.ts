@@ -20,8 +20,8 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
   const threads:Thread[]=data.threads.map(t=>{
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
-    const outgoing=data.messages.filter(m=>m.thread_id===t.id&&m.from==='vv').at(-1);
-    const msgs=data.messages.filter(m=>m.thread_id===t.id&&m.delivery_status!=='not_sent'&&m.delivery_status!=='sending').map(m=>({from:m.from,ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
+    const outgoing=data.messages.filter(m=>m.thread_id===t.id&&(m.from==='vv'||m.from==='ai')).at(-1);
+    const msgs=data.messages.filter(m=>m.thread_id===t.id&&m.delivery_status!=='not_sent'&&m.delivery_status!=='sending').map(m=>({from:m.from,auto:m.from==='ai',ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
     return {deliveryError:outgoing?.channel==='wa'&&outgoing.delivery_status==='not_sent'?outgoing.delivery_error??'WhatsApp-svaret kunde inte skickas. Försök igen.':undefined,waSent:outgoing?.channel==='wa'&&outgoing.delivery_status==='sent'&&Boolean(outgoing.provider_message_id),id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
@@ -81,7 +81,7 @@ export function createRealStore() {
     reset(){toast('Återställning finns bara i demoläge.');},
     select(id:string){update(s=>{s.sel=id;s.view='desk';s.page='inkorg';const t=s.threads.find(t=>t.id===id);if(t)t.read=true;});void persist({kind:'thread',id,read:true}).catch(()=>{});},
     toggleSetting(index:number){update(s=>{s.settings[index]=!s.settings[index];});const c=data?.company;if(c)void persist({kind:'company',company:{name:c.name,signature:c.signature,hourly_rate_ex_vat:c.hourly_rate_ex_vat,travel_fee:c.travel_fee,settings:state.settings,reply_to_email:c.reply_to_email??''}},true).catch(()=>{});},
-    toggleAuto(_id:string){toast('AI-svar aktiveras i nästa steg.');},
+    toggleAuto(id:string){const t=state.threads.find(t=>t.id===id);if(!t||t.ch!=='wa')return;const autopilot=!t.autopilot;void persist({kind:'thread',id,autopilot}).then(()=>{update(s=>{const thread=s.threads.find(t=>t.id===id);if(thread)thread.autopilot=autopilot;});toast(autopilot?'AI skickar svar automatiskt i den här WhatsApp-tråden.':'AI skriver utkast, du skickar');}).catch(()=>{});},
     setDraft(id:string,variant:Draft['v']){if(state.drafts[id]?.busy)return;void aiReply(id,variant);},
     regen(id:string){const d=state.drafts[id];if(d&&!d.busy)void aiReply(id,d.v);},
     editDraft(id:string,text:string){update(s=>{const d=s.drafts[id];if(d){d.text=text;d.edited=true;}});draftSave(id);},

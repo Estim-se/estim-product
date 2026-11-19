@@ -1,0 +1,1 @@
+CREATE INDEX ai_jobs_incoming_message_idx ON public.ai_jobs(incoming_message_id);

@@ -19,6 +19,7 @@ describe('outgoing channel adapters', () => {
     expect(await deliverChannel(input, request)).toMatchObject({ sent: true, providerId: 'wa-returned-1' });
     expect(request.mock.calls[0]?.[0]).toBe('https://n8n.example.test/send');
     expect(request.mock.calls[0]?.[1]?.method).toBe('POST');
+    expect(request.mock.calls[0]?.[1]?.redirect).toBe('manual');
     expect(request.mock.calls[0]?.[1]?.headers).toEqual({ 'Content-Type': 'application/json', 'x-estim-secret': 'test-only' });
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ to: '46700000000', text: 'Hej' });
   });
