@@ -18,4 +18,7 @@ describe('receive diagnostics', () => {
     catch (error) { expect(receiveFailureDetails('validation', error).issues).toContainEqual({ field: 'provider_message_id', code: 'invalid_type' }); return; }
     throw new Error('Expected validation to fail');
   });
+  it('reports PostgREST codes such as multiple matching channels', () => {
+    expect(receiveFailureDetails('channel', { code: 'PGRST116', message: 'private' }).code).toBe('PGRST116');
+  });
 });

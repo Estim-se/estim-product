@@ -21,7 +21,10 @@ export const Route = createFileRoute('/api/public/receive-message')({
       const { supabaseAdmin: db } = await import('@/integrations/supabase/client.server');
       const channel = await db.from('channels').select('company_id').eq('type', input.channel).eq('phone_number_id', input.phone_number_id).maybeSingle();
       if (channel.error) throw channel.error;
-      if (!channel.data) return Response.json({ error: 'Kanalen är inte ansluten.' }, { status: 404 });
+      if (!channel.data) {
+        console.error('[receive-message]', { stage, kind: 'channel_not_found', channel: input.channel });
+        return Response.json({ error: 'Kanalen är inte ansluten.', reason: { stage, kind: 'channel_not_found' } }, { status: 404 });
+      }
       stage = 'ingestion';
       const saved = await db.rpc('estim_receive', { cid: channel.data.company_id, payload: input });
       if (saved.error) throw saved.error;
@@ -37,8 +40,10 @@ export const Route = createFileRoute('/api/public/receive-message')({
     } catch (error) {
       // Log only the failing step and structured codes, never request contents or secrets.
       const { receiveFailureDetails } = await import('@/lib/receive-diagnostics');
-      console.error('[receive-message]', receiveFailureDetails(stage, error));
-      return Response.json({ error: 'Kunde inte ta emot meddelandet.' }, { status: 400 });
+      const reason = receiveFailureDetails(stage, error);
+      console.error('[receive-message]', JSON.stringify(reason));
+      // The caller has already passed the shared-secret check, so it may see the same structural reason.
+      return Response.json({ error: 'Kunde inte ta emot meddelandet.', reason }, { status: reason.stage === 'ingestion' || reason.kind === 'server_error' ? 500 : 400 });
     }
   } } },
 });

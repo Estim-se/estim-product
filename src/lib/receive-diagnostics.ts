@@ -12,8 +12,9 @@ export function receiveFailureDetails(stage: string, error: unknown) {
   }) : [];
   return {
     stage,
-    kind: error instanceof SyntaxError ? 'invalid_json' : issues.length ? 'invalid_input' : 'server_error',
-    code: typeof value['code'] === 'string' && /^[A-Z0-9]{5}$/.test(value['code']) ? value['code'] : undefined,
+    kind: error instanceof SyntaxError ? 'invalid_json' : issues.length ? 'invalid_input'
+      : error instanceof Error && error.message.startsWith('Uppgifterna är för stora') ? 'too_large' : 'server_error',
+    code: typeof value['code'] === 'string' && /^(?:[A-Z0-9]{5}|PGRST\d{3})$/.test(value['code']) ? value['code'] : undefined,
     issues,
   };
 }
