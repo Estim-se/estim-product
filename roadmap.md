@@ -4,6 +4,7 @@
 - [x] Shared channels: approval delivery adapters, WhatsApp 24-hour window and real-mode channel settings; delivery URL remains intentionally unset.
 - [x] Shared channels: saved shared secret; live wrong-secret/WhatsApp/duplicate/AI-draft checks passed.
 - [ ] Shared channels: signed-in channel settings and approval UI verification — external Supabase cannot mint a preview session.
+- [x] Shared channels final audit: delivery adapter tests cover all channels, failed delivery and the 24-hour cutoff; AI startup failures preserve a manual draft and displayed endpoint follows the app origin.
 
 - [x] R2: Claude edge functions with JWT/company checks, code-built quotes, guarded drafts, composer variants/warnings/regeneration; calc parity tests pass; Maria request run through Claude with farax catalog.
 - [ ] R2: signed-in in-app run of the full flow — cannot sign in to the external Supabase from here; user to test via Ny förfrågan.

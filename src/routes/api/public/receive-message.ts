@@ -6,7 +6,7 @@ export const Route = createFileRoute('/api/public/receive-message')({
   server: { handlers: { POST: async ({ request }) => {
     const secret = process.env['N8N_SHARED_SECRET'];
     const supplied = request.headers.get('x-estim-secret') ?? '';
-    if (!secret || supplied.length !== secret.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
+    if (!secret || Buffer.byteLength(supplied) !== Buffer.byteLength(secret) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
       return Response.json({ error: 'Åtkomst nekad.' }, { status: 401 });
     try {
       const reader = request.body?.getReader(); let size = 0; const chunks: Uint8Array[] = [];
@@ -24,6 +24,7 @@ export const Route = createFileRoute('/api/public/receive-message')({
         const { dispatchAiJob } = await import('@/lib/channel.server');
         try { await dispatchAiJob(result.job_id); }
         catch { await db.from('ai_jobs').update({ state: 'failed' }).eq('id', result.job_id);
+          await db.from('drafts').update({ text: '', warnings: ['AI kunde inte svara just nu'], needs_review: true }).eq('thread_id', result.id ?? '').eq('company_id', channel.data.company_id);
           await db.from('threads').update({ status: 'svar' }).eq('id', result.id ?? '').eq('company_id', channel.data.company_id); }
       }
       return Response.json({ ok: true, duplicate: Boolean(result.duplicate) });

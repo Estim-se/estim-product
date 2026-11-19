@@ -1,6 +1,6 @@
 // Logs every AI call to the ai_calls table, so we can debug a bad estimate
 // and replay calls against the test suite. Logging must never break a request.
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 
 export interface AiLog {
   companyId?: string | null;

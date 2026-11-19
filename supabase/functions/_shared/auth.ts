@@ -1,7 +1,7 @@
 // Verifies the caller's JWT and resolves their company from company_members.
 // company_id is never taken from the request body. The returned client runs
 // as the user, so every read and write stays under the company's RLS.
-import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import { json } from "./cors.ts";
 
 export interface AuthContext { db: SupabaseClient; userId: string; companyId: string; jobId?: string }

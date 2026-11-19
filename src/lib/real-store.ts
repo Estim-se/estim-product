@@ -71,7 +71,7 @@ export function createRealStore() {
   async function actions_runRequest(id:string){
     if(!ai)return;
     update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.status='analys';});
-    try{await withTimeout(ai.interpret(id));await withTimeout(ai.write(id,'std',state.drafts[id]?.ch==='sms'||state.drafts[id]?.ch==='wa'?state.drafts[id]!.ch as 'sms'|'wa':'email'));}
+    try{await withTimeout(ai.interpret(id));const channel=state.drafts[id]?.ch;await withTimeout(ai.write(id,'std',channel==='sms'||channel==='wa'?channel:'email'));}
     catch{await aiFailed(id);return;}
     try{await reload?.();}catch{}
   }

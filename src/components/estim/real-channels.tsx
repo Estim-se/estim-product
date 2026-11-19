@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useServerFn } from '@tanstack/react-start';
 import { saveWhatsAppChannel } from '@/lib/channel.functions';
 import { receiveMessageUrl } from '@/lib/channel-rules';
@@ -10,10 +10,12 @@ export function RealChannels() {
   const workspace = useWorkspace();
   const [number, setNumber] = useState(workspace.data?.channels?.find(c => c.type === 'wa')?.phone_number_id ?? '');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
+  const [endpoint, setEndpoint] = useState(receiveMessageUrl);
+  useEffect(() => { setEndpoint(`${window.location.origin}/api/public/receive-message`); }, []);
   const save = useServerFn(saveWhatsAppChannel);
   return <><TopHeader title="Kanaler" subtitle="WhatsApp" /><section className="mt24">
     <h2>WhatsApp via n8n</h2>
-    <label className="field mt16">Adress för inkommande meddelanden<input className="input" readOnly value={receiveMessageUrl} /></label>
+    <label className="field mt16">Adress för inkommande meddelanden<input className="input" readOnly value={endpoint} /></label>
     <form className="mt16" onSubmit={async e => { e.preventDefault(); setBusy(true); setMessage('');
       try { await save({ data: { phone_number_id: number } }); await workspace.refresh(); setMessage('WhatsApp-numret är sparat.'); }
       catch (error) { setMessage(error instanceof Error ? error.message : 'Kunde inte spara WhatsApp-numret.'); } finally { setBusy(false); } }}>

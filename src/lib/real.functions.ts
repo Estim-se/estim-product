@@ -58,7 +58,9 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
       const received = saved.data as { id: string; job_id: string };
       const { dispatchAiJob } = await import('./channel.server');
       try { await dispatchAiJob(received.job_id); }
-      catch { await db.from('threads').update({ status: 'svar' }).eq('id', received.id).eq('company_id', cid); }
+      catch { await supabaseAdmin.from('ai_jobs').update({ state: 'failed' }).eq('id', received.job_id).eq('company_id', cid);
+        await db.from('drafts').update({ text: '', warnings: ['AI kunde inte svara just nu'], needs_review: true }).eq('thread_id', received.id).eq('company_id', cid);
+        await db.from('threads').update({ status: 'svar' }).eq('id', received.id).eq('company_id', cid); }
       return { id: received.id };
     }
     case 'quote': result=await db.rpc('estim_quote',{tid:data.id,payload:data.quote}); break;

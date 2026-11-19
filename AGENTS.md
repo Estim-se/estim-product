@@ -30,6 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## App structure
+- Pin the shared Edge Supabase client to the available npm version used by the app; floating JSR versions can reference unpublished dependencies and block deployments.
 - Authorize invitation and administration operations against RLS-readable role rows before loading privileged clients; company activation gates the existing tenant key and never grants platform-wide customer RLS access.
 - Keep invite tokens hashed, email/company/role-bound and atomically single-use; permit Auth user creation only against a pending invitation and never trust user-editable role metadata.
 - Bound raw requests before framework decoding and bound mutation collections before Zod on client and server; direct Zod 3 remains isolated from patched framework Zod 4 to avoid an unrelated migration.
@@ -41,7 +42,7 @@ use the editor.
 - Render quote and customer overlays through focused components backed by central store actions; keep signing timers visit-scoped and customer form values ephemeral because all approvals are mock-only.
 - Mount shared overlays beside the root outlet and use leaf routes for each prototype page; route navigation must preserve store-backed settings and quote edits.
 - Keep the mobile scene in its own leaf route with central-store screen actions and a stable phone scroll container; approvals reuse desktop send timers and navigation resets only the phone screen.
-- Persist real-company mutations through company-scoped RLS and atomic database functions; quote changes append immutable versions and approval uses a channel adapter with explicit delivery state.
+- Persist real-company mutations through company-scoped RLS and atomic database functions; quote changes append immutable versions and approval uses a tested channel adapter with explicit delivery state and no free-text WhatsApp delivery outside 24 hours.
 - Stage real quote edits locally until drawer save, and allocate numbers inside the company-locked quote function; this prevents field-level history spam and concurrent numbering collisions.
 - Define workspace React context in a separate component-free module so provider hot updates cannot replace the context identity used by mounted route consumers.
 - AI steps run as Supabase Edge Functions (user-requested) that verify the JWT, resolve company_id from company_members and read/write under the user's RLS; quotes are built in code from the moments catalog and the server calc must match src/lib/quote.ts (parity test).

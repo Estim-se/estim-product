@@ -1,4 +1,4 @@
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { json } from './cors.ts';
 
 // The existing interpreter doubles as a secret-authenticated background dispatcher.

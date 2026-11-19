@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
   const [company, customer, msgs, q, draft] = await Promise.all([
     db.from("companies").select("name,signature").eq("id", companyId).single(),
     db.from("customers").select("name").eq("id", threadRow.data.customer_id).maybeSingle(),
-    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).order("sent_at"),
+    db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).eq("delivery_status", "sent").order("sent_at"),
     db.from("quotes").select("nr,owners,add_on,prisform,lines").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle(),
     db.from("drafts").select("channel,variant,attachments").eq("thread_id", threadId).maybeSingle(),
   ]);
