@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       const { lines, unpriced } = buildQuoteLines(out.items, moments.data, company.data);
       unpriced.forEach((n) => facts.push(["warn", `Ej i prislista: ${n}`]));
       if (out.items.some((i) => i.moment_id)) {
-        const saved = await db.rpc("estim_quote", { tid: threadId, payload: { nr: "auto", owners: 1, addOn: false, prisform: "ungefar", lines } });
+        const saved = await db.rpc("estim_quote", { tid: threadId, payload: { by: "ai", nr: "auto", owners: 1, addOn: false, prisform: "ungefar", lines } });
         if (saved.error) throw new Error("quote save failed: " + saved.error.message);
         const latest = await db.from("quotes").select("nr").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle();
         quoteNr = latest.data?.nr ?? null;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
@@ -53,6 +53,10 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
     });
     return()=>{alive=false;listener.subscription.unsubscribe();};
   },[realStore]);
+  // Poll while any thread is being analysed so drafts appear without a reload.
+  const analysing=useSyncAnalysing(realStore);
+  useEffect(()=>{if(mode!=='real'||!analysing)return;const timer=setInterval(()=>{void refresh().catch(()=>{});},4000);return()=>clearInterval(timer);},[mode,analysing]);
   async function signOut(){identityEpoch.current++;await queryClient.cancelQueries();queryClient.clear();await supabase.auth.signOut();realStore.clear();setData(null);setSignedIn(false);setMode('demo');await navigate({to:'/auth',replace:true});}
   return <WorkspaceContext.Provider value={{mode,setMode,signedIn,loading,error,data,realStore,refresh,mutate,signOut}}>{children}</WorkspaceContext.Provider>;
 }
+function useSyncAnalysing(store:ReturnType<typeof createRealStore>){return useSyncExternalStore(store.subscribe,()=>store.getSnapshot().threads.some(t=>t.status==='analys'),()=>false);}

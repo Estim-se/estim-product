@@ -12,7 +12,7 @@ export const mutationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('quote'), id: z.string().uuid(), quote: quoteSchema }),
   z.object({ kind: z.literal('draft'), id: z.string().uuid(), draft: draftSchema }),
   z.object({ kind: z.literal('approve'), id: z.string().uuid() }),
-  z.object({ kind: z.literal('thread'), id: z.string().uuid(), read: z.boolean().optional(), autopilot: z.boolean().optional() }),
+  z.object({ kind: z.literal('thread'), id: z.string().uuid(), read: z.boolean().optional(), autopilot: z.boolean().optional(), status: z.literal('svar').optional() }),
   z.object({ kind: z.literal('company'), company: companySchema }),
   z.object({ kind: z.literal('moment'), moment: momentSchema }),
   z.object({ kind: z.literal('profile'), display_name: z.string().trim().min(1).max(100) }),

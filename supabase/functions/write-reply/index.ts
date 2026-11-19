@@ -26,11 +26,11 @@ Deno.serve(async (req) => {
   const { db, companyId } = auth;
   const input = await req.json().catch(() => null);
   const threadId = typeof input?.thread_id === "string" ? input.thread_id : "";
-  const thread = await db.from("threads").select("id,customer_id,interpretation").eq("id", threadId).eq("company_id", companyId).maybeSingle();
-  if (!thread.data) return json({ error: "Tråden finns inte" }, 404);
+  const threadRow = await db.from("threads").select("id,customer_id,interpretation").eq("id", threadId).eq("company_id", companyId).maybeSingle();
+  if (!threadRow.data) return json({ error: "Tråden finns inte" }, 404);
   const [company, customer, msgs, q, draft] = await Promise.all([
     db.from("companies").select("name,signature").eq("id", companyId).single(),
-    db.from("customers").select("name").eq("id", thread.data.customer_id).maybeSingle(),
+    db.from("customers").select("name").eq("id", threadRow.data.customer_id).maybeSingle(),
     db.from("messages").select("from,text,sent_at").eq("thread_id", threadId).order("sent_at"),
     db.from("quotes").select("nr,owners,add_on,prisform,lines").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle(),
     db.from("drafts").select("channel,variant,attachments").eq("thread_id", threadId).maybeSingle(),
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     variant: pick(input?.variant ?? draft.data?.variant, ["std", "kort", "formell"] as const, "std"),
     messages: msgs.data.map((m) => ({ from: m.from, text: m.text, time: m.sent_at })),
     quote: q.data ? { nr: q.data.nr, owners: q.data.owners, addOn: q.data.add_on, prisform: q.data.prisform, lines: q.data.lines } as Quote : null,
-    interpretation: thread.data.interpretation as Record<string, any> | null,
+    interpretation: threadRow.data.interpretation as Record<string, any> | null,
     attachments: Array.isArray(draft.data?.attachments) ? draft.data.attachments as string[] : [],
     suggested_times: [] as string[],
   };

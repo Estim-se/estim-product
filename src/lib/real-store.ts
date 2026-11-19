@@ -20,7 +20,7 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
     const msgs=data.messages.filter(m=>m.thread_id===t.id).map(m=>({from:m.from,ch:m.channel??t.channel,time:time(m.sent_at),text:m.text,att:strings(m.attachments),quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
-    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status,read:t.read,autopilot:t.autopilot,waWin:false,msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
+    return {id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.autopilot,waWin:false,msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
 }
@@ -34,13 +34,22 @@ export function createRealStore() {
   let queue=Promise.resolve(); let toastTimer:ReturnType<typeof setTimeout>|undefined;
   let writeError=false;
   let ai:RealAi|undefined;
+  const AI_TIMEOUT_MS=60000;
+  const withTimeout=<T,>(p:Promise<T>)=>new Promise<T>((res,rej)=>{const t=setTimeout(()=>rej(new Error('timeout')),AI_TIMEOUT_MS);p.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);});});
+  // Any AI failure or timeout returns the thread to "svar" so the user can write by hand.
+  const aiFailed=async(id:string)=>{
+    update(s=>{const t=s.threads.find(t=>t.id===id);if(t&&t.status==='analys')t.status='svar';});
+    toast('AI kunde inte svara just nu');
+    try{await persist({kind:'thread',id,status:'svar'});}catch{}
+    try{await reload?.();}catch{}
+  };
   // Runs one AI reply for a thread; failures keep the thread usable for manual writing.
   const aiReply=async(id:string,v:Draft['v'])=>{
     const d=state.drafts[id];if(!ai||!d)return;
     const ch=d.ch==='sms'||d.ch==='wa'?d.ch:'email';
     update(s=>{const x=s.drafts[id];if(x)x.busy=true;});
-    try{await queue;await ai.write(id,v,ch);await reload?.();}
-    catch{toast('AI kunde inte svara just nu');try{await reload?.();}catch{}}
+    try{await queue;await withTimeout(ai.write(id,v,ch));await reload?.();}
+    catch{await aiFailed(id);}
     finally{update(s=>{const x=s.drafts[id];if(x)x.busy=false;});}
   };
   let epoch=0;
@@ -56,6 +65,14 @@ export function createRealStore() {
   const draftSave=(id:string)=>{const draft=state.drafts[id];if(draft)void persist({kind:'draft',id,draft:{...draft,ch:draft.ch==='sms'?'sms':draft.ch==='wa'?'wa':'email'}}).catch(()=>{});};
   // Quote fields are visit-local until the explicit drawer save succeeds.
   const changeQuote=(fn:(q:Quote)=>void)=>{const id=state.drawer;if(!id)return;dirtyQuotes.add(id);update(s=>{const q=s.threads.find(t=>t.id===id)?.q;if(q)fn(q);});};
+  // New request flow: analys -> interpret -> code-built quote -> reply draft -> svar. Never sends.
+  async function actions_runRequest(id:string){
+    if(!ai)return;
+    update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.status='analys';});
+    try{await withTimeout(ai.interpret(id));await withTimeout(ai.write(id,'std',state.drafts[id]?.ch==='sms'||state.drafts[id]?.ch==='wa'?state.drafts[id]!.ch as 'sms'|'wa':'email'));}
+    catch{await aiFailed(id);return;}
+    try{await reload?.();}catch{}
+  }
   const actions={
     update,toast,
     reset(){toast('Återställning finns bara i demoläge.');},
@@ -83,14 +100,10 @@ export function createRealStore() {
   };
   return {getSnapshot:()=>state,subscribe:(l:()=>void)=>{listeners.add(l);return()=>{listeners.delete(l);};},actions,
     connectAi(next:RealAi){ai=next;},
+    // "Försök igen": rerun only the missing steps (a saved quote means interpretation already ran).
+    retryAi(id:string){const t=state.threads.find(t=>t.id===id);if(!t)return;if(t.q){const d=state.drafts[id];if(d&&!d.busy)void aiReply(id,d.v);}else void actions_runRequest(id);},
     // New request flow: analys -> interpret -> code-built quote -> reply draft -> svar. Never sends.
-    async runRequest(id:string){
-      if(!ai)return;
-      update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.status='analys';});
-      try{await ai.interpret(id);await ai.write(id,'std',state.drafts[id]?.ch==='sms'||state.drafts[id]?.ch==='wa'?state.drafts[id]!.ch as 'sms'|'wa':'email');}
-      catch{toast('AI kunde inte svara just nu');}
-      try{await reload?.();}catch{}
-    },
+    runRequest:actions_runRequest,
     connect(write:(input:RealMutation)=>Promise<unknown>,read:()=>Promise<void>){mutate=write;reload=read;},
     hydrate(next:WorkspaceData){data=next;const previous=state;state=workspaceState(next,state);for(const t of state.threads){if(dirtyQuotes.has(t.id))t.q=previous.threads.find(p=>p.id===t.id)?.q??t.q;}listeners.forEach(l=>l());},
     clear(){epoch++;clearTimeout(toastTimer);dirtyQuotes.clear();data=null;mutate=undefined;reload=undefined;queue=Promise.resolve();writeError=false;state=emptyRealState();listeners.forEach(l=>l());},
