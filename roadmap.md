@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Automatic WhatsApp replies: enable per-thread opt-in, shared delivery path, durable incoming-message deduplication, AI attribution and failure fallback; test and publish without changing receive-message or demo mode.
+
 - [x] WhatsApp sending: exact n8n request/acknowledgement, saved provider ID, persistent thread errors and configuration-based connection indicator; 120 tests and preview build pass, including live finalisation/isolation. Signed-in customer delivery is unverified on external Supabase; publication requested.
 
 - [x] Nylas merge checklist: all seven paths and merge confirmed; deployed functions untouched; requested notes and URL secrets saved; 115 application tests and 12 mail tests passed; application typecheck/build passed. Existing EdgeRuntime check error is reported without changing functions.
