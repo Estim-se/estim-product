@@ -7,6 +7,7 @@ export const requestSchema = z.object({ name: z.string().trim().min(1).max(200),
 export const quoteSchema = z.object({ nr: z.string().min(1).max(100), owners: z.union([z.literal(1),z.literal(2)]), addOn: z.boolean(), prisform: z.enum(['fast','ungefar']), lines: z.array(z.object({ t: z.string().trim().min(1).max(500), typ: z.enum(['arbete','material','resa']), q: z.number().min(0), u: z.string().max(30), p: z.number().min(0), rot: z.boolean(), opt: z.boolean().optional() })).max(200) });
 export const draftSchema = z.object({ text: z.string().max(30000), v: z.enum(['std','kort','formell']), ch: z.enum(['email','sms','wa']), att: z.array(z.string().max(500)).max(50), edited: z.boolean() });
 export const mutationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('whatsapp-auto'), enabled: z.boolean() }),
   z.object({ kind: z.literal('onboard'), company: companySchema, moments: z.array(momentSchema).length(10) }),
   z.object({ kind: z.literal('request'), request: requestSchema }),
   z.object({ kind: z.literal('quote'), id: z.string().uuid(), quote: quoteSchema }),

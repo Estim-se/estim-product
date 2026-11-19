@@ -215,6 +215,7 @@ export type Database = {
           signature: string
           travel_fee: number
           updated_at: string
+          whatsapp_auto_reply: boolean
         }
         Insert: {
           active?: boolean
@@ -231,6 +232,7 @@ export type Database = {
           signature?: string
           travel_fee?: number
           updated_at?: string
+          whatsapp_auto_reply?: boolean
         }
         Update: {
           active?: boolean
@@ -247,6 +249,7 @@ export type Database = {
           signature?: string
           travel_fee?: number
           updated_at?: string
+          whatsapp_auto_reply?: boolean
         }
         Relationships: []
       }
@@ -837,6 +840,7 @@ export type Database = {
           read: boolean
           status: string
           updated_at: string
+          whatsapp_auto_override: boolean | null
           why: string
         }
         Insert: {
@@ -856,6 +860,7 @@ export type Database = {
           read?: boolean
           status?: string
           updated_at?: string
+          whatsapp_auto_override?: boolean | null
           why?: string
         }
         Update: {
@@ -875,6 +880,7 @@ export type Database = {
           read?: boolean
           status?: string
           updated_at?: string
+          whatsapp_auto_override?: boolean | null
           why?: string
         }
         Relationships: [

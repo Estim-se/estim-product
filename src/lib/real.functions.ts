@@ -50,6 +50,7 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
   if(!active.data?.active)throw new Error('Företaget är avaktiverat.');
   let result;
   switch(data.kind) {
+    case 'whatsapp-auto': result=await db.from('companies').update({whatsapp_auto_reply:data.enabled}).eq('id',cid); break;
     case 'request': {
       const r = data.request;
       const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -66,7 +67,7 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
     case 'quote': result=await db.rpc('estim_quote',{tid:data.id,payload:data.quote}); break;
     case 'approve': result=await db.rpc('estim_approve',{tid:data.id}); break;
     case 'draft': result=await db.from('drafts').update({text:data.draft.text,variant:data.draft.v,channel:data.draft.ch,attachments:data.draft.att,edited:data.draft.edited}).eq('thread_id',data.id).eq('company_id',cid); break;
-    case 'thread': result=await db.from('threads').update({...(data.read !== undefined ? {read:data.read} : {}),...(data.autopilot !== undefined ? {autopilot:data.autopilot} : {}),...(data.status ? {status:data.status} : {})}).eq('id',data.id).eq('company_id',cid); break;
+    case 'thread': result=await db.from('threads').update({...(data.read !== undefined ? {read:data.read} : {}),...(data.autopilot !== undefined ? {autopilot:data.autopilot,whatsapp_auto_override:data.autopilot} : {}),...(data.status ? {status:data.status} : {})}).eq('id',data.id).eq('company_id',cid); break;
     case 'company': result=await db.from('companies').update({name:data.company.name,signature:data.company.signature,hourly_rate_ex_vat:data.company.hourly_rate_ex_vat,travel_fee:data.company.travel_fee,...(data.company.settings?{settings:data.company.settings}:{}),reply_to_email:data.company.reply_to_email || null}).eq('id',cid); break;
     case 'moment': {
       const {id,...moment}=data.moment;
