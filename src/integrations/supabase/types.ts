@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_calls: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          input: Json | null
+          input_tokens: number | null
+          model: string | null
+          output: Json | null
+          output_tokens: number | null
+          prompt_version: string
+          request_id: string | null
+          step: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          input?: Json | null
+          input_tokens?: number | null
+          model?: string | null
+          output?: Json | null
+          output_tokens?: number | null
+          prompt_version: string
+          request_id?: string | null
+          step: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          input?: Json | null
+          input_tokens?: number | null
+          model?: string | null
+          output?: Json | null
+          output_tokens?: number | null
+          prompt_version?: string
+          request_id?: string | null
+          step?: string
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           actor_name: string
@@ -588,6 +636,7 @@ export type Database = {
           customer_id: string
           facts: Json
           id: string
+          interpretation: Json | null
           job: string
           last_message_at: string
           place: string | null
@@ -605,6 +654,7 @@ export type Database = {
           customer_id: string
           facts?: Json
           id?: string
+          interpretation?: Json | null
           job: string
           last_message_at?: string
           place?: string | null
@@ -622,6 +672,7 @@ export type Database = {
           customer_id?: string
           facts?: Json
           id?: string
+          interpretation?: Json | null
           job?: string
           last_message_at?: string
           place?: string | null

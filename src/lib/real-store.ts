@@ -5,6 +5,9 @@ import type { Thread } from '@/data/inbox';
 import type { Quote } from './quote';
 import { auditTimeline } from './real-presentation';
 
+// AI steps are injected so the store stays testable without network access.
+export interface RealAi { interpret(id:string):Promise<unknown>; write(id:string,v:Draft['v'],ch:'email'|'sms'|'wa'):Promise<unknown> }
+
 const time = (value:string) => new Date(value).toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
 const strings = (value:unknown):string[] => Array.isArray(value) ? value.filter((v):v is string=>typeof v==='string') : [];
 const rows = (value:unknown):string[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>row.map(String)) : [];
@@ -12,7 +15,7 @@ const asks = (value:unknown):(string|number)[][] => Array.isArray(value) ? value
 export function emptyRealState(): EstimState { const s=initial(); return {...s, threads:[],drafts:{},sel:'',stats:{ai:0,sek:0},settings:[true,true,false,true,true,true,true]}; }
 export function workspaceState(data:WorkspaceData, previous:EstimState):EstimState {
   const drafts:Record<string,Draft>={};
-  data.drafts.forEach(d=>{drafts[d.thread_id]={text:d.text,v:d.variant==='kort'||d.variant==='formell'?d.variant:'std',ch:d.channel,att:strings(d.attachments),edited:d.edited};});
+  data.drafts.forEach(d=>{drafts[d.thread_id]={text:d.text,v:d.variant==='kort'||d.variant==='formell'?d.variant:'std',ch:d.channel,att:strings(d.attachments),edited:d.edited,warn:strings(d.warnings),review:d.needs_review&&strings(d.warnings).length>0};});
   const threads:Thread[]=data.threads.map(t=>{
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
@@ -30,6 +33,16 @@ export function createRealStore() {
   let reload:(()=>Promise<void>)|undefined;
   let queue=Promise.resolve(); let toastTimer:ReturnType<typeof setTimeout>|undefined;
   let writeError=false;
+  let ai:RealAi|undefined;
+  // Runs one AI reply for a thread; failures keep the thread usable for manual writing.
+  const aiReply=async(id:string,v:Draft['v'])=>{
+    const d=state.drafts[id];if(!ai||!d)return;
+    const ch=d.ch==='sms'||d.ch==='wa'?d.ch:'email';
+    update(s=>{const x=s.drafts[id];if(x)x.busy=true;});
+    try{await queue;await ai.write(id,v,ch);await reload?.();}
+    catch{toast('AI kunde inte svara just nu');try{await reload?.();}catch{}}
+    finally{update(s=>{const x=s.drafts[id];if(x)x.busy=false;});}
+  };
   let epoch=0;
   const dirtyQuotes=new Set<string>();
   const update=(fn:(s:EstimState)=>void)=>{state=structuredClone(state);fn(state);listeners.forEach(l=>l());};
@@ -49,8 +62,8 @@ export function createRealStore() {
     select(id:string){update(s=>{s.sel=id;s.view='desk';s.page='inkorg';const t=s.threads.find(t=>t.id===id);if(t)t.read=true;});void persist({kind:'thread',id,read:true}).catch(()=>{});},
     toggleSetting(index:number){update(s=>{s.settings[index]=!s.settings[index];});const c=data?.company;if(c)void persist({kind:'company',company:{name:c.name,signature:c.signature,hourly_rate_ex_vat:c.hourly_rate_ex_vat,travel_fee:c.travel_fee,settings:state.settings,reply_to_email:c.reply_to_email??''}},true).catch(()=>{});},
     toggleAuto(_id:string){toast('AI-svar aktiveras i nästa steg.');},
-    setDraft(_id:string,_variant:Draft['v']){toast('AI-svar aktiveras i nästa steg.');},
-    regen(_id:string){},
+    setDraft(id:string,variant:Draft['v']){if(state.drafts[id]?.busy)return;void aiReply(id,variant);},
+    regen(id:string){const d=state.drafts[id];if(d&&!d.busy)void aiReply(id,d.v);},
     editDraft(id:string,text:string){update(s=>{const d=s.drafts[id];if(d){d.text=text;d.edited=true;}});draftSave(id);},
     addAtt(id:string,value:string){update(s=>{const d=s.drafts[id];if(d&&!d.att.includes(value))d.att.push(value);});draftSave(id);},
     delAtt(id:string,index:number){update(s=>{s.drafts[id]?.att.splice(index,1);});draftSave(id);},
@@ -69,11 +82,22 @@ export function createRealStore() {
     mobileApprove(id:string){actions.send(id);},mobilePrice(id:string){actions.select(id);actions.openDrawer(id);},
   };
   return {getSnapshot:()=>state,subscribe:(l:()=>void)=>{listeners.add(l);return()=>{listeners.delete(l);};},actions,
+    connectAi(next:RealAi){ai=next;},
+    // New request flow: analys -> interpret -> code-built quote -> reply draft -> svar. Never sends.
+    async runRequest(id:string){
+      if(!ai)return;
+      update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.status='analys';});
+      try{await ai.interpret(id);await ai.write(id,'std',state.drafts[id]?.ch==='sms'||state.drafts[id]?.ch==='wa'?state.drafts[id]!.ch as 'sms'|'wa':'email');}
+      catch{toast('AI kunde inte svara just nu');}
+      try{await reload?.();}catch{}
+    },
     connect(write:(input:RealMutation)=>Promise<unknown>,read:()=>Promise<void>){mutate=write;reload=read;},
     hydrate(next:WorkspaceData){data=next;const previous=state;state=workspaceState(next,state);for(const t of state.threads){if(dirtyQuotes.has(t.id))t.q=previous.threads.find(p=>p.id===t.id)?.q??t.q;}listeners.forEach(l=>l());},
     clear(){epoch++;clearTimeout(toastTimer);dirtyQuotes.clear();data=null;mutate=undefined;reload=undefined;queue=Promise.resolve();writeError=false;state=emptyRealState();listeners.forEach(l=>l());},
     async flush(){await queue;if(writeError)throw new Error('Kunde inte spara.');},
-    async saveQuote(){const id=state.drawer;if(!id||!dirtyQuotes.has(id))return;const q=state.threads.find(t=>t.id===id)?.q;if(!q)return;const quote={...q,owners:q.owners===2?2 as const:1 as const,prisform:q.prisform==='fast'?'fast' as const:'ungefar' as const,lines:q.lines.map(l=>({...l,typ:l.typ==='arbete'?'arbete' as const:l.typ==='material'?'material' as const:'resa' as const}))};await persist({kind:'quote',id,quote});dirtyQuotes.delete(id);try{await reload?.();}catch(error){dirtyQuotes.add(id);throw error;}},
+    async saveQuote(){const id=state.drawer;if(!id||!dirtyQuotes.has(id))return;const q=state.threads.find(t=>t.id===id)?.q;if(!q)return;const quote={...q,owners:q.owners===2?2 as const:1 as const,prisform:q.prisform==='fast'?'fast' as const:'ungefar' as const,lines:q.lines.map(l=>({...l,typ:l.typ==='arbete'?'arbete' as const:l.typ==='material'?'material' as const:'resa' as const}))};await persist({kind:'quote',id,quote});dirtyQuotes.delete(id);try{await reload?.();}catch(error){dirtyQuotes.add(id);throw error;}
+      // Regenerate the reply with the saved numbers unless the user edited the text by hand.
+      const d=state.drafts[id];if(ai&&d&&!d.edited)void aiReply(id,d.v);},
     async createQuote(id:string){await queue;dirtyQuotes.add(id);const nr=String(Math.max(1000,...(data?.quotes.map(q=>Number(q.nr))??[]))+1);update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.q={nr,owners:1,addOn:false,prisform:'fast',lines:[]};});actions.openDrawer(id);},
     addMoment(id:string){const moment=data?.moments.find(m=>m.id===id);if(!moment)return;changeQuote(q=>{q.lines.push({t:moment.name,typ:'arbete',q:moment.hours_per_unit,u:'h',p:data?.company?.hourly_rate_ex_vat??0,rot:moment.rot_eligible});if(moment.material_per_unit_ex_vat)q.lines.push({t:moment.name+' · material',typ:'material',q:1,u:moment.unit,p:moment.material_per_unit_ex_vat,rot:false});});},
   };

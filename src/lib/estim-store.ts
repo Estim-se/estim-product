@@ -3,7 +3,8 @@ import { DRAFTS, formal, type DraftVariant } from './drafts';
 import type { Quote } from './quote';
 import { settings } from '@/data/prototype-pages';
 
-export interface Draft { text: string; v: DraftVariant; ch: string; att: string[]; edited: boolean }
+// warn/review/busy are only used in real mode (AI guard rails and pending AI calls).
+export interface Draft { text: string; v: DraftVariant; ch: string; att: string[]; edited: boolean; warn?: string[]; review?: boolean; busy?: boolean }
 export type MobileScreen = 'lock' | 'list' | 'thread' | 'done';
 export type DesktopPath = '/' | '/offerter' | '/kanaler' | '/installningar';
 export function initial() {

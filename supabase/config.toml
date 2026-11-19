@@ -1,1 +1,12 @@
 project_id = "tjlbqmwwuifvjqdbwehx"
+[functions.extract-prices]
+verify_jwt = false
+
+[functions.interpret-request]
+verify_jwt = false
+
+[functions.write-reply]
+verify_jwt = false
+
+[functions.triage-email]
+verify_jwt = false

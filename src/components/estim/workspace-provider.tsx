@@ -8,6 +8,7 @@ import { createRealStore } from '@/lib/real-store';
 import type { RealMutation } from '@/lib/real.schemas';
 import { parseMutation } from '@/lib/real.schemas';
 import { WorkspaceContext } from './workspace-context';
+import { interpretRequest, writeReply } from '@/lib/ai-client';
 export { useWorkspace } from './workspace-context';
 
 export function WorkspaceProvider({children}:{children:ReactNode}) {
@@ -32,6 +33,7 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   async function refresh(){const epoch=identityEpoch.current;const next=await read();if(epoch!==identityEpoch.current)return;setError('');setData(next);realStore.hydrate(next);return next;}
   async function mutate(input:RealMutation){return write({data:parseMutation(input)});}
   realStore.connect(mutate,async()=>{await refresh();});
+  realStore.connectAi({interpret:interpretRequest,write:writeReply});
   useEffect(()=>{
     let alive=true;let generation=0;
     async function resolve(){const own=++generation;setLoading(true);setError('');
