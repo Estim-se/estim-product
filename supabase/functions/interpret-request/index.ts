@@ -15,6 +15,7 @@ import { logAiCall } from "../_shared/log.ts";
 import { requireCompany } from "../_shared/auth.ts";
 import { buildQuoteLines } from "../_shared/build-quote.ts";
 import { INTERPRET_SYSTEM, INTERPRET_TOOL, INTERPRET_VERSION } from "../_shared/prompts.ts";
+import { startMessageJob } from '../_shared/message-job.ts';
 
 interface Interpretation {
   job_title: string; place: string | null;
@@ -33,6 +34,7 @@ const HIGH_RISK = ["barande", "fukt_vatrum", "asbest", "el_behorighet", "bygglov
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req); if (pre) return pre;
+  const started = await startMessageJob(req); if (started) return started;
   const auth = await requireCompany(req); if (auth instanceof Response) return auth;
   const { db, companyId } = auth;
   const input = await req.json().catch(() => null);
@@ -83,7 +85,10 @@ Deno.serve(async (req) => {
       const { lines, unpriced } = buildQuoteLines(out.items, moments.data, company.data);
       unpriced.forEach((n) => facts.push(["warn", `Ej i prislista: ${n}`]));
       if (out.items.some((i) => i.moment_id)) {
-        const saved = await db.rpc("estim_quote", { tid: threadId, payload: { by: "ai", nr: "auto", owners: 1, addOn: false, prisform: "ungefar", lines } });
+        if (auth.jobId) { const job = await db.from('ai_jobs').select('state').eq('id', auth.jobId).single(); if (job.data?.state !== 'running') throw new Error('Job expired'); }
+        const saved = auth.jobId
+          ? await db.rpc('estim_job_quote', { cid: companyId, tid: threadId, payload: { lines } })
+          : await db.rpc("estim_quote", { tid: threadId, payload: { by: "ai", nr: "auto", owners: 1, addOn: false, prisform: "ungefar", lines } });
         if (saved.error) throw new Error("quote save failed: " + saved.error.message);
         const latest = await db.from("quotes").select("nr").eq("thread_id", threadId).order("version", { ascending: false }).limit(1).maybeSingle();
         quoteNr = latest.data?.nr ?? null;

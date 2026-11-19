@@ -4,9 +4,28 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { json } from "./cors.ts";
 
-export interface AuthContext { db: SupabaseClient; userId: string; companyId: string }
+export interface AuthContext { db: SupabaseClient; userId: string; companyId: string; jobId?: string }
 
 export async function requireCompany(req: Request): Promise<AuthContext | Response> {
+  const jobHeader = req.headers.get('x-estim-job-secret');
+  if (jobHeader) {
+    const expected = Deno.env.get('ESTIM_AI_JOB_SECRET');
+    const a = new TextEncoder().encode(jobHeader), b = new TextEncoder().encode(expected ?? '');
+    let mismatch = a.length ^ b.length;
+    for (let i = 0; i < Math.max(a.length, b.length); i++) mismatch |= (a[i] ?? 0) ^ (b[i] ?? 0);
+    if (!expected || mismatch) return json({ error: 'Åtkomst nekad.' }, 401);
+    const input = await req.clone().json().catch(() => null);
+    const jobId = input?.job_id;
+    if (typeof jobId !== 'string') return json({ error: 'Ogiltigt jobb.' }, 400);
+    const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key) return json({ error: 'Ingen anslutning.' }, 503);
+    const db = createClient(url, key, { auth: { persistSession: false } });
+    const job = await db.from('ai_jobs').select('company_id,thread_id,state').eq('id', jobId).maybeSingle();
+    if (!job.data || job.data.state !== 'running' || job.data.thread_id !== input.thread_id) return json({ error: 'Ogiltigt jobb.' }, 403);
+    const company = await db.from('companies').select('active').eq('id', job.data.company_id).maybeSingle();
+    if (!company.data?.active) return json({ error: 'Företaget är avaktiverat.' }, 403);
+    return { db, userId: '', companyId: job.data.company_id, jobId };
+  }
   const header = req.headers.get("Authorization") ?? "";
   const token = header.replace(/^Bearer\s+/i, "");
   const url = Deno.env.get("SUPABASE_URL");

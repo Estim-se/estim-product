@@ -110,10 +110,12 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (!last) throw new Error('No AI response');
+    if (auth.jobId) { const job = await db.from('ai_jobs').select('state').eq('id', auth.jobId).single(); if (job.data?.state !== 'running') throw new Error('Job expired'); }
     const result = {
-      text: last!.data.text,
-      why: last!.data.why,
-      answered_questions: last!.data.answered_questions,
+      text: last.data.text,
+      why: last.data.why,
+      answered_questions: last.data.answered_questions,
       calc: quote ? calc(quote) : null,
       warnings: problems,
       // If the guard still fails after the retry the draft is kept, but blocked from sending.
@@ -125,8 +127,8 @@ Deno.serve(async (req) => {
     if (saved.error) throw new Error("draft save failed: " + saved.error.message);
     await db.from("threads").update({ status: "svar" }).eq("id", threadId);
     await logAiCall({ companyId: body.company_id, requestId: body.request_id, step: "write-reply",
-      model: last!.model, promptVersion: WRITE_REPLY_VERSION, input: body, output: result,
-      durationMs: last!.durationMs, inputTokens: last!.inputTokens, outputTokens: last!.outputTokens });
+      model: last.model, promptVersion: WRITE_REPLY_VERSION, input: body, output: result,
+      durationMs: last.durationMs, inputTokens: last.inputTokens, outputTokens: last.outputTokens });
     return json(result);
   } catch (e) {
     // Keep the thread usable so the user can write by hand.

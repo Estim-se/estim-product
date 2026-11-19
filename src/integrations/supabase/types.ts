@@ -62,6 +62,51 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_jobs: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          interpret: boolean
+          state: string
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          interpret?: boolean
+          state?: string
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          interpret?: boolean
+          state?: string
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_jobs_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           actor_name: string
@@ -102,6 +147,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "audit_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channels: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          phone_number_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          phone_number_id: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          phone_number_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channels_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -389,6 +469,8 @@ export type Database = {
           channel: string | null
           company_id: string
           created_at: string
+          delivery_error: string | null
+          delivery_status: string
           from: string
           id: string
           in_reply_to: string | null
@@ -404,6 +486,8 @@ export type Database = {
           channel?: string | null
           company_id: string
           created_at?: string
+          delivery_error?: string | null
+          delivery_status?: string
           from: string
           id?: string
           in_reply_to?: string | null
@@ -419,6 +503,8 @@ export type Database = {
           channel?: string | null
           company_id?: string
           created_at?: string
+          delivery_error?: string | null
+          delivery_status?: string
           from?: string
           id?: string
           in_reply_to?: string | null
@@ -644,6 +730,7 @@ export type Database = {
           id: string
           interpretation: Json | null
           job: string
+          last_customer_wa_at: string | null
           last_message_at: string
           place: string | null
           read: boolean
@@ -662,6 +749,7 @@ export type Database = {
           id?: string
           interpretation?: Json | null
           job: string
+          last_customer_wa_at?: string | null
           last_message_at?: string
           place?: string | null
           read?: boolean
@@ -680,6 +768,7 @@ export type Database = {
           id?: string
           interpretation?: Json | null
           job?: string
+          last_customer_wa_at?: string | null
           last_message_at?: string
           place?: string | null
           read?: boolean
@@ -721,6 +810,10 @@ export type Database = {
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
       estim_import_prices: { Args: { payload: Json }; Returns: number }
+      estim_job_quote: {
+        Args: { cid: string; payload: Json; tid: string }
+        Returns: number
+      }
       estim_login_begin: { Args: { h: string }; Returns: string }
       estim_login_finish: {
         Args: {
@@ -736,7 +829,12 @@ export type Database = {
         Returns: undefined
       }
       estim_onboard: { Args: { payload: Json }; Returns: string }
+      estim_prepare_send: { Args: { tid: string }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
+      estim_receive: {
+        Args: { actor?: string; cid: string; payload: Json }
+        Returns: Json
+      }
       estim_request: { Args: { payload: Json }; Returns: string }
       estim_revoke_invitation: {
         Args: { actor: string; cid: string; iid: string }
