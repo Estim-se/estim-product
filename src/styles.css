@@ -704,3 +704,8 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .doc-form{gap:10px;max-width:520px}.doc-form .field{display:flex;flex-direction:column;gap:4px;font-size:13px}
 .doc-form input:not([type=file]),.doc-form select{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--card);font:inherit}
 .linkbtn{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit}
+
+/* Sent library documents keep readable labels inside every message width. */
+.prototype-control.sent-document{display:flex;width:fit-content;max-width:100%;min-height:58px;justify-content:flex-start;gap:10px;margin-top:10px;padding:6px 10px 6px 6px;background:var(--card);color:var(--ink);border-radius:12px;font-size:12.5px;text-align:left;white-space:normal}
+.sent-document>.thumb{flex:none}
+.sent-document>span:last-child{min-width:0;overflow-wrap:anywhere}

@@ -1,6 +1,7 @@
 # Prototype rebuild
 
 - [x] Implement WhatsApp document selection, durable duplicate protection, 24-hour signed delivery and clickable history. Tests cover actual private storage/readback and RLS with disposable accounts; n8n is mocked, not a real customer send. Show files and on/off examples before release.
+- [x] Review document labels and click-through in desktop/mobile message and phone-view fixtures; correct contrast and long-name overflow and add the missing phone-view links. All four document types open successfully in fixtures; 185 tests pass. Production auth and real WhatsApp remain unverified.
 - [ ] Release WhatsApp document integration after review; Edge functions and app remain unpublished. Live browser and real WhatsApp verification require an available authorized session and recipient.
 
 - [x] Audit UI navigation/action wiring: prevent the embedded WhatsApp switch from submitting unrelated settings, restore mobile account/admin/phone actions and allow return from signed-out Live to Demo. 168 app tests and 12 email tests pass; desktop/390/938 navigation, settings tabs, demo approval/send, mobile Info/back/login and mode recovery checked without browser errors; automatic build passes. Live signed-in connection/saving/customer-delivery verification remains blocked by unavailable external Supabase browser session (tracked below).
