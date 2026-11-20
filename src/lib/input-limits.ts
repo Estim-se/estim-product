@@ -33,6 +33,9 @@ export async function boundedRequest(request: Request): Promise<Request | Respon
   if (request.url.length > 16384) return new Response(INPUT_TOO_LARGE, { status: 413 });
   if (!request.body) return request;
   if (Number(request.headers.get('content-length')) > MAX_INPUT_BYTES) return new Response(INPUT_TOO_LARGE, { status: 413 });
+  // Resolve lazy wrapper metadata before consuming its body stream.
+  const url = request.url;
+  const init = { method: request.method, headers: request.headers, signal: request.signal, redirect: request.redirect };
   const reader = request.body.getReader(), chunks: Uint8Array[] = [];
   let size = 0;
   while (true) {
@@ -44,5 +47,7 @@ export async function boundedRequest(request: Request): Promise<Request | Respon
   }
   const body = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
-  return new Request(request, { body });
+  // Dev-server request wrappers do not carry the native Request's internal slots.
+  // Rebuild from public fields so both wrapped requests and Worker requests work.
+  return new Request(url, { ...init, body });
 }
