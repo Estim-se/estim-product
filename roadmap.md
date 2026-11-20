@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Connect company documents to WhatsApp AI selection, durable duplicate protection, signed delivery and clickable history; show changed files and on/off examples before publishing. Authenticated external-Supabase and real WhatsApp checks require an available session/test recipient.
+
 - [x] Audit UI navigation/action wiring: prevent the embedded WhatsApp switch from submitting unrelated settings, restore mobile account/admin/phone actions and allow return from signed-out Live to Demo. 168 app tests and 12 email tests pass; desktop/390/938 navigation, settings tabs, demo approval/send, mobile Info/back/login and mode recovery checked without browser errors; automatic build passes. Live signed-in connection/saving/customer-delivery verification remains blocked by unavailable external Supabase browser session (tracked below).
 
 - [x] Replace mobile view controls with Live/Demo, rename Chatt to Meddelanden and add a compact Inkorg label above the customer name; 165 tests pass, phone list/thread/Info/back checked without horizontal overflow. Live selection reaches the existing signed-out access gate; signed-in real-mode content is unverified.
