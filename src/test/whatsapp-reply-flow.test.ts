@@ -5,6 +5,8 @@ const state = vi.hoisted(() => ({
   calls: [] as { system: string; messages: { content: string }[] }[],
   replies: [] as { text: string; why: string; answered_questions: string[]; document_ids: string[]; material_product_reference: string | null }[],
   saved: null as null | Record<string, unknown>,
+  settings: [] as boolean[],
+  library: [] as { id: string; name: string; doc_type: string; description: string; file_path: string; file_name: string }[],
   history: [
     { from: 'kund', text: 'Jag behöver spotlights och 23 uttag.', sent_at: '2026-11-20T10:00:00Z' },
     { from: 'ai', text: 'Ca 20 000–24 000 kr. Gäller det byte av alla 23 uttag?', sent_at: '2026-11-20T10:01:00Z' },
@@ -15,9 +17,9 @@ vi.mock('../../supabase/functions/_shared/auth.ts', () => ({ requireCompany: asy
   from: (table: string) => {
     const rows: Record<string, unknown> = {
       threads: { id: 'test-thread', customer_id: 'test-customer', interpretation: { customer_questions: [{ question: 'Vad kostar spotlights?' }], follow_up_questions: ['Gäller det byte av alla 23 uttag?'], recommended_action: 'offert' } },
-      companies: { name: 'Testfirma', signature: 'Mohamed ali', settings: [] }, customers: { name: 'Erik' },
+      companies: { name: 'Testfirma', signature: 'Mohamed ali', settings: state.settings }, customers: { name: 'Erik' },
       quotes: { nr: '1001', owners: 1, add_on: false, prisform: 'uppskattning', lines: [{ id: 'work', t: 'Byte av uttag', typ: 'arbete', q: 1, p: 700, rot: true }] },
-      drafts: { channel: 'wa', variant: 'std', attachments: [] }, company_documents: [], company_document_deliveries: [],
+      drafts: { channel: 'wa', variant: 'std', attachments: [] }, company_documents: state.library, company_document_deliveries: [],
     };
     const builder = {
       select: () => builder, eq: () => builder, order: () => builder, limit: () => builder, range: () => builder,
@@ -44,7 +46,7 @@ vi.mock('../../supabase/functions/_shared/anthropic.ts', () => ({
 
 const response = (text: string) => ({ text, why: 'Test', answered_questions: ['har ni försäkring?'], document_ids: [], material_product_reference: null });
 beforeEach(async () => {
-  state.calls = []; state.replies = []; state.saved = null;
+  state.calls = []; state.replies = []; state.saved = null; state.settings = []; state.library = [];
   vi.stubGlobal('Deno', { serve: (handler: (req: Request) => Promise<Response>) => { state.handler = handler; } });
   vi.resetModules();
   // Keep Deno-only modules out of the application's TypeScript graph while exercising the real handler in Vitest.
@@ -56,6 +58,17 @@ async function draft() {
   return state.handler(new Request('https://test.example/write-reply', { method: 'POST', body: JSON.stringify({ thread_id: 'test-thread', channel: 'wa' }) }));
 }
 describe('WhatsApp draft generation and persisted review rules', () => {
+  it('allows a direct insurance confirmation with the selected library document and no price', async () => {
+    state.settings = [false, false, false, true];
+    state.library = [{ id: 'insurance-proof', name: 'Försäkringsbevis', doc_type: 'Försäkring', description: 'När kunden frågar om försäkring', file_path: 'test-company/proof.pdf', file_name: 'proof.pdf' }];
+    state.replies = [{ ...response('Ja, vi har försäkring. Här är vårt försäkringsbevis.'), document_ids: ['insurance-proof'] }];
+    const result = await (await draft()).json();
+    expect(result.warnings).toEqual([]);
+    expect(result.needs_review).toBe(false);
+    expect(result.document_ids).toEqual(['insurance-proof']);
+    expect(state.saved?.['document_ids']).toEqual(['insurance-proof']);
+    expect(state.calls).toHaveLength(1);
+  });
   it('does not force a changed old quote or pending price question into an insurance reply', async () => {
     state.replies = [response('Jag behöver kontrollera våra försäkringsuppgifter först.')];
     const result = await (await draft()).json();

@@ -142,7 +142,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@9";
+export const WRITE_REPLY_VERSION = "write-reply@10";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -168,6 +168,7 @@ export function writeReplySystem(o: {
 - En fråga firman redan ställt och kunden inte svarat på ska ligga kvar, inte upprepas eller omformuleras. Ställ inga nya prisfrågor när senaste meddelandet handlar om något annat än jobbet eller priset.
 - PRIS NU och äldre kalkyl gäller bara när senaste meddelandet efterfrågar pris eller ändrar jobbet. En fråga om exempelvis försäkring besvaras bara om försäkring, utan pris, offertfrågor eller platsbesök.
 - Besvara sakfrågor bara med verifierade företagsuppgifter i underlaget. Saknas uppgift om försäkring: säg att du behöver kontrollera den, inte att firman är försäkrad eller vad försäkringen täcker.
+- "Ca" och "uppskattningsvis" gäller bara priser, inte företagsfakta som styrks av dokumentbiblioteket. När ett matchande försäkringsbevis finns och väljs för utskick: svara rakt och kort, "Ja, vi har försäkring. Här är vårt försäkringsbevis." Lägg inte till osäkerhet som "behöver kontrollera" eller "kolla vad det täcker" för själva försäkringsinnehavet. Hitta inte på omfattning, villkor eller annan information som saknas i dokumentunderlaget.
 - Materialregeln gäller HELA svaret, inklusive själva prismeningen, även om gamla svar säger något annat: skriv aldrig "I priset ingår arbete, material och framkörning" eller att material är inkluderat. Skriv att priset bygger på standardmaterial från firmans prislista och att dyrare produkter tillkommer. Undantag bara för en exakt kundangiven produkt: ange kundens produktlänk eller modell ordagrant i material_product_reference, annars null. Antaganden och offertens generiska materialrader är inte produktbevis.
 ` : '';
 
