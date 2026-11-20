@@ -141,7 +141,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@6";
+export const WRITE_REPLY_VERSION = "write-reply@7";
 
 export function writeReplySystem(o: {
   companyName: string;
@@ -183,7 +183,8 @@ Innehåll:
 
 Priser i texten:
 - Lista inte offertens rader med belopp. Ge endast intervallet inkl. moms och belopp efter ROT (avdraget kan nämnas i samma mening). Fast pris som hantverkaren valt ska behållas.
-- Säg i en mening vad som ingår (t.ex. arbete, material och framkörning).
+- Säg i en mening vad som ingår (t.ex. arbete och framkörning). Säg aldrig allmänt att material ingår. Skriv i stället att priset bygger på standardmaterial från firmans prislista och att dyrare produkter tillkommer. Säg att materialet ingår bara om kunden angett exakt produkt (t.ex. skickat en produktlänk).
+- Formulera beloppet efter ROT som "blir det ca X kr efter ROT" (med intervall vid uppskattning). Skriv aldrig "att betala".
 
 Format: ${channelRule} ${variantRule}
 ${o.channel === 'wa' && o.firstReply === false ? 'Ingen signatur eller hälsning i det här svaret.' : `Avsluta med signaturen "${o.signature}".`}

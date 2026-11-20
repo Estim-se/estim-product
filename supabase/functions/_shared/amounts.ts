@@ -52,7 +52,7 @@ export function factSheet(q: Quote): string {
     .join("\n");
   if (q.prisform === 'fast') return amounts;
   const { low, high } = estimateRange(q);
-  return `${amounts}\nPRISINTERVALL (uppskattning ±10 %, inte bindande): ca ${kr(low.inkl)}–${kr(high.inkl)} inkl. moms.${low.av > 0 ? ` ROT-avdrag ${kr(low.av)}–${kr(high.av)}, att betala ca ${kr(low.betala)}–${kr(high.betala)} om kunden har rätt till ROT.` : ' Inget ROT-avdrag i kalkylen.'}`;
+  return `${amounts}\nPRISINTERVALL (uppskattning ±10 %, inte bindande): ca ${kr(low.inkl)}–${kr(high.inkl)} inkl. moms.${low.av > 0 ? ` ROT-avdrag ${kr(low.av)}–${kr(high.av)}, blir det ca ${kr(low.betala)}–${kr(high.betala)} efter ROT om kunden har rätt till ROT.` : ' Inget ROT-avdrag i kalkylen.'}`;
 }
 
 // Matches "28 900 kr", "28900 kr", "1 200:-", "650 kronor". Spaces may be
