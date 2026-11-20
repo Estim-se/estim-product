@@ -1,5 +1,5 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
-import { deliverWhatsApp } from './whatsapp.ts';
+import { deliverDocumentReply } from './document-delivery.ts';
 
 // Reservation is durable before the network call: uncertain results never retry automatically.
 export async function autoSend(db: SupabaseClient, jobId: string) {
@@ -16,7 +16,7 @@ export async function autoSend(db: SupabaseClient, jobId: string) {
     const t = await db.from('threads').select('customer_id,last_customer_wa_at').eq('id', m.data.thread_id).eq('company_id', m.data.company_id).single();
     if (!t.data) throw new Error('Thread missing');
     const c = await db.from('customers').select('phone').eq('id', t.data.customer_id).eq('company_id', m.data.company_id).single();
-    result = await deliverWhatsApp({ text: m.data.text, lastCustomerWaAt: t.data.last_customer_wa_at,
+    result = await deliverDocumentReply(db, mid, { text: m.data.text, lastCustomerWaAt: t.data.last_customer_wa_at,
       to: c.data?.phone, target: Deno.env.get('N8N_WA_SEND_URL'), secret: Deno.env.get('N8N_SHARED_SECRET') });
   } finally {
     const finished = await db.rpc('estim_finish_send', { mid, delivered: result.sent, failure: result.error, provider_id: result.providerId });

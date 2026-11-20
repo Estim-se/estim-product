@@ -8,6 +8,7 @@ export interface Message {
   auto?: boolean;
   quote?: boolean;
   att?: string[];
+  documents?: { id: string; name: string }[];
 }
 
 export interface Thread {

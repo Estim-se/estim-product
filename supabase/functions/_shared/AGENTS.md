@@ -1,2 +1,3 @@
 - Use the paginated, tenant-scoped conversation loader for interpretation and replies; stable timestamp/creation/id ordering includes every delivered customer/manual/AI message without silently truncating long threads.
 - Compare current code-calculated estimates with sent conversation prices before requiring another price; repeated quote versions alone are not price changes.
+- WhatsApp documents use a tenant allowlist, opt-in and atomic per-thread reservation; the shared human/automatic adapter records individual acknowledgements and signs originals for 24 hours to prevent duplicate/partial delivery. Email remains separate.

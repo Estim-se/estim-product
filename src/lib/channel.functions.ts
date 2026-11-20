@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import { z } from 'zod';
 import { assertBoundedInput } from './input-limits';
 import { deliverChannel } from './channel-delivery';
+import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
 
 export const saveWhatsAppChannel = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => { assertBoundedInput(v); return z.object({ phone_number_id: z.string().trim().regex(/^\d{1,100}$/) }).parse(v); })
@@ -28,7 +29,8 @@ export const sendMessage = createServerFn({ method: 'POST' }).middleware([requir
       db.from('messages').select('channel,text').eq('id', prepared.data).eq('company_id', thread.data.company_id).single(),
       db.from('customers').select('phone').eq('id', thread.data.customer_id).single(),
     ]);
-    const delivered = message.data ? await deliverChannel({ channel: message.data.channel ?? '', text: message.data.text,
+    const deliver = (input: Parameters<typeof deliverChannel>[0]) => input.channel === 'wa' ? deliverDocumentReply(admin, prepared.data, input) : deliverChannel(input);
+    const delivered = message.data ? await deliver({ channel: message.data.channel ?? '', text: message.data.text,
       lastCustomerWaAt: thread.data.last_customer_wa_at, messageId: prepared.data,
       ...(process.env['SUPABASE_URL'] && process.env['INTERNAL_FUNCTION_KEY'] ? { emailTarget: `${process.env['SUPABASE_URL']}/functions/v1/email-send`, internalKey: process.env['INTERNAL_FUNCTION_KEY'] } : {}),
       ...(process.env['N8N_WA_SEND_URL'] ? { target: process.env['N8N_WA_SEND_URL'] } : {}),

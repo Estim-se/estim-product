@@ -27,7 +27,11 @@ export const loadWorkspace = createServerFn({ method: 'POST' }).middleware([requ
   if(!company.data?.active)throw new Error('Företaget är avaktiverat.');
   const channels = await db.from('channels').select('*').eq('company_id', cid);
   if (channels.error) throw new Error('Kunde inte läsa kanalerna.');
-  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [], channels: channels.data ?? [], whatsAppSendingConnected: Boolean(process.env['N8N_WA_SEND_URL']?.trim()) };
+  const documents = await db.from('company_document_deliveries').select('id,name,message_id,thread_id').eq('company_id', cid).eq('state', 'sent');
+  if (documents.error) throw new Error('Dokumenthistoriken kunde inte läsas.');
+  const library = await db.from('company_documents').select('id,name').eq('company_id', cid);
+  if (library.error) throw new Error('Dokumentbiblioteket kunde inte läsas.');
+  return { platform:access.platform,role:membership.data.role,company: company.data, profile: profile.data, threads: threads.data ?? [], customers: customers.data ?? [], messages: messages.data ?? [], quotes: quotes.data ?? [], drafts: drafts.data ?? [], moments: moments.data ?? [], audit: audit.data ?? [], channels: channels.data ?? [], documentLibrary: library.data ?? [], documentDeliveries: documents.data ?? [], whatsAppSendingConnected: Boolean(process.env['N8N_WA_SEND_URL']?.trim()) };
 });
 export type WorkspaceData = Awaited<ReturnType<typeof loadWorkspace>>;
 
