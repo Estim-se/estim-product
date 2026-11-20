@@ -264,6 +264,7 @@ export type Database = {
           message_id: string
           name: string
           provider_message_id: string | null
+          source_message_id: string | null
           state: string
           thread_id: string
           updated_at: string
@@ -278,6 +279,7 @@ export type Database = {
           message_id: string
           name: string
           provider_message_id?: string | null
+          source_message_id?: string | null
           state?: string
           thread_id: string
           updated_at?: string
@@ -292,6 +294,7 @@ export type Database = {
           message_id?: string
           name?: string
           provider_message_id?: string | null
+          source_message_id?: string | null
           state?: string
           thread_id?: string
           updated_at?: string
@@ -314,6 +317,13 @@ export type Database = {
           {
             foreignKeyName: "company_document_deliveries_message_id_fkey"
             columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_document_deliveries_source_message_id_fkey"
+            columns: ["source_message_id"]
             isOneToOne: false
             referencedRelation: "messages"
             referencedColumns: ["id"]
@@ -1037,6 +1047,15 @@ export type Database = {
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_claim_job: { Args: { jid: string }; Returns: boolean }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_document_requested: {
+        Args: {
+          doc_name: string
+          doc_type: string
+          prior: boolean
+          txt: string
+        }
+        Returns: boolean
+      }
       estim_email_connection: { Args: never; Returns: Json }
       estim_email_grant_state: {
         Args: { new_state: string; p_grant: string }

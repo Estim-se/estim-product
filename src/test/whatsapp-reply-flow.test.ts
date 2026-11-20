@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   saved: null as null | Record<string, unknown>,
   settings: [] as boolean[],
   library: [] as { id: string; name: string; doc_type: string; description: string; file_path: string; file_name: string }[],
+  deliveries: [] as { document_id: string; message_id: string; created_at: string }[],
+  latest: 'har ni försäkring?',
   history: [
     { from: 'kund', text: 'Jag behöver spotlights och 23 uttag.', sent_at: '2026-11-20T10:00:00Z' },
     { from: 'ai', text: 'Ca 20 000–24 000 kr. Gäller det byte av alla 23 uttag?', sent_at: '2026-11-20T10:01:00Z' },
@@ -19,7 +21,7 @@ vi.mock('../../supabase/functions/_shared/auth.ts', () => ({ requireCompany: asy
       threads: { id: 'test-thread', customer_id: 'test-customer', interpretation: { customer_questions: [{ question: 'Vad kostar spotlights?' }], follow_up_questions: ['Gäller det byte av alla 23 uttag?'], recommended_action: 'offert' } },
       companies: { name: 'Testfirma', signature: 'Mohamed ali', settings: state.settings }, customers: { name: 'Erik' },
       quotes: { nr: '1001', owners: 1, add_on: false, prisform: 'uppskattning', lines: [{ id: 'work', t: 'Byte av uttag', typ: 'arbete', q: 1, p: 700, rot: true }] },
-      drafts: { channel: 'wa', variant: 'std', attachments: [] }, company_documents: state.library, company_document_deliveries: [],
+      drafts: { channel: 'wa', variant: 'std', attachments: [] }, company_documents: state.library, company_document_deliveries: state.deliveries,
     };
     const builder = {
       select: () => builder, eq: () => builder, order: () => builder, limit: () => builder, range: () => builder,
@@ -31,7 +33,7 @@ vi.mock('../../supabase/functions/_shared/auth.ts', () => ({ requireCompany: asy
   },
 } }) }));
 vi.mock('../../supabase/functions/_shared/conversation.ts', () => ({
-  loadConversation: async () => state.history,
+  loadConversation: async () => state.history.map((m, i) => i === state.history.length - 1 ? { ...m, text: state.latest } : m),
   formatConversation: (messages: { from: string; text: string }[]) => messages.map(message => `${message.from}: ${message.text}`).join('\n'),
 }));
 vi.mock('../../supabase/functions/_shared/log.ts', () => ({ logAiCall: async () => {} }));
@@ -47,6 +49,7 @@ vi.mock('../../supabase/functions/_shared/anthropic.ts', () => ({
 const response = (text: string) => ({ text, why: 'Test', answered_questions: ['har ni försäkring?'], document_ids: [], material_product_reference: null });
 beforeEach(async () => {
   state.calls = []; state.replies = []; state.saved = null; state.settings = []; state.library = [];
+  state.deliveries = []; state.latest = 'har ni försäkring?';
   vi.stubGlobal('Deno', { serve: (handler: (req: Request) => Promise<Response>) => { state.handler = handler; } });
   vi.resetModules();
   // Keep Deno-only modules out of the application's TypeScript graph while exercising the real handler in Vitest.
@@ -58,6 +61,27 @@ async function draft() {
   return state.handler(new Request('https://test.example/write-reply', { method: 'POST', body: JSON.stringify({ thread_id: 'test-thread', channel: 'wa' }) }));
 }
 describe('WhatsApp draft generation and persisted review rules', () => {
+  it.each(['kan du skicka försäkringsbevis, jag har mistat den', 'send på nytt'])('persists an explicitly requested resend: %s', async latest => {
+    state.settings = [false, false, false, true]; state.latest = latest;
+    state.library = [{ id: 'proof', name: 'Försäkringsbevis', doc_type: 'forsakring', description: 'När kunden frågar om försäkring', file_path: 'test-company/proof.pdf', file_name: 'proof.pdf' }];
+    state.deliveries = [{ document_id: 'proof', message_id: 'old-send', created_at: '2026-11-20T10:00:00Z' }];
+    state.replies = [{ ...response('Här är vårt försäkringsbevis igen.'), document_ids: ['proof'] }];
+    const result = await (await draft()).json();
+    expect(result.warnings).toEqual([]); expect(result.document_ids).toEqual(['proof']); expect(state.saved?.['document_ids']).toEqual(['proof']);
+  });
+  it('blocks an elliptical promise without attachments after both attempts', async () => {
+    state.replies = [response('Här kommer det igen'), response('Se bifogat.')];
+    const result = await (await draft()).json();
+    expect(result.needs_review).toBe(true); expect(state.saved?.['needs_review']).toBe(true); expect(result.document_ids).toEqual([]);
+  });
+  it('keeps a repeated insurance question factual without resending the old document', async () => {
+    state.settings = [false, false, false, true];
+    state.library = [{ id: 'proof', name: 'Försäkringsbevis', doc_type: 'forsakring', description: 'När kunden frågar om försäkring', file_path: 'test-company/proof.pdf', file_name: 'proof.pdf' }];
+    state.deliveries = [{ document_id: 'proof', message_id: 'old-send', created_at: '2026-11-20T10:00:00Z' }];
+    state.replies = [response('Ja, vi har försäkring.')];
+    const result = await (await draft()).json();
+    expect(result.document_ids).toEqual([]); expect(result.warnings).toEqual([]); expect(result.needs_review).toBe(false);
+  });
   it('allows a direct insurance confirmation with the selected library document and no price', async () => {
     state.settings = [false, false, false, true];
     state.library = [{ id: 'insurance-proof', name: 'Försäkringsbevis', doc_type: 'Försäkring', description: 'När kunden frågar om försäkring', file_path: 'test-company/proof.pdf', file_name: 'proof.pdf' }];

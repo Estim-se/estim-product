@@ -48,6 +48,39 @@ describe.skipIf(!configured)('company document delivery persistence', () => {
       expect((await client.from('drafts').insert({ company_id: cid, thread_id: tid, text: 'Test', channel: 'wa', document_ids: [doc.data.id], needs_review: false })).error).toBeNull();
       const second = await client.rpc('estim_prepare_send', { tid }); expect(second.error).toBeNull();
       expect((await client.from('company_document_deliveries').select('id').eq('message_id', second.data)).data).toEqual([]);
+      expect((await admin.rpc('estim_finish_send', { mid: second.data, delivered: false, failure: 'Test duplicate blocked' })).error).toBeNull();
+      // A new explicit customer request authorizes a fresh reservation, never replaying the old send.
+      const resend = await admin.rpc('estim_receive', { cid, payload: { channel: 'wa', text: 'kan du skicka försäkringsbevis, jag har mistat den', customer_phone: '46000000000', provider_message_id: crypto.randomUUID() } });
+      expect(resend.error).toBeNull();
+      expect((await client.from('drafts').update({ text: 'Här är vårt försäkringsbevis igen.', document_ids: [doc.data.id], needs_review: false }).eq('thread_id', tid)).error).toBeNull();
+      const third = await client.rpc('estim_prepare_send', { tid }); expect(third.error).toBeNull();
+      expect((await client.from('company_document_deliveries').select('document_id').eq('message_id', third.data)).data).toEqual([{ document_id: doc.data.id }]);
+      const resendBodies: Record<string, unknown>[] = [];
+      vi.stubGlobal('fetch', async (resource: RequestInfo | URL, options?: RequestInit) => {
+        if (String(resource).startsWith('https://n8n.example.test')) { resendBodies.push(JSON.parse(String(options?.body))); return Response.json({ ok: true, message_id: 'test-resend-id' }); }
+        return realFetch(resource, options);
+      });
+      try {
+        const result = await deliverDocumentReply(admin, third.data, { text: 'Här är vårt försäkringsbevis igen.', to: '46000000000', target: 'https://n8n.example.test/webhook/estim-wa-send', secret: 'test-only', lastCustomerWaAt: new Date().toISOString() });
+        expect(result.sent).toBe(true); expect(resendBodies[0]?.['document_filename']).toBe('Försäkringsbevis.pdf');
+        expect((await deliverDocumentReply(admin, third.data, { text: 'Här är vårt försäkringsbevis igen.', to: '46000000000', target: 'https://n8n.example.test/webhook/estim-wa-send', secret: 'test-only', lastCustomerWaAt: new Date().toISOString() })).sent).toBe(false);
+        expect(resendBodies).toHaveLength(1);
+        expect((await admin.rpc('estim_finish_send', { mid: third.data, delivered: true, provider_id: 'test-resend-id' })).error).toBeNull();
+      } finally { vi.unstubAllGlobals(); }
+      // Re-approving against the same customer message must not create a second reservation.
+      expect((await client.from('drafts').insert({ company_id: cid, thread_id: tid, text: 'Test', channel: 'wa', document_ids: [doc.data.id], needs_review: false })).error).toBeNull();
+      const replay = await client.rpc('estim_prepare_send', { tid }); expect(replay.error).toBeNull();
+      expect((await client.from('company_document_deliveries').select('id').eq('message_id', replay.data)).data).toEqual([]);
+      expect((await admin.rpc('estim_finish_send', { mid: replay.data, delivered: false, failure: 'Test replay blocked' })).error).toBeNull();
+      // Automatic replies use the same request-bound exception for "send på nytt".
+      expect((await admin.from('companies').update({ whatsapp_auto_reply: true }).eq('id', cid)).error).toBeNull();
+      const auto = await admin.rpc('estim_receive', { cid, payload: { channel: 'wa', text: 'send på nytt', customer_phone: '46000000000', provider_message_id: crypto.randomUUID() } });
+      expect(auto.error).toBeNull(); const jid = (auto.data as { job_id: string }).job_id;
+      expect((await admin.from('ai_jobs').update({ state: 'running' }).eq('id', jid)).error).toBeNull();
+      expect((await client.from('drafts').update({ text: 'Här är beviset igen.', document_ids: [doc.data.id], needs_review: false }).eq('thread_id', tid)).error).toBeNull();
+      const automatic = await admin.rpc('estim_prepare_auto_send', { jid }); expect(automatic.error).toBeNull(); expect(automatic.data).toBeTruthy();
+      expect((await client.from('company_document_deliveries').select('document_id').eq('message_id', automatic.data)).data).toEqual([{ document_id: doc.data.id }]);
+      expect((await admin.rpc('estim_prepare_auto_send', { jid })).data).toBeNull();
     } finally {
       vi.unstubAllGlobals();
       await admin.storage.from('company-documents').remove([path]);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled, selectDocuments, type LibraryDocument } from '../../supabase/functions/_shared/document-policy';
+import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled, selectDocuments, requestedDocuments, documentPromiseWithoutAttachment, type LibraryDocument } from '../../supabase/functions/_shared/document-policy';
 import { deliverWhatsApp } from '../../supabase/functions/_shared/whatsapp';
 import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
 
@@ -39,6 +39,26 @@ describe('WhatsApp document rules', () => {
   it('never selects documents while off or without matching instructions', () => {
     expect(selectDocuments(['insurance'], [insurance], [], false)).toEqual([]);
     expect(selectDocuments(['insurance'], [{ ...insurance, description: '' }], [], true)).toEqual([]);
+  });
+  it('permits the explicit lost-insurance-proof request but not a repeated factual question', () => {
+    const requested = requestedDocuments('kan du skicka försäkringsbevis, jag har mistat den', [insurance], ['insurance']);
+    expect(requested).toEqual(['insurance']);
+    expect(selectDocuments(['insurance'], [insurance], ['insurance'], true, requested)).toEqual([insurance]);
+    expect(requestedDocuments('har ni försäkring?', [insurance], ['insurance'])).toEqual([]);
+  });
+  it('resolves send på nytt to the latest document group without bypassing opt-out', () => {
+    const requested = requestedDocuments('send på nytt', [insurance, certificate], ['insurance']);
+    expect(requested).toEqual(['insurance']);
+    expect(selectDocuments(['insurance'], [insurance], ['insurance'], false, requested)).toEqual([]);
+  });
+  it.each(['Här kommer det igen', 'Jag bifogar beviset.', 'Se bifogat.', 'Här är vårt försäkringsbevis.'])('blocks the unaccompanied document promise %s', async text => {
+    expect(documentPromiseWithoutAttachment(text, 0)).toBe(true);
+    const f = fixture([]), request = vi.fn(); vi.stubGlobal('fetch', request);
+    try { expect((await deliverDocumentReply(f.db, 'm', { ...input, text })).sent).toBe(false); expect(request).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); }
+  });
+  it('delivers a repeated factual insurance answer without any attachment', async () => {
+    const f = fixture([]), request = vi.fn(async (_url: unknown, _options?: RequestInit) => Response.json({ ok: true, message_id: 'id' })); vi.stubGlobal('fetch', request);
+    try { expect((await deliverDocumentReply(f.db, 'm', { ...input, text: 'Ja, vi har försäkring.' })).sent).toBe(true); expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).document_url).toBeUndefined(); } finally { vi.unstubAllGlobals(); }
   });
   it('signs links for exactly 24 hours and preserves the correct extension', async () => {
     expect(DOCUMENT_URL_SECONDS).toBe(86400);

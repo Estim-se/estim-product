@@ -1,6 +1,7 @@
 # Prototype rebuild
 
-- [ ] Allow customer-requested WhatsApp document resends with per-incoming-message idempotency; block document promises without attachments in draft and delivery code. Show two examples before publication; do not change n8n, email or calculation.
+- [x] Allow customer-requested WhatsApp document resends with per-incoming-message idempotency; block document promises without attachments in draft and delivery code. Live private-storage/RLS tests verify human resend, same-request/replay denial and automatic resend reservation; n8n mocked, no customer send. Claude examples confirm resend document selection and repeated insurance question without attachment; n8n/email/calculation unchanged.
+- [ ] Release reviewed document-resend correction: awaiting example review; app and Edge changes not deployed. Reservation schema is applied and remains compatible with the previous selection code.
 - [x] Clarify that library-supported WhatsApp company facts are direct, not price-qualified; Claude returned exactly “Ja, vi har försäkring. Här är vårt försäkringsbevis.” with the library document selected. 194 tests and automatic build pass; write-reply@10 deployed. No real customer send verified.
 - [x] Correct WhatsApp latest-message focus, leave previously asked questions pending, and enforce material wording in price replies; calculation and delivery/email code unchanged. 193 tests pass; real Claude test-catalog examples generated without delivery, plus mocked real-handler retry/persistence checks. Show examples before release; no production or customer-send verification performed.
 - [x] Release reviewed WhatsApp reply correction through write-reply@10; app publication requested with the same reviewed example.

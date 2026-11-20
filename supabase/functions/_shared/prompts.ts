@@ -142,7 +142,7 @@ export const INTERPRET_TOOL: ToolSpec = {
 /* 3. write-reply: thread + calculation -> reply text                  */
 /* ------------------------------------------------------------------ */
 
-export const WRITE_REPLY_VERSION = "write-reply@10";
+export const WRITE_REPLY_VERSION = "write-reply@11";
 
 export function writeReplySystem(o: {
   companyName: string;
