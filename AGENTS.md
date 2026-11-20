@@ -68,4 +68,4 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Automatic WhatsApp sends inherit a default-off company setting unless a nullable thread override explicitly chooses on/off; bind jobs to incoming messages and atomically reserve one AI attempt per provider ID using the shared delivery adapter, so duplicates cannot trigger delivery and failed attempts preserve the draft.
 
 - Keep settings mounted; use form-linked save.
-- Company documents live in the private `company-documents` bucket under `<company_id>/` with rows in `company_documents` (company-scoped RLS); the library is not yet used by AI or sending, so it can change without touching mail/AI code.
+- Company documents: private `company-documents` bucket under `<company_id>/` plus company-scoped `company_documents` rows; keeps files tenant-isolated.
