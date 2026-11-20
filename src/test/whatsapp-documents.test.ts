@@ -13,7 +13,7 @@ function fixture(docs: LibraryDocument[], enabled = true) {
   const db = { storage: { from: () => ({ createSignedUrl: signed }) }, from: (table: string) => {
     const filters: Record<string, unknown> = {}; let patch: Record<string, unknown> | undefined;
     const result = () => {
-      if (table === 'messages') return { data: { company_id: 'company', thread_id: 'thread' }, error: null };
+      if (table === 'messages') return { data: { company_id: 'company', thread_id: 'thread', document_ids: docs.map(d => d.id) }, error: null };
       if (table === 'companies') return { data: { settings: [false, false, false, enabled] }, error: null };
       if (table === 'drafts') return { data: { document_ids: docs.map(d => d.id) }, error: null };
       if (table === 'company_documents') return { data: docs.find(d => d.id === filters['id']), error: null };

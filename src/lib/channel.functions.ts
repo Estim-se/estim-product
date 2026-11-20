@@ -29,7 +29,11 @@ export const sendMessage = createServerFn({ method: 'POST' }).middleware([requir
       db.from('messages').select('channel,text').eq('id', prepared.data).eq('company_id', thread.data.company_id).single(),
       db.from('customers').select('phone').eq('id', thread.data.customer_id).single(),
     ]);
-    const deliver = (input: Parameters<typeof deliverChannel>[0]) => input.channel === 'wa' ? deliverDocumentReply(admin, prepared.data, input) : deliverChannel(input);
+    const deliver = async (input: Parameters<typeof deliverChannel>[0]) => {
+      if (input.channel !== 'wa') return deliverChannel(input);
+      try { return await deliverDocumentReply(admin, prepared.data, input); }
+      catch { return { sent: false, error: 'WhatsApp-svaret eller dokumentet kunde inte skickas. Försök igen.', providerId: null }; }
+    };
     const delivered = message.data ? await deliver({ channel: message.data.channel ?? '', text: message.data.text,
       lastCustomerWaAt: thread.data.last_customer_wa_at, messageId: prepared.data,
       ...(process.env['SUPABASE_URL'] && process.env['INTERNAL_FUNCTION_KEY'] ? { emailTarget: `${process.env['SUPABASE_URL']}/functions/v1/email-send`, internalKey: process.env['INTERNAL_FUNCTION_KEY'] } : {}),
