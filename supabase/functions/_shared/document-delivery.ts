@@ -1,4 +1,4 @@
-import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled } from './document-policy.ts';
+import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled, documentPromiseWithoutAttachment } from './document-policy.ts';
 import { deliverWhatsApp, type WhatsAppInput } from './whatsapp.ts';
 
 // Reservations are created atomically with the outgoing message. Never retry an
@@ -19,8 +19,10 @@ export async function deliverDocumentReply(db: any, messageId: string, input: Wh
   }
   if (!rows.length) {
     if (company.data.document_ids?.length) return fail('Dokumentet är borttaget eller redan skickat. Skapa ett nytt AI-svar.');
+    if (documentPromiseWithoutAttachment(input.text, 0)) return fail('Svaret lovar ett dokument utan bilaga. Skapa ett nytt AI-svar.');
     return deliverWhatsApp(input);
   }
+  if (rows.length !== new Set(company.data.document_ids ?? []).size) return fail('Alla valda dokument kunde inte reserveras. Skapa ett nytt AI-svar.');
   // Resolve all originals before sending anything; do not send stale/replaced files.
   const documents = [];
   for (const row of rows) {
