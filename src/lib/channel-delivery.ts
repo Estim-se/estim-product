@@ -23,7 +23,7 @@ async function deliverEmail(input: DeliveryInput, request: typeof fetch) {
     if (new URL(emailTarget).protocol !== 'https:') throw new Error('Invalid URL');
     const response = await request(emailTarget, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-internal-key': internalKey },
-      body: JSON.stringify({ message_id: input.messageId }), signal: AbortSignal.timeout(30000), redirect: 'error',
+      body: JSON.stringify({ message_id: input.messageId }), signal: AbortSignal.timeout(30000), redirect: 'manual',
     });
     const result = await response.json().catch(() => null);
     if (result?.ok === true && result.skipped === true) return { sent: true, error: null, providerId: null };
