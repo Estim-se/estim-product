@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     while (attempts < 2) {
       attempts++;
       last = await callClaudeTool<Reply>({ system, messages, tool: WRITE_REPLY_TOOL, maxTokens: 1500 });
-      if (channel === 'wa') last.data.text = continueReply(last.data.text, body.company.signature, firstReply);
+      last.data.text = continueReply(last.data.text, body.company.signature, firstReply);
       problems = check(last.data.text, quote, fixedPrice, channel);
       // The short variant must stay within 80 words before the signature.
       if (body.variant === "kort" || channel === 'wa') {
