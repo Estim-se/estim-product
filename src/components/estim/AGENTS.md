@@ -1,0 +1,1 @@
+- Keep Estim context in a component-free module and separate from its refreshable provider, so hot updates cannot disconnect mounted page consumers or reset their store.

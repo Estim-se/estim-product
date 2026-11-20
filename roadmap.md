@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Separate Estim context identity from the refreshable provider to prevent disconnected mounted page consumers. Desktop/mobile PrototypePageShell fixtures render without errors; actual signed-out routes reach login without crashes; 186 tests and automatic build pass. Authenticated external-Supabase navigation remains unverified.
+
 - [x] Implement WhatsApp document selection, durable duplicate protection, 24-hour signed delivery and clickable history. Tests cover actual private storage/readback and RLS with disposable accounts; n8n is mocked, not a real customer send. Show files and on/off examples before release.
 - [x] Review document labels and click-through in desktop/mobile message and phone-view fixtures; correct contrast and long-name overflow and add the missing phone-view links. All four document types open successfully in fixtures; 185 tests pass. Production auth and real WhatsApp remain unverified.
 - [ ] Release WhatsApp document integration after review; Edge functions and app remain unpublished. Live browser and real WhatsApp verification require an available authorized session and recipient.
