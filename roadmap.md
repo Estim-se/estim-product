@@ -1,5 +1,8 @@
 # Prototype rebuild
 
+- [x] Correct WhatsApp latest-message focus, leave previously asked questions pending, and enforce material wording in price replies; calculation and delivery/email code unchanged. 193 tests pass; real Claude test-catalog examples generated without delivery, plus mocked real-handler retry/persistence checks. Show examples before release; no production or customer-send verification performed.
+- [ ] Release WhatsApp reply correction after example review; app and Edge functions remain unpublished.
+
 - [x] Separate Estim context identity from the refreshable provider to prevent disconnected mounted page consumers. Desktop/mobile PrototypePageShell fixtures render without errors; actual signed-out routes reach login without crashes; 186 tests and automatic build pass. Authenticated external-Supabase navigation remains unverified.
 
 - [x] Implement WhatsApp document selection, durable duplicate protection, 24-hour signed delivery and clickable history. Tests cover actual private storage/readback and RLS with disposable accounts; n8n is mocked, not a real customer send. Show files and on/off examples before release.
