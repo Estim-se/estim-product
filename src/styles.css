@@ -510,3 +510,21 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .price-files{display:flex;flex-direction:column;gap:6px;list-style:none;padding:0}.price-file-name{overflow-wrap:anywhere;min-width:0}
 .price-warn{background:var(--pink);border-radius:12px;padding:10px 12px}.price-rate{flex-wrap:wrap}.price-num{width:100px}.price-unit{width:70px}
 .price-table{min-width:980px}.price-table td{vertical-align:top}.price-table tr.skipped td{opacity:.55}.price-flags{flex-wrap:wrap;gap:4px;margin-top:6px}
+
+/* Login page: quiet framed layout with subtle drifting line art. */
+.auth-shell{position:relative;max-width:none;margin:0;min-height:100vh;padding:clamp(16px,4vw,56px);align-items:stretch;overflow:hidden}
+.auth-shell::before{content:"";position:absolute;inset:clamp(16px,4vw,56px);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card);box-shadow:var(--shadow)}
+.auth-card{position:relative;z-index:2;width:100%;max-width:360px;margin:auto;padding:48px 0;display:flex;flex-direction:column;gap:20px;animation:auth-in .8s cubic-bezier(.2,.7,.2,1) both}
+.auth-card h1{font-family:var(--font-serif);font-weight:400;font-size:40px;letter-spacing:-.01em;line-height:1.05}
+.auth-card .account-form{gap:14px}.auth-card .field{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.auth-card .input{border-radius:var(--r-sm);transition:border-color .2s,box-shadow .2s}.auth-card .input:focus{border-color:var(--ink);box-shadow:0 0 0 4px color-mix(in oklab,var(--lime) 45%,transparent)}
+.auth-card .btn-primary{width:100%;justify-content:center;height:46px;border-radius:var(--r-sm)}
+.auth-card .link{font-size:13px;color:var(--muted)}.auth-card .link:hover{color:var(--ink)}.auth-card>.link.mt24{align-self:center;margin-top:12px}
+.auth-decor{position:absolute;inset:clamp(16px,4vw,56px);z-index:1;pointer-events:none;color:var(--line2);border-radius:var(--r-lg);overflow:hidden}
+.deco{position:absolute;width:96px;height:96px;opacity:.9;animation:auth-drift 14s ease-in-out infinite}
+.d1{top:12%;left:9%}.d2{bottom:14%;left:16%;animation-delay:-4s;animation-duration:17s}.d3{top:16%;right:10%;width:120px;animation-delay:-8s;animation-duration:19s}
+.d4{bottom:12%;right:14%;animation-delay:-2s;animation-duration:15s;color:color-mix(in oklab,var(--lime) 70%,var(--line2))}.d5{top:50%;left:4%;width:70px;animation-delay:-6s;animation-duration:21s}
+@keyframes auth-drift{0%,100%{transform:translate(0,0) rotate(0)}33%{transform:translate(6px,-10px) rotate(3deg)}66%{transform:translate(-5px,6px) rotate(-2deg)}}
+@keyframes auth-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:700px){.d3,.d5{display:none}.deco{width:64px;height:64px}.auth-card h1{font-size:32px}}
+@media(prefers-reduced-motion:reduce){.deco,.auth-card{animation:none}}
