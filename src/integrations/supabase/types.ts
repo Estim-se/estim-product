@@ -253,6 +253,53 @@ export type Database = {
         }
         Relationships: []
       }
+      company_documents: {
+        Row: {
+          company_id: string
+          created_at: string
+          description: string
+          doc_type: string
+          file_name: string
+          file_path: string
+          id: string
+          name: string
+          updated_at: string
+          uploaded_at: string
+        }
+        Insert: {
+          company_id?: string
+          created_at?: string
+          description?: string
+          doc_type: string
+          file_name?: string
+          file_path: string
+          id?: string
+          name: string
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          description?: string
+          doc_type?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_invitations: {
         Row: {
           accepted_at: string | null
