@@ -672,7 +672,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .ib2>.tl2>.filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
 .ib2 .tl2 .prototype-control.fchip{padding:0 9px;flex:none}
 .ib2 .inbox-items{scrollbar-gutter:auto}
-.ib2>.tl2>.filters{display:grid;grid-template-columns:repeat(4,auto);justify-content:space-between;gap:2px}
+.ib2>.tl2>.filters{display:grid;grid-auto-flow:column;justify-content:start;gap:2px}
 .ib2 .tl2 .prototype-control.fchip{padding:0 8px;font-size:12px}
 .ib2>.tl2>.filters{padding:0 10px;gap:0}
 .ib2 .tl2 .prototype-control.fchip{padding:0 7px;min-width:0}

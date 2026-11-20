@@ -3,7 +3,7 @@ import { channelIcon, filterThreads, threadStatus, type InboxFilter, type Thread
 import { Icon } from './icon';
 import { realSentStatus } from '@/lib/real-presentation';
 
-const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntande'], ['ai', 'AI sköter'], ['vunna', 'Vunna']];
+const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntande']];
 
 export function InboxList({ threads, selected, filter, onFilter, onSelect, onSimulate, real=false }: {
   threads: Thread[]; selected: string; filter: InboxFilter;
