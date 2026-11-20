@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Link, useLocation } from '@tanstack/react-router';
+import { useEffect, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import demo from '@/data/demo.json';
 import { Icon } from './icon';
@@ -15,6 +15,10 @@ export function AppShell({ children, waiting, onReset }: {
   const { actions } = useEstim();
   const path = useLocation().pathname;
   const workspace = useWorkspace();
+  const navigate = useNavigate();
+  // App pages require a session: signed-out visitors are sent to the login page.
+  useEffect(() => { if (!workspace.loading && !workspace.signedIn) void navigate({ to: '/auth', replace: true }); }, [workspace.loading, workspace.signedIn, navigate]);
+  if (workspace.loading || !workspace.signedIn) return null;
   const real = workspace.mode === 'real';
   const company = real ? workspace.data?.company?.name ?? 'Ditt företag' : demo.company.name;
   return <div className="app">
