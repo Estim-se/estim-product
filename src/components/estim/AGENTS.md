@@ -1,1 +1,2 @@
 - Keep Estim context in a component-free module and separate from its refreshable provider, so hot updates cannot disconnect mounted page consumers or reset their store.
+- Portal quote PDF previews to document.body using the shared ov/md dialog classes; keep modal constraints screen-only so printed sheets remain unclipped.

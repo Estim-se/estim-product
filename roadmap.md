@@ -1,5 +1,6 @@
 # Prototype rebuild
 
+- [x] Portal quote preview above the whole page with shared modal styling, pinned header, document-only scrolling, keyboard/focus handling and restored page scroll. 208 tests pass; desktop/current-size/mobile browser fixture checks pass and print remains A4/unclipped. Authenticated quotes-page navigation unavailable; quote data/download handler unchanged, no publication.
 - [x] Allow customer-requested WhatsApp document resends with per-incoming-message idempotency; block document promises without attachments in draft and delivery code. Live private-storage/RLS tests verify human resend, same-request/replay denial and automatic resend reservation; n8n mocked, no customer send. Claude examples confirm resend document selection and repeated insurance question without attachment; n8n/email/calculation unchanged.
 - [ ] Release reviewed document-resend correction: awaiting example review; app and Edge changes not deployed. Reservation schema is applied and remains compatible with the previous selection code.
 - [x] Clarify that library-supported WhatsApp company facts are direct, not price-qualified; Claude returned exactly “Ja, vi har försäkring. Här är vårt försäkringsbevis.” with the library document selected. 194 tests and automatic build pass; write-reply@10 deployed. No real customer send verified.

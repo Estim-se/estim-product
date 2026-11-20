@@ -678,9 +678,10 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .ib2 .tl2 .prototype-control.fchip{padding:0 7px;min-width:0}
 
 /* Quote PDF preview: a white A4 sheet over a dimmed page; printing shows only the sheet. */
-.pdf-overlay{position:fixed;inset:0;z-index:80;background:color-mix(in oklab,var(--ink,#111) 45%,transparent);overflow:auto;padding:64px 16px 32px}
-.pdf-bar{position:fixed;top:0;left:0;right:0;z-index:81;display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:var(--card,#fff);border-bottom:1px solid var(--line,#ddd)}
-.pdf-bar-actions{display:flex;gap:8px}
+.pdf-overlay{z-index:80;overflow:hidden}
+.pdf-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+.pdf-bar-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media screen{.pdf-panel{width:min(860px,100%);max-height:90vh;max-height:90dvh;overflow:hidden;display:flex;flex-direction:column}.pdf-bar{flex:none}.pdf-bar>b{overflow-wrap:anywhere;min-width:0}.pdf-document{min-height:0;overflow:auto;overscroll-behavior:contain}.pdf-panel .pdf-sheet{box-shadow:none}}
 .pdf-sheet{width:210mm;max-width:100%;min-height:297mm;margin:0 auto;background:#fff;color:#1c1c1c;padding:16mm 15mm;font-family:'Instrument Sans',sans-serif;font-size:11.5px;line-height:1.5;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .pdf-head{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding-bottom:14px;border-bottom:1px solid #e4e2dc}
 .pdf-co{font-size:17px;font-weight:600}.pdf-nr{font-size:15px;color:#666}
@@ -698,7 +699,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .pdf-sign{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:28px 0 14px}.pdf-lines2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:end}.pdf-lines2 span{border-top:1px solid #1c1c1c;padding-top:4px;color:#777;font-size:10px}
 .pdf-foot{border-top:1px solid #e4e2dc;padding-top:8px;color:#777;font-size:10px}
 @media (max-width:640px){.pdf-head,.pdf-row,.pdf-sign{grid-template-columns:1fr}.pdf-title{font-size:44px}.pdf-sum,.pdf-total{margin-left:0}.pdf-sheet{padding:20px;min-height:0}}
-@media print{@page{size:A4;margin:0}body.pdf-open>*{visibility:hidden}body.pdf-open .pdf-overlay,body.pdf-open .pdf-overlay *{visibility:visible}.pdf-overlay{position:absolute;padding:0;background:none}.pdf-bar{display:none}.pdf-sheet{box-shadow:none;width:210mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{@page{size:A4;margin:0}body.pdf-open>*{visibility:hidden}body.pdf-open .pdf-overlay,body.pdf-open .pdf-overlay *{visibility:visible}html:has(body.pdf-open),body.pdf-open{overflow:visible!important}.pdf-overlay{position:absolute;padding:0;background:none;display:block;overflow:visible;animation:none}.pdf-panel{width:auto;max-height:none;overflow:visible;border-radius:0;box-shadow:none}.pdf-bar{display:none}.pdf-sheet{box-shadow:none;width:210mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 
 /* Document library form */
 .doc-form{gap:10px;max-width:520px}.doc-form .field{display:flex;flex-direction:column;gap:4px;font-size:13px}
