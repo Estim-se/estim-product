@@ -28,5 +28,26 @@ describe('Pre-validation security limits',()=>{
     expect(result.headers.get('authorization')).toBe('Bearer test');
     expect(await result.text()).toBe('{"kind":"profile"}');
   });
+  it('rebuilds a foreign request using public fields and preserves login transport',async()=>{
+    const original=new Request('https://app.example.com/_serverFn/login?test=1',{
+      method:'POST',headers:{'content-type':'application/json','x-test-request':'login'},
+      body:'{"data":{"email":"user@example.com","password":"test-only"}}',redirect:'manual',
+    });
+    // Simulate Vite's request adapter without the native constructor's internal slots.
+    const request={url:original.url,method:original.method,headers:original.headers,
+      body:original.body,signal:original.signal,
+      get redirect(){
+        if(original.body?.locked || original.bodyUsed)throw new Error('Response body object should not be disturbed or locked');
+        return original.redirect;
+      }} as Request;
+    const result=await boundedRequest(request);
+    if(!(result instanceof Request))throw new Error('Expected accepted request');
+    expect(result.url).toBe(original.url);
+    expect(result.method).toBe('POST');
+    expect(result.headers.get('content-type')).toBe('application/json');
+    expect(result.headers.get('x-test-request')).toBe('login');
+    expect(result.redirect).toBe('manual');
+    expect(await result.text()).toBe('{"data":{"email":"user@example.com","password":"test-only"}}');
+  });
   it('bounds GET input before decoding',async()=>{const result=await boundedRequest(new Request('https://app.example.com/?data='+'x'.repeat(16384)));expect(result).toBeInstanceOf(Response);if(!(result instanceof Response))throw new Error('Expected rejection');expect(result.status).toBe(413);});
 });

@@ -76,7 +76,7 @@ export function PriceImport() {
 
   function onDrop(e: DragEvent) { e.preventDefault(); setDrag(false); void run([...e.dataTransfer.files]); }
 
-  return <section className="card mt24 price-import">
+  return <section className="card price-import">
     <h3>Priser från fakturor</h3>
     <div className="sub">Ladda upp gamla fakturor eller offerter. AI:n läser priserna och föreslår timpris och arbetsmoment. Inget sparas förrän du godkänner.</div>
     <div className={`price-drop mt12${drag ? ' on' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>

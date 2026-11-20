@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import demo from '@/data/demo.json';
 import { Icon } from './icon';
 import { Logo } from './logo';
@@ -21,7 +22,8 @@ export function AppShell({ children, waiting, onReset }: {
   if (workspace.loading || !workspace.signedIn) return null;
   const real = workspace.mode === 'real';
   const company = real ? workspace.data?.company?.name ?? 'Ditt företag' : demo.company.name;
-  return <div className="app">
+  // Both modes share the bounded inbox layout and mobile navigation; data stays mode-specific.
+  return <div className={`app real-app${path === '/' ? ' inbox-app' : ''}`}>
     <aside className="side" aria-label="Huvudnavigation">
       <div className="side-logo"><Logo /></div>
       <div className="ws"><div className="ws-badge">{real ? company.split(' ').map(n=>n[0]).slice(0,2).join('') : demo.company.initials}</div><div><b>{company}</b><span>{real ? workspace.data?.profile?.display_name ?? '' : demo.company.users}</span></div></div>
@@ -31,7 +33,7 @@ export function AppShell({ children, waiting, onReset }: {
       <Button asChild variant="prototype" className="nav"><Link to="/offerter" activeProps={{ className: 'active' }} title="Offerter"><Icon name="offert" /><span>Offerter</span></Link></Button>
       <div className="eyebrow">Ställ in</div>
       <Button asChild variant="prototype" className="nav"><Link to="/kanaler" activeProps={{ className: 'active' }} title="Kanaler"><Icon name="plug" /><span>Kanaler</span></Link></Button>
-      <Button asChild variant="prototype" className="nav"><Link to="/installningar" activeProps={{ className: 'active' }} title="AI och inställningar"><Icon name="settings" /><span>AI och inställningar</span></Link></Button>
+      <Button asChild variant="prototype" className="nav"><Link to="/installningar" activeProps={{ className: 'active' }} title="Inställningar"><Icon name="settings" /><span>Inställningar</span></Link></Button>
       <div className="side-bottom">
         {real&&workspace.data?.platform&&<Button asChild variant="prototype" className="nav"><Link to="/admin"><Icon name="settings"/><span>Administration</span></Link></Button>}
         <Button asChild variant="prototype" className="nav"><Link to="/mobil" activeProps={{ className: 'active' }} title="Appen i mobilen" onClick={() => actions.openMobile(path)}><Icon name="mobile" /><span>Appen i mobilen</span></Link></Button>
@@ -39,6 +41,9 @@ export function AppShell({ children, waiting, onReset }: {
         {workspace.signedIn?<Button variant="prototype" className="nav" title="Logga ut" onClick={()=>void workspace.signOut()}><Icon name="back"/><span>Logga ut</span></Button>:<Button asChild variant="prototype" className="nav"><Link to="/auth" title="Logga in"><Icon name="user"/><span>Logga in</span></Link></Button>}
       </div>
     </aside>
-    <main className="main"><div className="panel"><WorkspaceAccess>{children}</WorkspaceAccess></div></main>
+    <main className="main"><div className="panel"><div className="mobile-logo" aria-hidden="true"><Logo /></div><WorkspaceAccess>{children}</WorkspaceAccess></div></main>
+    {<nav className="mobile-main-nav grid-cols-5!" aria-label="Huvudnavigation i mobilen">{([
+      ['/', 'Inkorg', 'inbox'], ['/offerter', 'Offerter', 'offert'], ['/kanaler', 'Kanaler', 'plug'], ['/installningar', 'Inställningar', 'settings'],
+    ] as const).map(([to, label, icon]) => <Button key={to} asChild variant="prototype" className="nav"><Link to={to} activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><Icon name={icon} /><span>{label}</span></Link></Button>)}<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="prototype" className="nav" aria-label="Konto och läge"><Icon name="user" /><span>Konto</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end" side="top"><DropdownMenuItem onSelect={() => workspace.setMode('real')}>Live</DropdownMenuItem><DropdownMenuItem onSelect={() => workspace.setMode('demo')}>Demo</DropdownMenuItem><DropdownMenuSeparator />{real && workspace.data?.platform && <DropdownMenuItem asChild><Link to="/admin">Administration</Link></DropdownMenuItem>}<DropdownMenuItem asChild><Link to="/mobil" onClick={() => actions.openMobile(path)}>Appen i mobilen</Link></DropdownMenuItem>{!real && <DropdownMenuItem onSelect={onReset}>Återställ demo</DropdownMenuItem>}{workspace.signedIn ? <DropdownMenuItem onSelect={() => void workspace.signOut()}>Logga ut</DropdownMenuItem> : <DropdownMenuItem asChild><Link to="/auth">Logga in</Link></DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></nav>}
   </div>;
 }

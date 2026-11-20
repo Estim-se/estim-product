@@ -3,7 +3,7 @@ import { channelIcon, filterThreads, threadStatus, type InboxFilter, type Thread
 import { Icon } from './icon';
 import { realSentStatus } from '@/lib/real-presentation';
 
-const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntar på mig'], ['ai', 'AI sköter'], ['vunna', 'Vunna']];
+const filters: [InboxFilter, string][] = [['alla', 'Alla'], ['mig', 'Väntande'], ['ai', 'AI sköter'], ['vunna', 'Vunna']];
 
 export function InboxList({ threads, selected, filter, onFilter, onSelect, onSimulate, real=false }: {
   threads: Thread[]; selected: string; filter: InboxFilter;
@@ -14,9 +14,11 @@ export function InboxList({ threads, selected, filter, onFilter, onSelect, onSim
   return <div className="tl2">
     <div className="filters" aria-label="Filtrera inkorgen">{filters.map(([key, label]) =>
       <Button key={key} variant="prototype" className={`fchip ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => onFilter(key)}>{label}</Button>)}</div>
+    <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={onSimulate}><Icon name="plus" />{real ? 'Ny förfrågan' : 'Simulera ny förfrågan'}</Button>
+    <div className="inbox-items" role="region" aria-label="Förfrågningar" tabIndex={0}>
     {list.map(thread => <ThreadItem key={thread.id} real={real} thread={thread} selected={selected === thread.id} onSelect={() => onSelect(thread.id)} />)}
     {list.length === 0 && <div className="empty-list small muted">Inget här just nu.</div>}
-    <Button variant="prototype" className="btn btn-ghost btn-sm mt8" onClick={onSimulate}><Icon name="plus" />{real?'Ny förfrågan':'Simulera ny förfrågan'}</Button>
+    </div>
   </div>;
 }
 
@@ -28,7 +30,7 @@ function ThreadItem({ thread: t, selected, onSelect, real }: { thread: Thread; s
     <div className="avatar">{t.ini}</div>
     <div className="grow"><div className="row between thread-top"><b>{t.name}</b><span className="xs muted">{t.time}</span></div>
       <div className="snip">{who + (last?.text ?? '').replace(/\n/g, ' ')}</div>
-      <div className="row between mt8 thread-bottom"><span className={`chip ${status[1]}`}>{status[0]}</span><span className="chans">{t.chs.map(c => <Icon key={c} name={channelIcon(c)} />)}{t.autopilot && <span className="ai-tag"><Icon name="spark" />Auto</span>}</span></div>
+      <div className="row between mt8 thread-bottom"><span className="thread-pills"><span className={`chip ${status[1]}`}>{status[0]}</span>{t.autopilot && <span className="ai-tag"><Icon name="spark" />Auto</span>}</span><span className="chans">{t.chs.map(c => <Icon key={c} name={channelIcon(c)} />)}</span></div>
     </div>
   </Button>;
 }

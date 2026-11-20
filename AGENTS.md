@@ -66,3 +66,5 @@ Received attachments (PDF/images, max 10 MB) are stored in the private bucket ma
 
 A notification mail (link only, no customer text) is sent when the AI job is done. Email drafts require human approval.
 - Automatic WhatsApp sends inherit a default-off company setting unless a nullable thread override explicitly chooses on/off; bind jobs to incoming messages and atomically reserve one AI attempt per provider ID using the shared delivery adapter, so duplicates cannot trigger delivery and failed attempts preserve the draft.
+
+- Keep settings mounted; use form-linked save.

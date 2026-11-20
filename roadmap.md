@@ -1,5 +1,38 @@
 # Prototype rebuild
 
+- [x] Audit UI navigation/action wiring: prevent the embedded WhatsApp switch from submitting unrelated settings, restore mobile account/admin/phone actions and allow return from signed-out Live to Demo. 168 app tests and 12 email tests pass; desktop/390/938 navigation, settings tabs, demo approval/send, mobile Info/back/login and mode recovery checked without browser errors; automatic build passes. Live signed-in connection/saving/customer-delivery verification remains blocked by unavailable external Supabase browser session (tracked below).
+
+- [x] Replace mobile view controls with Live/Demo, rename Chatt to Meddelanden and add a compact Inkorg label above the customer name; 165 tests pass, phone list/thread/Info/back checked without horizontal overflow. Live selection reaches the existing signed-out access gate; signed-in real-mode content is unverified.
+
+- [x] Move Team to Företag, rename Administration to Händelser, widen settings cards and place shared save action after all cards. 165 tests pass including external-button submission; desktop/tablet/phone fixtures check widths and order. Live signed-in saving remains unavailable.
+
+- [x] Group settings into inbox-style AI/Priser/Företag/Administration pills; one Inställningar navigation link, shared saving, compact expandable work steps. 164 tests pass; demo and real-component fixtures checked desktop/phone, pending edits preserved. Live signed-in saving remains unavailable on external Supabase.
+
+- [x] Move company WhatsApp auto-reply switch into “Det här får AI:n göra själv” and hide the incoming address there; 164 tests pass, card checked desktop/phone.
+
+- [x] Bring real inbox UI to demo: bounded independent panel scrolling, waiting count beside Inkorg, request button above list, grouped AI/Ring actions, unified middle scroll and mobile Chatt/Info/main navigation. Demo data/scripts unchanged; 164 tests, build and desktop/phone demo checks pass.
+
+- [x] Apply thin stable hover/focus scrollbars to all inbox panels where scrollable in real/demo modes, and rename the shared waiting filter to Väntande. 164 tests and preview build pass; real-component desktop/phone fixtures verify scrolling, hover/focus without width/overflow changes and navigation; live demo filter/scrollbar styling/send checked. Existing scroll behavior preserved; authenticated real-mode E2E remains unavailable on external Supabase.
+
+- [x] Polish real inbox request placement, grouped thread actions, channel descriptions and thin stable hover/focus details scrollbar. 164 tests and preview build pass; desktop/phone fixture checks verify layout, scrolling, connect-form/disconnect controls and existing send action; demo unchanged. Live signed-in delivery remains unavailable on external Supabase.
+
+- [x] Place real inbox waiting count beside title, stack Ring beneath AI controls before identity is squeezed, and scroll the entire middle column together (header/messages/draft). 164 tests pass; desktop/phone fixture scroll/navigation/send checks pass, demo preserved; live signed-in delivery remains unavailable.
+
+- [x] Match WhatsApp connect button spacing; real inbox has independent scroll surfaces, pinned draft, presentation-only latest activity sorting and fixed mobile Chatt/Info/main navigation. 164 tests and automatic build pass; desktop/phone fixture checks cover no page overflow, opening latest message, non-jumping new messages, tabs/back and existing approve/send action. Public demo checked; real signed-in delivery remains unavailable on external Supabase, no service behavior changed.
+
+- [x] Simplify WhatsApp controls: single show/hide connection button, no Avancerat/copy action, floppy-disk save icon and adjacent Stäng; 161 tests and automatic build pass. Desktop/phone fixture checks confirm toggle and close actions without overflow; existing save handler unchanged, live signed-in verification unavailable.
+
+- [x] Polish channel layout: removed email “Anslut till”, restored left-aligned information/actions, aligned WhatsApp Avancerat right, editable incoming address and Spara inside Avancerat. 161 tests and automatic build pass; connection/disconnection/save covered by component tests and desktop/phone fixture layouts checked. Address edits remain local (no service change); live signed-in verification unavailable on external Supabase.
+
+- [x] Correct real Kanaler presentation: collapsed masked technical details for everyone with copy action/help text, configuration/company-ID status, no unsupported disconnect, centered larger email connection choices. Connect/disconnect/WhatsApp save/settings actions covered by component tests; isolated desktop/937/390 layouts and expanded details checked without overflow, automatic build passes. Live signed-in verification remains unavailable on external Supabase.
+
+- [x] Polish logged-in Kanaler in place: email provider buttons/address row/disconnect warning, owner-only incoming address, accurate WhatsApp ID and demo-only header controls. Existing connect/disconnect/WhatsApp save/settings actions pass component tests; desktop/937/390 layouts and confirmation/cancel/disconnect checked with isolated fixtures, automatic build passes. Live signed-in checks remain unavailable on external Supabase; no WhatsApp disconnect handler exists and none was added.
+
+- [x] Fix pre-handler login 500: rebuild bounded requests from public fields and capture lazy metadata before reading the body. Size protections and login behavior unchanged; 154 application tests pass, browser login denial returns HTTP 200 without page errors, automatic preview build passes. Successful account sign-in not verified without credentials.
+
+- [x] UI-only: logged-in Kanaler and AI och inställningar reuse demo cards, grids, switches, buttons and tokens in existing files; active-company headings and unchanged handlers/text. 153 application tests and 12 email tests pass; automatic build/typecheck passes. Demo and isolated real-component layouts checked at 1280/937/390 widths with no horizontal overflow.
+- [ ] UI-only: live signed-in mailbox connect/disconnect, WhatsApp connect and settings save — external Supabase cannot supply a browser session; all four actions pass isolated component tests, but live end-to-end confirmation is unavailable.
+
 - [x] Complete paginated, tenant-scoped chronological customer/manual/automatic history in interpretation and replies; write-reply@6 checks unchanged sent prices and prompts against already-answered questions. 146 app tests and 12 mail tests pass; deployed disposable manual/AI histories verify earlier answers, no repeated unchanged prices and explicit price reminders. Intake/delivery/demo unchanged; publication requested. Signed-in customer UI verification remains unavailable on external Supabase.
 
 - [x] Reverified deployed WhatsApp pricing in standard/short/formal variants, short acknowledgement one turn later and structural-risk visit suggestion; made ROT explicitly conditional and removed forced repeat estimates for acknowledgements. 138 app tests pass; desktop/phone public views checked in the single theme, build passes. Signed-in real-mode browser access remains unavailable on external Supabase; no customer delivery attempted.

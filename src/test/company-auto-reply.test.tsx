@@ -8,6 +8,15 @@ vi.mock('@/components/estim/workspace-provider', () => ({
 }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); fixture.enabled = false; });
 describe('company WhatsApp setting persistence', () => {
+  it('does not submit unrelated company settings when embedded in their form', async () => {
+    fixture.mutate.mockResolvedValue({}); fixture.refresh.mockResolvedValue(undefined);
+    const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    const view = render(<form onSubmit={submit}><CompanyAutoReply embedded /></form>);
+    fireEvent.click(view.getByRole('switch'));
+    await waitFor(() => expect(fixture.refresh).toHaveBeenCalledTimes(1));
+    expect(fixture.mutate).toHaveBeenCalledExactlyOnceWith({ kind: 'whatsapp-auto', enabled: true });
+    expect(submit).not.toHaveBeenCalled();
+  });
   it('saves explicit on and off choices without modifying any threads', async () => {
     fixture.mutate.mockResolvedValue({}); fixture.refresh.mockResolvedValue(undefined);
     const view = render(<CompanyAutoReply />);

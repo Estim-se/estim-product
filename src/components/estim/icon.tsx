@@ -8,6 +8,7 @@ const paths: Record<string, string> = {
   "settings": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4L5.3 5.3\"/>",
   "plug": "<path d=\"M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4\"/>",
   "check": "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>",
+  "save": "<path d=\"M5 3h12l4 4v14H3V3z\"/><path d=\"M7 3v6h10V3M7 21v-8h10v8M14 5v2\"/>",
   "x": "<path d=\"M6 6l12 12M18 6L6 18\"/>",
   "back": "<path d=\"M19 12H5M11 6l-6 6 6 6\"/>",
   "arrow": "<path d=\"M5 12h14M13 6l6 6-6 6\"/>",

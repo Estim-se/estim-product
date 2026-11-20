@@ -472,7 +472,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .quote-table-note{max-width:720px}.settings-grid{align-items:start}.settings-column{gap:14px;min-width:0}.settings-docs{gap:8px}.settings-doc{background:var(--bg);border-radius:12px;padding:10px 12px}.settings-doc>span:first-child{gap:8px;min-width:0}.settings-doc svg{width:16px;height:16px;flex:none}.settings-doc>span:last-child{flex:none}
 .kop{display:grid;grid-template-columns:minmax(0,1fr) auto}.kop .grow{min-width:0}.prototype-control.toggle{width:38px;height:22px;border-radius:11px;flex:none}
 .chcard .top{display:grid;grid-template-columns:34px minmax(0,1fr) auto}.chcard .grow{min-width:0}.chcard .top b{overflow-wrap:anywhere}.chcard .chi,.chcard .chip{flex:none}
-@media(max-width:600px){.topbar{display:grid;grid-template-columns:minmax(0,1fr)}.channels-grid,.settings-grid{grid-template-columns:1fr}.chcard .top{grid-template-columns:34px minmax(0,1fr)}.chcard .top>.chip{grid-column:2;justify-self:start}.settings-doc{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}.settings-doc>span:first-child{overflow-wrap:anywhere}.settings-doc>span:last-child{padding-left:24px}.card h3{overflow-wrap:anywhere}.tablewrap{max-width:100%}}
+@media(max-width:600px){.topbar{display:grid;grid-template-columns:minmax(0,1fr)}.channels-grid,.settings-grid{grid-template-columns:1fr}.settings-doc{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}.settings-doc>span:first-child{overflow-wrap:anywhere}.settings-doc>span:last-child{padding-left:24px}.card h3{overflow-wrap:anywhere}.tablewrap{max-width:100%}}
 
 /* Stage 5: original mobile scene, with a stable scroll surface and themed controls. */
 :root{--mobile-lock-start:#56664a;--mobile-lock-end:var(--ink);--mobile-lock-foreground:var(--card);--mobile-notification:rgba(251,250,247,.92);--mobile-notification-shadow:rgba(0,0,0,.2);--mobile-lock-button:rgba(255,255,255,.15);--mobile-lock-border:rgba(255,255,255,.3);}
@@ -510,6 +510,119 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .price-files{display:flex;flex-direction:column;gap:6px;list-style:none;padding:0}.price-file-name{overflow-wrap:anywhere;min-width:0}
 .price-warn{background:var(--pink);border-radius:12px;padding:10px 12px}.price-rate{flex-wrap:wrap}.price-num{width:100px}.price-unit{width:70px}
 .price-table{min-width:980px}.price-table td{vertical-align:top}.price-table tr.skipped td{opacity:.55}.price-flags{flex-wrap:wrap;gap:4px;margin-top:6px}
+
+/* Only the real inbox owns bounded, independent scroll surfaces. */
+.mobile-main-nav,.mobile-thread-bar{display:none}
+.inbox-app{height:100dvh;min-height:0;overflow:hidden}
+.inbox-app .main{min-height:0;height:100%;overflow:hidden}
+.inbox-app .panel{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:18px}
+.inbox-app .inbox-page-heading{flex:none}
+.real-inbox{flex:1;min-height:0;align-items:stretch;grid-template-columns:240px minmax(0,1fr) 270px}
+.real-inbox>*{min-width:0;min-height:0}
+.real-inbox .tl2{position:static;max-height:none;overflow:hidden}
+.real-inbox .filters{flex:none}
+.real-inbox .tl2>.btn{flex:none;align-self:flex-start;margin-bottom:4px}
+.inbox-items{display:flex;flex-direction:column;gap:6px;overflow-y:auto;min-height:0;overscroll-behavior:contain;padding:2px}
+.inbox-items>.ti2,.inbox-items>.btn{flex:none}
+.real-inbox .tv{overflow:hidden;container-type:inline-size}
+.real-inbox .tv>.thead,.real-inbox .tv>.btn{flex:none}
+.contained-conversation{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;position:relative;overflow:hidden}
+.message-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px}
+.message-scroll>.msg,.message-scroll>.sys{flex:none}
+.reply-dock{flex:none;display:flex;flex-direction:column;gap:6px}
+.message-scroll>.thead{flex:none}
+.real-inbox .thead{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:start}
+.real-inbox .thead>.avatar{grid-column:1;grid-row:1 / span 2}
+.real-inbox .thead>.grow{grid-column:2;grid-row:1 / span 2;min-width:0}
+.real-inbox .thread-actions{grid-column:3;grid-row:1 / span 2;display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.real-inbox .thread-actions>.apt{white-space:nowrap}
+.real-inbox .thead>.grow b{overflow-wrap:anywhere}
+.inbox-title-row{display:grid;grid-template-columns:minmax(0,max-content) auto;gap:16px;align-items:center;justify-content:start}
+.inbox-title-row h1{min-width:0}
+.inbox-waiting{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:var(--ink2)}
+.inbox-waiting svg{width:14px;height:14px;flex:none}
+@container(max-width:440px){.real-inbox .thead{grid-template-columns:40px minmax(0,1fr)}.real-inbox .thead>.avatar,.real-inbox .thead>.grow{grid-row:1}.real-inbox .thread-actions{grid-column:1 / -1;grid-row:2;flex-direction:row;align-items:center}}
+.pending-label{color:var(--greenInk)}
+.new-message{align-self:center;flex:none}
+.inbox-info{display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.info-customer-header{display:flex;flex-direction:column;gap:4px;flex:none;padding:12px 4px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.info-scroll{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px}
+/* Shared panel scrollbar styling preserves each mode's existing scroll behavior. */
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll){scrollbar-width:thin;scrollbar-color:transparent transparent;scrollbar-gutter:stable}
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll):is(:hover,:focus-within){scrollbar-color:var(--line2) transparent}
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll)::-webkit-scrollbar{width:6px}
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll)::-webkit-scrollbar-track{background:transparent}
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll)::-webkit-scrollbar-thumb{background:transparent;border-radius:999px}
+:is(.ib2>.tl2,.ib2>.tv,.ib2>.ctx,.inbox-items,.message-scroll,.info-scroll):is(:hover,:focus-within)::-webkit-scrollbar-thumb{background:var(--line2)}
+.real-inbox .ctx{position:static;display:flex;grid-column:auto}
+@media(min-width:961px) and (max-width:1180px){.real-inbox{grid-template-columns:200px minmax(0,1fr) 230px;gap:10px}.inbox-app .panel{padding-left:14px;padding-right:14px}}
+@media(max-width:960px){
+ .real-app{display:block;min-height:100dvh}
+ .real-app>.side{display:none}
+ .real-app>.main{padding:0 0 calc(66px + env(safe-area-inset-bottom))}
+ .real-app .panel{border-radius:0;min-height:calc(100dvh - 66px);padding:16px}
+ .mobile-main-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;z-index:20;background:var(--panel);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+ .mobile-main-nav .prototype-control.nav{display:flex;flex-direction:column;gap:4px;height:54px;padding:4px;justify-content:center;font-size:11px;line-height:1.1;text-align:center;white-space:normal}
+ .mobile-main-nav .nav span{display:block}
+ .mobile-main-nav .nav svg{width:18px;height:18px}
+ .inbox-app{height:100dvh;min-height:0}
+ .inbox-app .panel{min-height:0;height:100%;padding:12px}
+ .real-inbox{display:flex;flex-direction:column;gap:0}
+ .real-inbox>.tl2{flex:1}
+ .real-inbox>.tv,.real-inbox>.inbox-info{display:none}
+ .real-inbox.thread-open>.tl2{display:none}
+ .real-inbox.thread-open.tab-chat>.tv,.real-inbox.thread-open.tab-info>.inbox-info{display:flex;flex:1}
+ .mobile-thread-bar.open{display:flex;flex-direction:column;gap:10px;flex:none;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:12px}
+ .mobile-thread-open{display:none}
+ .real-inbox .thead{padding:10px;display:grid;grid-template-columns:40px minmax(0,1fr);align-items:start}
+ .real-inbox .thead>.avatar{grid-row:1}
+ .real-inbox .thead>.grow{min-width:0;grid-row:1}
+ .real-inbox .thread-actions{grid-column:1/-1;grid-row:2;flex-direction:row;align-items:center}
+ .real-inbox .thead>.grow .small{display:none}
+ .real-inbox .cmp-h{padding:8px 10px;gap:6px}
+ .real-inbox .cmp-h .why{display:none}
+ .real-inbox .cmp-b{padding:0 10px 8px}
+ .real-inbox .cmp-f{padding:8px 10px;gap:6px}
+ .real-inbox .suggestion-heading{min-width:0}
+ .real-inbox .suggestion-heading>.chi{display:none}
+}
+
+/* Status pills stay left inside list cards; channel icons stay right. */
+.thread-bottom{min-width:0;flex-wrap:nowrap}.thread-pills{display:flex;gap:4px;min-width:0;flex-wrap:wrap}.prototype-control.ti2 .thread-pills .ai-tag{margin-left:0}.thread-bottom>.chans{flex:none}
+.inbox-items{overflow-x:hidden}.ti2>.grow{min-width:0}
+
+/* Settings use one-column work-step rows and a sticky shared save bar. */
+.settings-grid .moment-row{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid .moment-row>label:first-of-type{grid-column:1/-1}
+.settings-save{position:static;background:var(--panel);border-top:1px solid var(--line);padding:12px 0;gap:12px;align-items:center}
+
+
+/* The sidebar logo moves to the top-right corner when the sidebar is hidden on phones. */
+.mobile-logo{display:none}
+@media(max-width:960px){.real-app .panel{position:relative}.real-app .mobile-logo{display:flex;position:absolute;top:16px;right:16px;height:22px;z-index:2;pointer-events:none}.real-app .panel .topbar .crumbs,.real-app .mobile-thread-bar>div:first-child{padding-right:96px}.real-app .mobile-logo svg{height:100%;width:auto}}
+
+/* Pending draft marker on the phone messages tab. */
+:root{--attention:#f08a24}
+.dot-attention{background:var(--attention);animation:attention-pulse 1.4s ease-in-out infinite}
+@keyframes attention-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--attention) 60%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+@media(prefers-reduced-motion:reduce){.dot-attention{animation:none}}
+.mobile-tabs{justify-content:center;gap:8px}.mobile-tabs .prototype-control.fchip{height:38px;padding:0 22px;font-size:14px;gap:8px}
+.mobile-mode-switch{display:none}.mobile-mode-switch.phone-scene-mode{display:flex}.desktop-view-switch.phone-scene-hidden{display:none}
+.mobile-inbox-name{display:flex;flex-direction:column;justify-content:center;line-height:1.2}.mobile-inbox-name>.xs{font-size:10px}
+@media(max-width:960px){.real-app .topbar{flex-wrap:wrap}.real-app .topbar>.topright{display:flex;flex-basis:100%;justify-content:flex-start;margin-top:8px}.mobile-mode-switch{display:flex}.desktop-view-switch,.guided-demo-control{display:none}.mobile-inbox-name{height:32px}}
+
+/* Settings tabs reuse inbox pills; hidden panels retain their form state. */
+.settings-tabs{gap:8px;margin-bottom:18px}.settings-tabs .prototype-control.fchip{height:38px;padding:0 22px;font-size:14px}
+.settings-single-column{width:100%;max-width:none}.settings-moment{border-bottom:1px solid var(--line);padding:12px 0}.settings-moment summary{cursor:pointer;font-weight:600}.settings-moment .moment-row{margin-top:12px}
+.settings-column [hidden],.settings-grid [hidden]{display:none}
+@media(max-width:600px){.settings-tabs{gap:6px}.settings-tabs .prototype-control.fchip{padding:0 14px}}
+
+/* Full-width settings panels and compact mobile team rows stay within the page. */
+.settings-content>[role="tabpanel"],.settings-content>div,.settings-content>form{min-width:0;width:100%}
+.settings-content form .settings-grid>[role="tabpanel"]{min-width:0;width:100%}
+.settings-content .card{min-width:0;width:100%}.settings-content .audit-table{table-layout:fixed;min-width:0}.settings-content .audit-table th,.settings-content .audit-table td{overflow-wrap:anywhere}
+.settings-content .management-company>div:first-child{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.settings-content .management-row .grow{min-width:0;overflow-wrap:anywhere}.settings-content .management-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}.settings-content .management-row>.xbtn{grid-column:2}.settings-content .management-invite>.field:first-child{min-width:0}
+@media(max-width:600px){.settings-content .card{padding:16px}.settings-content .management-row>.field{grid-column:1;min-width:0}.settings-content .management-row select{min-width:0;width:100%}.settings-content .management-invite{display:grid;grid-template-columns:minmax(0,1fr)}.settings-content .audit-table th,.settings-content .audit-table td{padding:10px 6px}}
 
 /* Login page: quiet framed layout with subtle drifting line art. */
 .auth-shell{position:relative;max-width:none;margin:0;min-height:100vh;padding:clamp(16px,4vw,56px);align-items:stretch;overflow:hidden}
