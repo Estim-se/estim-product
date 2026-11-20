@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS company_documents_company_idx ON public.company_documents(company_id);
