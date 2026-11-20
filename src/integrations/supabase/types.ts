@@ -253,6 +253,73 @@ export type Database = {
         }
         Relationships: []
       }
+      company_document_deliveries: {
+        Row: {
+          company_id: string
+          created_at: string
+          document_id: string
+          file_name: string
+          file_path: string
+          id: string
+          message_id: string
+          name: string
+          provider_message_id: string | null
+          state: string
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          document_id: string
+          file_name: string
+          file_path: string
+          id?: string
+          message_id: string
+          name: string
+          provider_message_id?: string | null
+          state?: string
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          document_id?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          message_id?: string
+          name?: string
+          provider_message_id?: string | null
+          state?: string
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_document_deliveries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_document_deliveries_company_id_thread_id_fkey"
+            columns: ["company_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "company_document_deliveries_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_documents: {
         Row: {
           company_id: string
@@ -438,6 +505,7 @@ export type Database = {
           channel: string
           company_id: string
           created_at: string
+          document_ids: Json
           edited: boolean
           id: string
           needs_review: boolean
@@ -452,6 +520,7 @@ export type Database = {
           channel?: string
           company_id: string
           created_at?: string
+          document_ids?: Json
           edited?: boolean
           id?: string
           needs_review?: boolean
@@ -466,6 +535,7 @@ export type Database = {
           channel?: string
           company_id?: string
           created_at?: string
+          document_ids?: Json
           edited?: boolean
           id?: string
           needs_review?: boolean
@@ -582,6 +652,7 @@ export type Database = {
           created_at: string
           delivery_error: string | null
           delivery_status: string
+          document_ids: Json
           email_subject: string | null
           from: string
           id: string
@@ -601,6 +672,7 @@ export type Database = {
           created_at?: string
           delivery_error?: string | null
           delivery_status?: string
+          document_ids?: Json
           email_subject?: string | null
           from: string
           id?: string
@@ -620,6 +692,7 @@ export type Database = {
           created_at?: string
           delivery_error?: string | null
           delivery_status?: string
+          document_ids?: Json
           email_subject?: string | null
           from?: string
           id?: string
