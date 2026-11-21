@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { InsightDocument } from './tender-insights';
 import { objectSelectionEvidence, resolveObjectCount } from './tender-object-counts';
+import { uniqueQuantityAssumptions } from './tender-quantity-display';
 
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().trim().min(1).max(1500) }).strict();
 const selectionSchema = z.object({ sheet: z.string().min(1).max(240), range: z.string().max(40), operation: z.enum(['Antal', 'Summa','Unika']), equals: z.string().max(500).nullable() }).strict();
@@ -60,6 +61,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     if (uncertain) result.assumptions.push({ description: i.assumption || used.filter(o => o.basis === 'Antagande').map(o => o.label).join('; '), sources: item.sources, item });
     else result.items.push(item);
   }
+  result.assumptions = uniqueQuantityAssumptions(result.assumptions);
   return result;
 }
 

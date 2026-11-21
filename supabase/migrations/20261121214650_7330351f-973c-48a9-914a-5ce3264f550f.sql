@@ -1,0 +1,1 @@
+CREATE INDEX tender_calculation_matches_company_idx ON public.tender_calculation_matches(company_id); CREATE INDEX tender_calculation_matches_run_idx ON public.tender_calculation_matches(tender_id,analysis_run);

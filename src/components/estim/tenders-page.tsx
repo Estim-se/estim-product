@@ -14,6 +14,9 @@ import { getTenderInsights, analyzeTenderInsights } from '@/lib/tender-insights.
 import { TenderInsightsSections } from './tender-insights';
 import { getTenderQuantities, analyzeTenderQuantities } from '@/lib/tender-quantities.functions';
 import { TenderQuantitiesSections } from './tender-quantities';
+import { TenderCalculationSettings } from './tender-calculation-settings';
+import { TenderCalculation } from './tender-calculation';
+import { matchTenderCalculation } from '@/lib/tender-calculation.functions';
 
 export function TendersPage() {
   const ws = useWorkspace();
@@ -25,6 +28,8 @@ export function TendersPage() {
   const beginAnalysis = useServerFn(beginTenderAnalysis), analyzeDocument = useServerFn(analyzeTenderDocument), abortAnalysis = useServerFn(abortTenderAnalysis);
   const loadInsights = useServerFn(getTenderInsights), extractInsights = useServerFn(analyzeTenderInsights);
   const loadQuantities = useServerFn(getTenderQuantities), extractQuantities = useServerFn(analyzeTenderQuantities);
+  const matchCalculation = useServerFn(matchTenderCalculation);
+  const [tab, setTab] = useState<'tenders' | 'settings'>('tenders');
   const [analyzing, setAnalyzing] = useState(false), [analysisProgress, setAnalysisProgress] = useState('');
   const [selected, setSelected] = useState<Tender | null>(null);
   const [show, setShow] = useState(false), [name, setName] = useState('');
@@ -61,6 +66,8 @@ export function TendersPage() {
       setAnalysisProgress('Analyserar mängder…');
       await extractQuantities({ data: { id: tid, run: rid } });
       run = null;
+      setAnalysisProgress('Matchar kalkylposter…');
+      await matchCalculation({ data: { id: tid } });
     } catch (error) {
       if (run) { try { await abortAnalysis({ data: { id: tid, run } }); } catch { /* Persisted run can be restarted after its lease expires. */ } }
       setMessage(error instanceof Error ? error.message : 'Analysen misslyckades. Försök igen.');
@@ -70,6 +77,7 @@ export function TendersPage() {
       await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
       await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, tid] });
       await queryClient.invalidateQueries({ queryKey: ['tender-quantities', company, tid] });
+      await queryClient.invalidateQueries({ queryKey: ['tender-calculation-matches', company, tid] });
     }
   }
   async function removeFile(d: TenderDocument) {
@@ -85,6 +93,7 @@ export function TendersPage() {
     await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, d.tender_id] });
     await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, d.tender_id] });
     await queryClient.invalidateQueries({ queryKey: ['tender-quantities', company, d.tender_id] });
+    await queryClient.invalidateQueries({ queryKey: ['tender-calculation-matches', company, d.tender_id] });
   }
   async function removeTender(t: Tender | null = selected) {
     if (!t || analyzing || !window.confirm('Är du säker?')) return;
@@ -158,6 +167,8 @@ export function TendersPage() {
   }
   return <>
     <TopHeader title="Anbud" />
+    <div role="tablist" aria-label="Anbud" className="row wrap border-b border-border pb-3"><Button role="tab" aria-selected={tab==='tenders'} variant="prototype" className={`btn btn-sm ${tab==='tenders'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('tenders')}>Alla anbud</Button><Button role="tab" aria-selected={tab==='settings'} variant="prototype" className={`btn btn-sm ${tab==='settings'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('settings')}>Kalkylinställningar</Button></div>
+    {tab==='settings'?<TenderCalculationSettings company={company} real={real}/>:<>
     <div className="row between wrap tender-toolbar">
       {selected ? <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => setSelected(null)}><ArrowLeft size={16} />Alla anbud</Button> : <span className="muted small">{rows.length} anbud</span>}
       <Dialog.Root open={show} onOpenChange={v => { if (!busy) { setShow(v); setMessage(''); if (v) { setName(''); setFiles([]); } } }}>
@@ -189,7 +200,8 @@ export function TendersPage() {
       {insights.data?.status === 'analysed' && !analyzing && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
       {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
       {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
-      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} />}
+      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result}/>:null} />}
     </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <div key={t.id} className="row tender-file-item"><Button variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button><Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Ta bort ${t.name}`} onClick={() => void removeTender(t)}><Trash2 size={16} />Ta bort</Button></div>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
+    </>}
   </>;
 }
