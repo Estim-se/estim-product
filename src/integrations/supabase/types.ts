@@ -952,6 +952,95 @@ export type Database = {
           },
         ]
       }
+      tender_calculation_matches: {
+        Row: {
+          analysis_run: string
+          company_id: string
+          created_at: string
+          result: Json
+          tender_id: string
+          updated_at: string
+        }
+        Insert: {
+          analysis_run: string
+          company_id: string
+          created_at?: string
+          result: Json
+          tender_id: string
+          updated_at?: string
+        }
+        Update: {
+          analysis_run?: string
+          company_id?: string
+          created_at?: string
+          result?: Json
+          tender_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_calculation_matches_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_calculation_matches_tender_id_analysis_run_fkey"
+            columns: ["tender_id", "analysis_run"]
+            isOneToOne: false
+            referencedRelation: "tender_quantities"
+            referencedColumns: ["tender_id", "analysis_run"]
+          },
+        ]
+      }
+      tender_calculation_settings: {
+        Row: {
+          company_id: string
+          contingency: number
+          created_at: string
+          establishment: number
+          example_values: boolean
+          hourly_rate: number
+          list_discount: number
+          material_markup: number
+          post_types: Json
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          contingency?: number
+          created_at?: string
+          establishment?: number
+          example_values?: boolean
+          hourly_rate?: number
+          list_discount?: number
+          material_markup?: number
+          post_types?: Json
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          contingency?: number
+          created_at?: string
+          establishment?: number
+          example_values?: boolean
+          hourly_rate?: number
+          list_discount?: number
+          material_markup?: number
+          post_types?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_calculation_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tender_documents: {
         Row: {
           analysis_status: string
