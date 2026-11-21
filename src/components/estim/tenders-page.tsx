@@ -70,17 +70,17 @@ export function TendersPage() {
     } catch { setMessage('Filen kunde inte tas bort. Försök igen.'); }
     await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, d.tender_id] });
   }
-  async function removeTender() {
-    if (!selected || analyzing || !window.confirm('Är du säker?')) return;
-    const tid = selected.id;
+  async function removeTender(t: Tender | null = selected) {
+    if (!t || analyzing || !window.confirm('Är du säker?')) return;
+    const tid = t.id;
     setMessage('');
-    if (!real) { setLocalDocuments(old => old.filter(x => x.tender_id !== tid)); setLocalTenders(old => old.filter(t => t.id !== tid)); setSelected(null); return; }
+    if (!real) { setLocalDocuments(old => old.filter(x => x.tender_id !== tid)); setLocalTenders(old => old.filter(t => t.id !== tid)); setSelected(s => s?.id === tid ? null : s); return; }
     try {
       const paths = (await supabase.from('tender_documents').select('path').eq('tender_id', tid)).data?.map(x => x.path) ?? [];
       if (paths.length) { const st = await supabase.storage.from('tender-documents').remove(paths); if (st.error) throw st.error; }
       const r = await supabase.from('tenders').delete().eq('id', tid);
       if (r.error) throw r.error;
-      setSelected(null);
+      setSelected(s => s?.id === tid ? null : s);
     } catch { setMessage('Anbudet kunde inte tas bort. Försök igen.'); }
     await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
   }
@@ -169,6 +169,6 @@ export function TendersPage() {
       {currentTender?.error && <p role="alert" className="small mt16">{currentTender.error}</p>}
       {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <div key={d.id} className="row tender-file-item"><Button variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button><Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} aria-label={`Ta bort ${d.file_name}`} onClick={() => void removeFile(d)}><Trash2 size={16} />Ta bort</Button></div>)}</div>}
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
-    </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <Button key={t.id} variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
+    </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <div key={t.id} className="row tender-file-item"><Button variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button><Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Ta bort ${t.name}`} onClick={() => void removeTender(t)}><Trash2 size={16} />Ta bort</Button></div>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
   </>;
 }
