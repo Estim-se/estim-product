@@ -1,0 +1,1 @@
+CREATE INDEX tender_insights_company_idx ON public.tender_insights(company_id);
