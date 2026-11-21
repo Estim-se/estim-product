@@ -3,3 +3,4 @@
 - Tender Claude calls use the required streaming Lovable Messages gateway and a server-held gateway key, isolated from the existing reply transport because new Supabase Edge functions are blocked by the platform.
 - Run whole-tender extraction after classification using original AF-first sources and company-private run-bound JSON; validate source IDs, physical PDF pages and Office citations so summaries cannot become invented contract terms.
 - Validate a complete internal risk-area review before saving existing insights JSON; this prevents unchecked areas without changing persisted results or the tender UI.
+- Extract quantity operands and sum-of-products rules in a separate third tender step; fixed-point arithmetic calculates totals, assumptions remain separate, and current-run company-private storage rejects stale results.

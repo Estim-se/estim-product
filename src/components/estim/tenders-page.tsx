@@ -12,6 +12,8 @@ import { TopHeader } from './top-header';
 import { useWorkspace } from './workspace-context';
 import { getTenderInsights, analyzeTenderInsights } from '@/lib/tender-insights.functions';
 import { TenderInsightsSections } from './tender-insights';
+import { getTenderQuantities, analyzeTenderQuantities } from '@/lib/tender-quantities.functions';
+import { TenderQuantitiesSections } from './tender-quantities';
 
 export function TendersPage() {
   const ws = useWorkspace();
@@ -22,6 +24,7 @@ export function TendersPage() {
   const create = useServerFn(createTender), complete = useServerFn(completeTender), cancel = useServerFn(cancelTenderUpload), openFile = useServerFn(openTenderDocument);
   const beginAnalysis = useServerFn(beginTenderAnalysis), analyzeDocument = useServerFn(analyzeTenderDocument), abortAnalysis = useServerFn(abortTenderAnalysis);
   const loadInsights = useServerFn(getTenderInsights), extractInsights = useServerFn(analyzeTenderInsights);
+  const loadQuantities = useServerFn(getTenderQuantities), extractQuantities = useServerFn(analyzeTenderQuantities);
   const [analyzing, setAnalyzing] = useState(false), [analysisProgress, setAnalysisProgress] = useState('');
   const [selected, setSelected] = useState<Tender | null>(null);
   const [show, setShow] = useState(false), [name, setName] = useState('');
@@ -34,6 +37,7 @@ export function TendersPage() {
   const tenders = useQuery({ queryKey: ['tenders', company], queryFn: () => list(), enabled: real && !!company });
   const documents = useQuery({ queryKey: ['tender-documents', company, selected?.id], queryFn: () => selected ? docs({ data: { id: selected.id } }) : Promise.resolve([]), enabled: real && !!company && !!selected });
   const insights = useQuery({ queryKey: ['tender-insights', company, selected?.id], queryFn: () => selected ? loadInsights({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
+  const quantities = useQuery({ queryKey: ['tender-quantities', company, selected?.id], queryFn: () => selected ? loadQuantities({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
   const rows = real ? tenders.data ?? [] : localTenders;
   const fileRows: TenderDocument[] = real ? documents.data ?? [] : localDocuments.filter(d => d.tender_id === selected?.id);
 
@@ -54,6 +58,8 @@ export function TendersPage() {
       }, (done, total) => setAnalysisProgress(`Analyserar dokument ${Math.min(done + 1, total)} av ${total}…`));
       setAnalysisProgress('Analyserar nyckeldata, risker och frågor…');
       await extractInsights({ data: { id: tid, run: rid } });
+      setAnalysisProgress('Analyserar mängder…');
+      await extractQuantities({ data: { id: tid, run: rid } });
       run = null;
     } catch (error) {
       if (run) { try { await abortAnalysis({ data: { id: tid, run } }); } catch { /* Persisted run can be restarted after its lease expires. */ } }
@@ -63,6 +69,7 @@ export function TendersPage() {
       await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
       await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
       await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, tid] });
+      await queryClient.invalidateQueries({ queryKey: ['tender-quantities', company, tid] });
     }
   }
   async function removeFile(d: TenderDocument) {
@@ -77,6 +84,7 @@ export function TendersPage() {
     } catch { setMessage('Filen kunde inte tas bort. Försök igen.'); }
     await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, d.tender_id] });
     await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, d.tender_id] });
+    await queryClient.invalidateQueries({ queryKey: ['tender-quantities', company, d.tender_id] });
   }
   async function removeTender(t: Tender | null = selected) {
     if (!t || analyzing || !window.confirm('Är du säker?')) return;
@@ -179,6 +187,9 @@ export function TendersPage() {
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
       {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
       {insights.data?.status === 'analysed' && !analyzing && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
+      {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
+      {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
+      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} />}
     </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <div key={t.id} className="row tender-file-item"><Button variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button><Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Ta bort ${t.name}`} onClick={() => void removeTender(t)}><Trash2 size={16} />Ta bort</Button></div>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
   </>;
 }
