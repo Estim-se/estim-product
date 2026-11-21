@@ -1,7 +1,7 @@
 # Prototype rebuild
 
-- [ ] Anbud step 3: source-backed tender key data, risks and questions after classification; company-private JSON, Swedish result sections, no quantities/prices or publication.
-- [ ] Run step 3 for Testlärkan and show the complete saved result; verify schema, source validation and company isolation.
+- [x] Anbud step 3: AF-first extraction after classification; company-private run-bound JSON with source validation and Swedish result sections; no quantity extraction, price calculations or publication. All 235 tests and automatic build pass.
+- [x] Testlärkan: 17 key-data rows, nine risks and five questions generated from original documents, every citation checked against its physical PDF page, saved and read back. Desktop/tablet/phone result-section fixtures pass; full authenticated Analysera flow remains unavailable on external Supabase. Complete result shown for review.
 
 - [x] Anbud step 2: sequential document classification, exact 100-page PDF cutoff, bounded DOCX/XLSX text extraction, saved results and retry UI. 225 tests and automatic build pass; live Claude reads both testanbud PDFs and results are saved. Desktop/tablet/phone fixtures verify sequential calls and reanalysis; authenticated actual-page E2E unavailable on external Supabase. New Edge functions blocked by platform, so uses authenticated server functions and required gateway key instead of existing direct reply key.
 - [x] Show changed files and actual testanbud results before publication; no publication in this step.
