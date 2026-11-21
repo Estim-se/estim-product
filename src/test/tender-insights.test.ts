@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, validateTenderInsights, type TenderInsights } from '@/lib/tender-insights';
 import { extractTenderInsights } from '@/lib/tender-insights-ai.server';
+import { TENDER_RISK_AREAS } from '@/lib/tender-risk-checklist';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const doc = { id, file_name: 'AF.pdf', file_type: 'pdf', page_count: 3, bytes: new Uint8Array([1]), doc_type: 'AF', text: null };
@@ -54,7 +55,8 @@ describe('Tender-wide extraction rules', () => {
     expect(validateTenderInsights(result, [doc]).risks[0]?.deviation).toBe('Underlaget anger ändring av AB 04 kap. 5 § 3.');
   });
   it('makes one streamed whole-tender call with original documents and parses split SSE', async () => {
-    const events = [{ type: 'ping' }, { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'analysera_anbud' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(empty()) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];
+    const reviewed = { ...empty(), risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Ingen belagd risk', reason: 'Inga belagda ogynnsamma villkor i testunderlaget.', risk_indexes: [] })) };
+    const events = [{ type: 'ping' }, { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'analysera_anbud' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(reviewed) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];
     const wire = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
     const call = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({ start(c) { for (let i=0;i<wire.length;i+=7) c.enqueue(new TextEncoder().encode(wire.slice(i,i+7))); c.close(); } })));
     vi.stubGlobal('fetch', call);

@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Mandatory 13-area tender risk checklist with validated area/risk coverage; Testlärkan rerun yields 11 risks including AFC.13 and combined AFC.61/AFC.65. Physical-page citations verified, risk list saved/read back; existing key data, questions, classifications and status preserved. 252 tests pass, final 27 focused tests pass and automatic build OK. Actual authenticated UI remains unavailable on external Supabase; old browser fixture failed on QueryClient context and is not claimed verified. Updated risks shown; no publication.
+
 - [x] Anbud step 3: AF-first extraction after classification; company-private run-bound JSON with source validation and Swedish result sections; no quantity extraction, price calculations or publication. All 235 tests and automatic build pass.
 - [x] Testlärkan: 17 key-data rows, nine risks and five questions generated from original documents, every citation checked against its physical PDF page, saved and read back. Desktop/tablet/phone result-section fixtures pass; full authenticated Analysera flow remains unavailable on external Supabase. Complete result shown for review.
 
