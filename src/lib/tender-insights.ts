@@ -25,8 +25,16 @@ export function validateTenderInsights(raw: unknown, documents: InsightDocument[
   for (const k of result.key_data) {
     if (k.value === NOT_SPECIFIED) { if (k.source !== null) throw new Error('Saknad uppgift får inte ha en påhittad källa.'); }
     else { if (!k.source) throw new Error('Nyckeldata saknar källa.'); check(k.source); }
+    if (k.field === 'Kontraktsform' && k.value !== NOT_SPECIFIED && !/AB\s*04|ABT\s*06/.test(k.value)) throw new Error('Kontraktsform måste ange AB 04 eller ABT 06 från underlaget.');
   }
-  result.risks.forEach(r => check(r.source)); result.questions.forEach(q => check(q.source));
+  result.risks.forEach(r => {
+    check(r.source);
+    // Only report the rule citation actually supplied by the document, never an AI-invented standard clause.
+    if (r.deviation !== null) {
+      const rule = r.source.evidence.match(/(?:AB\s*04|ABT\s*06)\s+kap\.?\s*\d+\s*§\s*\d+/i)?.[0];
+      r.deviation = rule ? `Underlaget anger ändring av ${rule}.` : null;
+    }
+  }); result.questions.forEach(q => check(q.source));
   const severity = { Hög: 0, Medel: 1, Låg: 2 };
   result.risks.sort((a, b) => severity[a.severity] - severity[b.severity]);
   result.key_data.sort((a, b) => TENDER_KEY_FIELDS.indexOf(a.field) - TENDER_KEY_FIELDS.indexOf(b.field));

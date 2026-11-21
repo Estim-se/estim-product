@@ -43,6 +43,16 @@ describe('Tender-wide extraction rules', () => {
     expect(() => validateTenderInsights({ ...empty(), quantities: [{ quantity: 23 }] }, [doc])).toThrow();
     expect(() => validateTenderInsights({ ...empty(), price: 3000 }, [doc])).toThrow();
   });
+  it('uses AB 04/ABT 06 as contract form, not procurement organisation', () => {
+    const result = empty(); result.key_data[3] = { field: 'Kontraktsform', value: 'Sidoentreprenad', source };
+    expect(() => validateTenderInsights(result, [doc])).toThrow('Kontraktsform');
+    result.key_data[3] = { field: 'Kontraktsform', value: 'AB 04', source };
+    expect(validateTenderInsights(result, [doc]).key_data[3]?.value).toBe('AB 04');
+  });
+  it('keeps deviations limited to the AB rule actually cited in the source', () => {
+    const result = empty(); result.risks = [{ title: 'Vite', description: 'Obegränsat vite.', source: { ...source, evidence: 'Med ändring av AB 04 kap. 5 § 3 gäller vite.' }, deviation: 'AB 04 normally limits to 10 percent', consequence: 'Pengar', severity: 'Hög', suggestion: 'Reservera' }];
+    expect(validateTenderInsights(result, [doc]).risks[0]?.deviation).toBe('Underlaget anger ändring av AB 04 kap. 5 § 3.');
+  });
   it('makes one streamed whole-tender call with original documents and parses split SSE', async () => {
     const events = [{ type: 'ping' }, { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'analysera_anbud' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(empty()) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];
     const wire = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { describe, it, expect } from 'vitest';
+import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
 
 const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
 describe.skipIf(!configured)('Tender analysis persistence and isolation', () => {
@@ -54,6 +55,20 @@ describe.skipIf(!configured)('Tender analysis persistence and isolation', () => 
         expect((await own.rpc('estim_finish_tender_document',{did:d.id,rid:again.data,result:{analysis_status:d===large?'too_large':'analysed',doc_type:d===large?null:'AF',summary:d===large?null:'Administrativa krav.',page_count:d===large?101:1,error:d===large?'För stor, hanteras senare':null}})).error).toBeNull();
       }
       expect((await own.from('tenders').select('status,error').eq('id',tid).single()).data).toEqual({status:'analysed',error:null});
+      expect((await other.rpc('estim_claim_tender_insights', { tid, rid: again.data })).data).toBe(false);
+      expect((await own.rpc('estim_claim_tender_insights', { tid, rid: again.data })).data).toBe(true);
+      expect((await own.rpc('estim_claim_tender_insights', { tid, rid: again.data })).data).toBe(false);
+      const extracted = { key_data: TENDER_KEY_FIELDS.map(field => ({ field, value: NOT_SPECIFIED, source: null })), risks: [], questions: [] };
+      expect((await other.rpc('estim_finish_tender_insights', { tid, rid: again.data, p_result: extracted, p_error: '' })).error).not.toBeNull();
+      expect((await own.rpc('estim_finish_tender_insights', { tid, rid: again.data, p_result: extracted, p_error: '' })).error).toBeNull();
+      expect((await own.from('tender_insights').select('result,status').eq('tender_id', tid).single()).data).toEqual({ status: 'analysed', result: extracted });
+      expect((await other.from('tender_insights').select('result').eq('tender_id', tid)).data).toEqual([]);
+      expect((await other.from('tender_insights').insert({ tender_id: tid, company_id: cid, analysis_run: again.data, status: 'error' })).error).not.toBeNull();
+      expect((await other.from('tender_insights').update({ result: {} }).eq('tender_id', tid).select('tender_id')).data).toEqual([]);
+      expect((await other.from('tender_insights').delete().eq('tender_id', tid).select('tender_id')).data).toEqual([]);
+      const restarted = await own.rpc('estim_begin_tender_analysis', { tid }); expect(restarted.error).toBeNull();
+      expect((await own.from('tender_insights').select('result').eq('tender_id', tid)).data).toEqual([]);
+      expect((await own.rpc('estim_finish_tender_insights', { tid, rid: again.data, p_result: extracted, p_error: '' })).error).not.toBeNull();
     } finally {
       if(paths.length)await admin.storage.from('tender-documents').remove(paths);
       for(const cid of companies){for(const table of ['tenders','company_invitations','audit_log','company_members'])await admin.from(table).delete().eq('company_id',cid);await admin.from('profiles').update({company_id:null}).eq('company_id',cid);await admin.from('companies').delete().eq('id',cid);}
