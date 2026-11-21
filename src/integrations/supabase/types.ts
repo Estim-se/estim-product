@@ -952,6 +952,92 @@ export type Database = {
           },
         ]
       }
+      tender_documents: {
+        Row: {
+          company_id: string
+          created_at: string
+          file_name: string
+          file_type: string
+          id: string
+          path: string
+          size: number
+          tender_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          file_name: string
+          file_type: string
+          id?: string
+          path: string
+          size: number
+          tender_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          file_name?: string
+          file_type?: string
+          id?: string
+          path?: string
+          size?: number
+          tender_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_documents_tender_id_company_id_fkey"
+            columns: ["tender_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      tenders: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenders_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       threads: {
         Row: {
           asks: Json
@@ -1047,6 +1133,10 @@ export type Database = {
       estim_approve: { Args: { tid: string }; Returns: string }
       estim_claim_job: { Args: { jid: string }; Returns: boolean }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
+      estim_complete_tender: {
+        Args: { files: Json; tid: string }
+        Returns: undefined
+      }
       estim_document_requested: {
         Args: {
           doc_name: string
