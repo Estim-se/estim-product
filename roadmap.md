@@ -1,7 +1,8 @@
 # Prototype rebuild
 
-- [ ] Anbud step 2: sequential document classification, PDF page limit, DOCX/XLSX extraction, saved results and retry UI.
-- [ ] Show changed files and actual testanbud results before publication; no publication in this step.
+- [x] Anbud step 2: sequential document classification, exact 100-page PDF cutoff, bounded DOCX/XLSX text extraction, saved results and retry UI. 225 tests and automatic build pass; live Claude reads both testanbud PDFs and results are saved. Desktop/tablet/phone fixtures verify sequential calls and reanalysis; authenticated actual-page E2E unavailable on external Supabase. New Edge functions blocked by platform, so uses authenticated server functions and required gateway key instead of existing direct reply key.
+- [x] Show changed files and actual testanbud results before publication; no publication in this step.
+- [ ] Publish Anbud analysis stage after review; waiting for user approval.
 
 - [x] Anbud upload stage: company-private PDF/DOCX/XLSX and bounded ZIP unpacking, tender/file lists and open actions. 216 tests pass including real private-storage/readback and cross-company denial; desktop/mobile fixture upload/open/close checks pass. Authenticated production-page flow unavailable on external Supabase. No AI or existing-module changes beyond the menu; no publication.
 - [ ] Publish Anbud upload stage only after changed-file/table review; awaiting user approval.
