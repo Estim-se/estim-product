@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useServerFn } from '@tanstack/react-start';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -21,6 +21,7 @@ export function TendersPage() {
   const [show, setShow] = useState(false), [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const [progress, setProgress] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
   const [localTenders, setLocalTenders] = useState<Tender[]>([]);
   const [localDocuments, setLocalDocuments] = useState<(TenderDocument & { blob: Blob })[]>([]);
   useEffect(() => { setSelected(null); setMessage(''); }, [company, real]);
@@ -96,7 +97,7 @@ export function TendersPage() {
           <form onSubmit={e => void save(e)}>
             <div className="md-b col tender-form">
               <label className="field">Namn<input className="input" value={name} onChange={e => setName(e.target.value)} maxLength={160} required disabled={busy} placeholder="Anbudets namn" /></label>
-              <label className="field">Filer<input type="file" multiple accept=".pdf,.docx,.xlsx,.zip" disabled={busy} onChange={e => setFiles(Array.from(e.target.files ?? []))} /></label>
+              <div className="field"><span>Filer</span><input ref={fileInput} className="hide" aria-label="Välj filer" type="file" multiple accept=".pdf,.docx,.xlsx,.zip" disabled={busy} onChange={e => setFiles(Array.from(e.target.files ?? []))} /><Button type="button" variant="prototype" className="btn btn-ghost" disabled={busy} onClick={() => fileInput.current?.click()}><Upload size={16} />Välj filer</Button>{!files.length && <span className="small muted">Inga filer valda</span>}</div>
               <Dialog.Description id="tender-formats" className="small muted">PDF, DOCX, XLSX eller ZIP · Max 50 MB totalt, även efter uppackning.</Dialog.Description>
               {files.length > 0 && <ul className="tender-selected-files">{files.map((f, i) => <li key={`${f.name}-${i}`}><FileText size={16} /><span>{f.name}</span><span className="muted small">{tenderSize(f.size)}</span></li>)}</ul>}
               {progress && <p role="status" className="small">{progress}</p>}
