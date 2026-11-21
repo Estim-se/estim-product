@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useServerFn } from '@tanstack/react-start';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Dialog from '@radix-ui/react-dialog';
-import { FileText, FolderOpen, Plus, Upload, X, ArrowLeft } from 'lucide-react';
+import { FileText, FolderOpen, Plus, Upload, X, ArrowLeft, ScanText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { cancelTenderUpload, completeTender, createTender, listTenderDocuments, listTenders, openTenderDocument } from '@/lib/tenders.functions';
+import { analyzeTenderDocument, beginTenderAnalysis, abortTenderAnalysis, cancelTenderUpload, completeTender, createTender, listTenderDocuments, listTenders, openTenderDocument } from '@/lib/tenders.functions';
 import { prepareTenderFiles, tenderPath, tenderSize, tenderMime, type Tender, type TenderDocument } from '@/lib/tenders';
+import { analyzeSequentially, tenderStatus } from '@/lib/tender-analysis';
 import { TopHeader } from './top-header';
 import { useWorkspace } from './workspace-context';
 
@@ -17,6 +18,8 @@ export function TendersPage() {
   const queryClient = useQueryClient();
   const list = useServerFn(listTenders), docs = useServerFn(listTenderDocuments);
   const create = useServerFn(createTender), complete = useServerFn(completeTender), cancel = useServerFn(cancelTenderUpload), openFile = useServerFn(openTenderDocument);
+  const beginAnalysis = useServerFn(beginTenderAnalysis), analyzeDocument = useServerFn(analyzeTenderDocument), abortAnalysis = useServerFn(abortTenderAnalysis);
+  const [analyzing, setAnalyzing] = useState(false), [analysisProgress, setAnalysisProgress] = useState('');
   const [selected, setSelected] = useState<Tender | null>(null);
   const [show, setShow] = useState(false), [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
@@ -28,8 +31,33 @@ export function TendersPage() {
   const tenders = useQuery({ queryKey: ['tenders', company], queryFn: () => list(), enabled: real && !!company });
   const documents = useQuery({ queryKey: ['tender-documents', company, selected?.id], queryFn: () => selected ? docs({ data: { id: selected.id } }) : Promise.resolve([]), enabled: real && !!company && !!selected });
   const rows = real ? tenders.data ?? [] : localTenders;
-  const fileRows = real ? documents.data ?? [] : localDocuments.filter(d => d.tender_id === selected?.id);
+  const fileRows: TenderDocument[] = real ? documents.data ?? [] : localDocuments.filter(d => d.tender_id === selected?.id);
 
+  const currentTender = rows.find(t => t.id === selected?.id) ?? selected;
+  async function analyze() {
+    if (!selected || !real || analyzing || !fileRows.length) return;
+    const tid = selected.id;
+    let run: string | null = null;
+    setAnalyzing(true); setMessage('');
+    try {
+      const started = await beginAnalysis({ data: { id: tid } }); run = started.run;
+      await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
+      const rid = started.run;
+      await analyzeSequentially(fileRows, async d => {
+        const result = await analyzeDocument({ data: { id: d.id, run: rid } });
+        await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
+        if (result.stop) throw new Error(result.error ?? 'AI-analysen avbröts.');
+      }, (done, total) => setAnalysisProgress(`Analyserar dokument ${Math.min(done + 1, total)} av ${total}…`));
+      run = null;
+    } catch (error) {
+      if (run) { try { await abortAnalysis({ data: { id: tid, run } }); } catch { /* Persisted run can be restarted after its lease expires. */ } }
+      setMessage(error instanceof Error ? error.message : 'Analysen misslyckades. Försök igen.');
+    } finally {
+      setAnalyzing(false); setAnalysisProgress('');
+      await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
+      await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
+    }
+  }
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !files.length || busy) return;
@@ -89,7 +117,7 @@ export function TendersPage() {
   return <>
     <TopHeader title="Anbud" />
     <div className="row between wrap tender-toolbar">
-      {selected ? <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}><ArrowLeft size={16} />Alla anbud</Button> : <span className="muted small">{rows.length} anbud</span>}
+      {selected ? <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => setSelected(null)}><ArrowLeft size={16} />Alla anbud</Button> : <span className="muted small">{rows.length} anbud</span>}
       <Dialog.Root open={show} onOpenChange={v => { if (!busy) { setShow(v); setMessage(''); if (v) { setName(''); setFiles([]); } } }}>
         <Dialog.Trigger asChild><Button variant="prototype" className="btn btn-primary"><Plus size={16} />Nytt anbud</Button></Dialog.Trigger>
         <Dialog.Portal><Dialog.Overlay className="ov tender-overlay" /><Dialog.Content className="md tender-modal" aria-describedby="tender-formats" onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
@@ -110,9 +138,11 @@ export function TendersPage() {
     </div>
     {!show && message && <p role="status" className="small mt12">{message}</p>}
     {(tenders.isError || documents.isError) && <div role="alert" className="row mt16"><span>Anbuden kunde inte hämtas.</span><Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { void tenders.refetch(); void documents.refetch(); }}>Försök igen</Button></div>}
-    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer</span></div>
-      {documents.isFetching && real ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <Button key={d.id} variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><b>{d.file_name}</b><span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}</span></span><FolderOpen size={18} /></Button>)}</div>}
+    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button></div>
+      {analysisProgress && <p role="status" className="small mt16">{analysisProgress}</p>}
+      {currentTender?.error && <p role="alert" className="small mt16">{currentTender.error}</p>}
+      {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <Button key={d.id} variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button>)}</div>}
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
-    </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <Button key={t.id} variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{t.status === 'ready' ? 'Uppladdat' : 'Ofullständigt'}</span></Button>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
+    </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <Button key={t.id} variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
   </>;
 }

@@ -1,5 +1,8 @@
 # Prototype rebuild
 
+- [ ] Anbud step 2: sequential document classification, PDF page limit, DOCX/XLSX extraction, saved results and retry UI.
+- [ ] Show changed files and actual testanbud results before publication; no publication in this step.
+
 - [x] Anbud upload stage: company-private PDF/DOCX/XLSX and bounded ZIP unpacking, tender/file lists and open actions. 216 tests pass including real private-storage/readback and cross-company denial; desktop/mobile fixture upload/open/close checks pass. Authenticated production-page flow unavailable on external Supabase. No AI or existing-module changes beyond the menu; no publication.
 - [ ] Publish Anbud upload stage only after changed-file/table review; awaiting user approval.
 

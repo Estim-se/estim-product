@@ -954,35 +954,50 @@ export type Database = {
       }
       tender_documents: {
         Row: {
+          analysis_status: string
           company_id: string
           created_at: string
+          doc_type: string | null
+          error: string | null
           file_name: string
           file_type: string
           id: string
+          page_count: number | null
           path: string
           size: number
+          summary: string | null
           tender_id: string
           updated_at: string
         }
         Insert: {
+          analysis_status?: string
           company_id: string
           created_at?: string
+          doc_type?: string | null
+          error?: string | null
           file_name: string
           file_type: string
           id?: string
+          page_count?: number | null
           path: string
           size: number
+          summary?: string | null
           tender_id: string
           updated_at?: string
         }
         Update: {
+          analysis_status?: string
           company_id?: string
           created_at?: string
+          doc_type?: string | null
+          error?: string | null
           file_name?: string
           file_type?: string
           id?: string
+          page_count?: number | null
           path?: string
           size?: number
+          summary?: string | null
           tender_id?: string
           updated_at?: string
         }
@@ -1005,24 +1020,33 @@ export type Database = {
       }
       tenders: {
         Row: {
+          analysis_run: string | null
+          analysis_started_at: string | null
           company_id: string
           created_at: string
+          error: string | null
           id: string
           name: string
           status: string
           updated_at: string
         }
         Insert: {
+          analysis_run?: string | null
+          analysis_started_at?: string | null
           company_id: string
           created_at?: string
+          error?: string | null
           id?: string
           name: string
           status?: string
           updated_at?: string
         }
         Update: {
+          analysis_run?: string | null
+          analysis_started_at?: string | null
           company_id?: string
           created_at?: string
+          error?: string | null
           id?: string
           name?: string
           status?: string
@@ -1121,6 +1145,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      estim_abort_tender_analysis: {
+        Args: { failure: string; rid: string; tid: string }
+        Returns: undefined
+      }
       estim_accept_invitation: {
         Args: {
           display: string
@@ -1131,7 +1159,12 @@ export type Database = {
         Returns: string
       }
       estim_approve: { Args: { tid: string }; Returns: string }
+      estim_begin_tender_analysis: { Args: { tid: string }; Returns: string }
       estim_claim_job: { Args: { jid: string }; Returns: boolean }
+      estim_claim_tender_document: {
+        Args: { did: string; rid: string }
+        Returns: boolean
+      }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
       estim_complete_tender: {
         Args: { files: Json; tid: string }
@@ -1167,6 +1200,10 @@ export type Database = {
           mid: string
           provider_id?: string
         }
+        Returns: undefined
+      }
+      estim_finish_tender_document: {
+        Args: { did: string; result: Json; rid: string }
         Returns: undefined
       }
       estim_import_prices: { Args: { payload: Json }; Returns: number }

@@ -1,0 +1,3 @@
+- Analyse tender files one at a time through authenticated server functions, with atomic per-run/document reservations and immutable file metadata; this prevents overlapping runs and keeps analysis tenant-scoped without touching conversation modules.
+- Tender PDFs are sent as documents after exact page counting; Office files are extracted locally and unknown print-page counts remain null rather than invented.
+- Tender Claude calls use the required streaming Lovable Messages gateway and a server-held gateway key, isolated from the existing reply transport because new Supabase Edge functions are blocked by the platform.

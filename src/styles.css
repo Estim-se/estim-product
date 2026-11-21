@@ -729,3 +729,9 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .tender-selected-files li>span:first-of-type{flex:1;min-width:0;overflow-wrap:anywhere}
 .tender-selected-files svg{flex:none}
 @media(max-width:600px){.tender-modal .md-h{padding:20px 18px 8px}.tender-modal .md-b{padding:12px 18px 20px}.tender-modal .md-f{padding:14px 18px}.tender-list-row,.tender-file-row{gap:10px}.tender-list-row>.chip{font-size:11px;padding:0 6px}}
+
+/* Tender classification stays readable on narrow file rows. */
+.tender-type{height:auto;min-height:22px;white-space:normal;max-width:100%;padding:3px 8px;background:var(--sage);color:var(--ink);font-size:11px}
+.tender-summary{white-space:normal;line-height:1.5;color:var(--ink2)}
+.tender-error{white-space:normal;color:var(--ink);font-weight:600}
+.tender-file-row{white-space:normal;height:auto}

@@ -5,8 +5,8 @@ export const TENDER_MAX_FILES = 1000;
 export const tenderMime = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as const;
 export type TenderFileType = keyof typeof tenderMime;
 export type TenderFile = { name: string; type: TenderFileType; size: number; blob: Blob };
-export type Tender = { id: string; name: string; status: string; created_at: string };
-export type TenderDocument = { id: string; tender_id: string; file_name: string; file_type: string; size: number; path: string };
+export type Tender = { id: string; name: string; status: string; created_at: string; error?: string | null };
+export type TenderDocument = { id: string; tender_id: string; file_name: string; file_type: string; size: number; path: string; doc_type?: string | null; summary?: string | null; page_count?: number | null; analysis_status?: string; error?: string | null };
 
 export function tenderFileType(name: string): TenderFileType | null {
   const ext = name.split('.').pop()?.toLowerCase();
