@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AnbudRouteImport } from './routes/anbud'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as EpostKlarRouteImport } from './routes/epost-klar'
 import { Route as InbjudanRouteImport } from './routes/inbjudan'
@@ -31,6 +32,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnbudRoute = AnbudRouteImport.update({
+  id: '/anbud',
+  path: '/anbud',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -92,6 +98,7 @@ const ApiPublicReceiveMessageRoute = ApiPublicReceiveMessageRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/anbud': typeof AnbudRoute
   '/auth': typeof AuthRouteWithChildren
   '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/anbud': typeof AnbudRoute
   '/auth': typeof AuthRouteWithChildren
   '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/anbud': typeof AnbudRoute
   '/auth': typeof AuthRouteWithChildren
   '/epost-klar': typeof EpostKlarRoute
   '/inbjudan': typeof InbjudanRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/anbud'
     | '/auth'
     | '/epost-klar'
     | '/inbjudan'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/anbud'
     | '/auth'
     | '/epost-klar'
     | '/inbjudan'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/anbud'
     | '/auth'
     | '/epost-klar'
     | '/inbjudan'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  AnbudRoute: typeof AnbudRoute
   AuthRoute: typeof AuthRouteWithChildren
   EpostKlarRoute: typeof EpostKlarRoute
   InbjudanRoute: typeof InbjudanRoute
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anbud': {
+      id: '/anbud'
+      path: '/anbud'
+      fullPath: '/anbud'
+      preLoaderRoute: typeof AnbudRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -307,6 +327,7 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  AnbudRoute: AnbudRoute,
   AuthRoute: AuthRouteWithChildren,
   EpostKlarRoute: EpostKlarRoute,
   InbjudanRoute: InbjudanRoute,

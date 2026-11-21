@@ -710,3 +710,22 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .prototype-control.sent-document{display:flex;width:fit-content;max-width:100%;min-height:58px;justify-content:flex-start;gap:10px;margin-top:10px;padding:6px 10px 6px 6px;background:var(--card);color:var(--ink);border-radius:12px;font-size:12.5px;text-align:left;white-space:normal}
 .sent-document>.thumb{flex:none}
 .sent-document>span:last-child{min-width:0;overflow-wrap:anywhere}
+
+/* Tender upload module reuses prototype controls and company-private storage. */
+.tender-toolbar{border-bottom:1px solid var(--line);padding-bottom:20px}
+.tender-list-row,.tender-file-row{display:flex;align-items:center;gap:16px;width:100%;padding:20px 8px;border-bottom:1px solid var(--line);text-align:left;color:var(--ink)}
+.tender-list-row:hover,.tender-file-row:hover{background:var(--card)}
+.tender-list-row>.grow,.tender-file-row>.grow{display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+.tender-list-row>svg,.tender-file-row>svg{flex:none;color:var(--muted)}
+.tender-detail h2{font-size:24px;overflow-wrap:anywhere;min-width:0}
+.tender-empty{min-height:320px;display:flex;flex-direction:column;gap:18px;align-items:center;justify-content:center;color:var(--muted)}
+.tender-empty h2{font-size:20px;color:var(--ink)}
+.tender-overlay{z-index:80}
+.tender-modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:81;width:min(560px,calc(100% - 32px));max-height:90dvh;overflow:auto}
+.tender-form{gap:18px}.tender-form .field{display:flex;flex-direction:column;gap:8px}
+.tender-form input[type=file]{width:100%;min-width:0;font-size:13px;border:1px dashed var(--line2);border-radius:8px;padding:16px;background:var(--card)}
+.tender-selected-files{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto}
+.tender-selected-files li{display:flex;gap:8px;padding:8px 0;align-items:center;border-bottom:1px solid var(--line)}
+.tender-selected-files li>span:first-of-type{flex:1;min-width:0;overflow-wrap:anywhere}
+.tender-selected-files svg{flex:none}
+@media(max-width:600px){.tender-modal .md-h{padding:20px 18px 8px}.tender-modal .md-b{padding:12px 18px 20px}.tender-modal .md-f{padding:14px 18px}.tender-list-row,.tender-file-row{gap:10px}.tender-list-row>.chip{font-size:11px;padding:0 6px}}

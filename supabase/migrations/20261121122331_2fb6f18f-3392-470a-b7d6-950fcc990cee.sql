@@ -1,0 +1,1 @@
+CREATE INDEX tender_documents_tender_company ON public.tender_documents(tender_id,company_id);

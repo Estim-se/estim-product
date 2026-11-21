@@ -31,6 +31,7 @@ export function AppShell({ children, waiting, onReset }: {
       <div className="eyebrow">Kommunikation</div>
       <Button asChild variant="prototype" className="nav"><Link to="/" activeOptions={{ exact: true }} activeProps={{ className: 'active' }} title="Inkorg"><Icon name="inbox" /><span>Inkorg</span>{waiting > 0 && <span className="count">{waiting}</span>}</Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/offerter" activeProps={{ className: 'active' }} title="Offerter"><Icon name="offert" /><span>Offerter</span></Link></Button>
+      <Button asChild variant="prototype" className="nav"><Link to="/anbud" activeProps={{ className: 'active' }} title="Anbud"><Icon name="doc" /><span>Anbud</span></Link></Button>
       <div className="eyebrow">Ställ in</div>
       <Button asChild variant="prototype" className="nav"><Link to="/kanaler" activeProps={{ className: 'active' }} title="Kanaler"><Icon name="plug" /><span>Kanaler</span></Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/installningar" activeProps={{ className: 'active' }} title="Inställningar"><Icon name="settings" /><span>Inställningar</span></Link></Button>
@@ -42,8 +43,8 @@ export function AppShell({ children, waiting, onReset }: {
       </div>
     </aside>
     <main className="main"><div className="panel"><div className="mobile-logo" aria-hidden="true"><Logo /></div><WorkspaceAccess>{children}</WorkspaceAccess></div></main>
-    {<nav className="mobile-main-nav grid-cols-5!" aria-label="Huvudnavigation i mobilen">{([
-      ['/', 'Inkorg', 'inbox'], ['/offerter', 'Offerter', 'offert'], ['/kanaler', 'Kanaler', 'plug'], ['/installningar', 'Inställningar', 'settings'],
+    {<nav className="mobile-main-nav grid-cols-6!" aria-label="Huvudnavigation i mobilen">{([
+      ['/', 'Inkorg', 'inbox'], ['/offerter', 'Offerter', 'offert'], ['/anbud', 'Anbud', 'doc'], ['/kanaler', 'Kanaler', 'plug'], ['/installningar', 'Inställningar', 'settings'],
     ] as const).map(([to, label, icon]) => <Button key={to} asChild variant="prototype" className="nav"><Link to={to} activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><Icon name={icon} /><span>{label}</span></Link></Button>)}<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="prototype" className="nav" aria-label="Konto och läge"><Icon name="user" /><span>Konto</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end" side="top"><DropdownMenuItem onSelect={() => workspace.setMode('real')}>Live</DropdownMenuItem><DropdownMenuItem onSelect={() => workspace.setMode('demo')}>Demo</DropdownMenuItem><DropdownMenuSeparator />{real && workspace.data?.platform && <DropdownMenuItem asChild><Link to="/admin">Administration</Link></DropdownMenuItem>}<DropdownMenuItem asChild><Link to="/mobil" onClick={() => actions.openMobile(path)}>Appen i mobilen</Link></DropdownMenuItem>{!real && <DropdownMenuItem onSelect={onReset}>Återställ demo</DropdownMenuItem>}{workspace.signedIn ? <DropdownMenuItem onSelect={() => void workspace.signOut()}>Logga ut</DropdownMenuItem> : <DropdownMenuItem asChild><Link to="/auth">Logga in</Link></DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></nav>}
   </div>;
 }
