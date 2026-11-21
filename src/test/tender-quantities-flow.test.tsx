@@ -18,6 +18,7 @@ vi.mock('@/lib/tenders.functions', () => ({
 }));
 vi.mock('@/lib/tender-insights.functions', () => ({ getTenderInsights: async () => null, analyzeTenderInsights: async () => { fixture.stages.push('insights'); } }));
 vi.mock('@/lib/tender-quantities.functions', () => ({ getTenderQuantities: async () => null, analyzeTenderQuantities: async ({data}:{data:{id:string;run:string}}) => { expect(data).toEqual({id:'tender',run:'run'}); fixture.stages.push('quantities'); if(fixture.fail)throw Error('Mängdanalysen misslyckades.'); return {ok:true}; } }));
+vi.mock('@/lib/tender-calculation.functions', () => ({ getTenderCalculationSettings: async () => null, getTenderCalculationMatches: async () => null, saveTenderCalculationSettings: vi.fn(), saveTenderCalculationMatches: vi.fn(), matchTenderCalculation: async () => { fixture.stages.push('matching'); return { bindings: [], demolition: null }; } }));
 afterEach(() => { cleanup(); fixture.stages=[]; fixture.fail=false; });
 async function openAndAnalyze() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry:false }, mutations: { retry:false } } });
@@ -27,7 +28,7 @@ async function openAndAnalyze() {
   fireEvent.click(screen.getByRole('button',{name:'Analysera'}));
 }
 it('runs quantities only after classification and insights, using the same tender run', async () => {
-  await openAndAnalyze(); await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','quantities']));
+  await openAndAnalyze(); await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','quantities','matching']));
   await waitFor(() => expect(screen.getByRole('button',{name:'Analysera'})).not.toBeDisabled());
 });
 it('records a quantity-stage failure through the existing run abort path', async () => {

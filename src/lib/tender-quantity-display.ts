@@ -1,11 +1,12 @@
 import type { TenderQuantities } from './tender-quantities';
 
 export function quantityReferences(data: TenderQuantities, sources: TenderQuantities['items'][number]['sources']) {
-  const grouped = new Map<string, { document_id: string; page: number | null; locations: Set<string>; evidence: string[] }>();
+  const grouped = new Map<string, { document_id: string; pages: Set<number>; locations: Set<string>; evidence: string[] }>();
   for (const s of sources) {
-    const key = `${s.document_id}|${s.page}`;
+    const key = s.document_id;
     let ref = grouped.get(key);
-    if (!ref) { ref = { document_id: s.document_id, page: s.page, locations: new Set(), evidence: [] }; grouped.set(key, ref); }
+    if (!ref) { ref = { document_id: s.document_id, pages: new Set(), locations: new Set(), evidence: [] }; grouped.set(key, ref); }
+    if (s.page !== null) ref.pages.add(s.page);
     ref.evidence.push(s.evidence);
     for (const o of data.rules.operands) if (o.source?.document_id === s.document_id && o.source.evidence === s.evidence && o.list_selection) {
       const sel = o.list_selection;
@@ -13,7 +14,7 @@ export function quantityReferences(data: TenderQuantities, sources: TenderQuanti
       if (rows?.[0]) ref.locations.add(`blad ${sel.sheet}, rad ${rows[0]}${rows[1] && rows[1] !== rows[0] ? `–${rows[1]}` : ''}`);
     }
   }
-  return [...grouped.values()].map(r => ({ ...r, location: r.page === null ? [...r.locations].join('; ') || 'Textkälla' : `s. ${r.page}`, evidence: [...new Set(r.evidence)].join('\n') }));
+  return [...grouped.values()].map(r => ({ ...r, location: r.pages.size ? `s. ${[...r.pages].sort((a,b)=>a-b).join(', ')}` : [...r.locations].join('; ') || 'Textkälla', evidence: [...new Set(r.evidence)].join('\n') }));
 }
 
 export function uniqueQuantityAssumptions(values: TenderQuantities['assumptions']) {

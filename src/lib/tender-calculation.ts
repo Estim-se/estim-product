@@ -41,7 +41,11 @@ const rounded = (n: bigint, d: bigint) => (n + d / 2n) / d;
 export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown, rawMatches: unknown) {
   const q = tenderQuantitiesSchema.parse(rawQuantities), s = validateSettingsInput(rawSettings), m = validateMatchesInput(rawMatches);
   const items = [...q.items];
-  if (m.demolition && !items.some(i => i.post === m.demolition?.post)) items.push({ post: m.demolition.post, unit: 'lgh', quantity: m.demolition.quantity, calculation: m.demolition.quantity, rule: 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: 'Hög' });
+  if (m.demolition && !items.some(i => i.post === m.demolition?.post)) {
+    const operand = q.rules.operands.find(o => o.id === m.demolition?.apartment_operand_id);
+    if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');
+    items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: 'Hög' });
+  }
   const rows = items.map(i => {
     const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);
     const hoursPerUnit = b?.manual_hours ?? t?.hours ?? null, listPrice = b?.manual_list_price ?? t?.list_price ?? null;
