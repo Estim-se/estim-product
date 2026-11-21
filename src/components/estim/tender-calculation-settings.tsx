@@ -13,7 +13,7 @@ export function TenderCalculationSettings({company,real}:{company:string|undefin
   useEffect(()=>{setValues(query.data??emptyCalculationSettings);},[query.data,company]);
   useEffect(()=>{setMessage('');},[company,real]);
   async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setMessage('');try{const parsed=validateSettingsInput(values);const result=real?await save({data:parsed}):parsed;qc.setQueryData(settingsKey,result);setMessage('Kalkylinställningarna är sparade.');}catch(e){setMessage(e instanceof Error&&e.message.startsWith('Etablering')?e.message:'Kalkylinställningarna kunde inte sparas. Kontrollera värdena.');}finally{setBusy(false);}}
-  const fields=[['hourly_rate','Timpris (kr/h)'],['material_markup','Materialpåslag (%)'],['list_discount','Rabatt på listpris (%)'],['establishment','Etablering (% av totalt)'],['contingency','Oförutsett (% av totalt)']] as const;
+  const fields=[['hourly_rate','Timpris (kr/h)'],['material_markup','Materialpåslag (%)'],['list_discount','Rabatt på listpris (%)'],['establishment','Etablering (% av arbete + material)'],['contingency','Oförutsett (% av arbete + material)']] as const;
   return <section className="mt24"><div className="row between wrap"><h2>Kalkylinställningar</h2>{values.example_values&&<span className="chip">Exempelvärden</span>}</div>
     {query.isError&&<p role="alert" className="mt16">Kalkylinställningarna kunde inte hämtas.</p>}
     <form onSubmit={e=>void submit(e)} className="mt16 space-y-6"><fieldset disabled={busy||query.isFetching||query.isError} className="space-y-6">

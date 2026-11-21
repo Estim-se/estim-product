@@ -200,7 +200,7 @@ export function TendersPage() {
       {insights.data?.status === 'analysed' && !analyzing && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
       {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
       {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
-      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result}/>:null} />}
+      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result} documents={fileRows}/>:null} />}
     </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <div key={t.id} className="row tender-file-item"><Button variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button><Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Ta bort ${t.name}`} onClick={() => void removeTender(t)}><Trash2 size={16} />Ta bort</Button></div>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
     </>}
   </>;

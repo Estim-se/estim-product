@@ -4,4 +4,4 @@
 - Run whole-tender extraction after classification using original AF-first sources and company-private run-bound JSON; validate source IDs, physical PDF pages and Office citations so summaries cannot become invented contract terms.
 - Validate a complete internal risk-area review before saving existing insights JSON; this prevents unchecked areas without changing persisted results or the tender UI.
 - Extract quantity operands and sum-of-products rules in a separate third tender step; fixed-point arithmetic calculates totals, assumptions remain separate, and current-run company-private storage rejects stale results.
-- Keep tender cost settings in separate company-scoped storage and persist only AI catalog bindings plus source-backed demolition; deterministic decimal arithmetic recalculates costs without AI, with establishment and contingency as shares of the final total.
+- Keep tender cost settings in separate company-scoped storage and persist AI catalog bindings, manual inputs and source-backed demolition; deterministic decimal arithmetic recalculates costs without AI, and unpriced assumption items remain visible until manually completed.
