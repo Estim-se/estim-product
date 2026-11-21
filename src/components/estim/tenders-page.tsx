@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useServerFn } from '@tanstack/react-start';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Dialog from '@radix-ui/react-dialog';
-import { FileText, FolderOpen, Plus, Upload, X, ArrowLeft, ScanText } from 'lucide-react';
+import { FileText, FolderOpen, Plus, Upload, X, ArrowLeft, ScanText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { analyzeTenderDocument, beginTenderAnalysis, abortTenderAnalysis, cancelTenderUpload, completeTender, createTender, listTenderDocuments, listTenders, openTenderDocument } from '@/lib/tenders.functions';
@@ -57,6 +57,32 @@ export function TendersPage() {
       await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
       await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
     }
+  }
+  async function removeFile(d: TenderDocument) {
+    if (analyzing || !window.confirm('Är du säker?')) return;
+    setMessage('');
+    if (!real) { setLocalDocuments(old => old.filter(x => x.id !== d.id)); return; }
+    try {
+      const st = await supabase.storage.from('tender-documents').remove([d.path]);
+      if (st.error) throw st.error;
+      const r = await supabase.from('tender_documents').delete().eq('id', d.id);
+      if (r.error) throw r.error;
+    } catch { setMessage('Filen kunde inte tas bort. Försök igen.'); }
+    await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, d.tender_id] });
+  }
+  async function removeTender() {
+    if (!selected || analyzing || !window.confirm('Är du säker?')) return;
+    const tid = selected.id;
+    setMessage('');
+    if (!real) { setLocalDocuments(old => old.filter(x => x.tender_id !== tid)); setLocalTenders(old => old.filter(t => t.id !== tid)); setSelected(null); return; }
+    try {
+      const paths = (await supabase.from('tender_documents').select('path').eq('tender_id', tid)).data?.map(x => x.path) ?? [];
+      if (paths.length) { const st = await supabase.storage.from('tender-documents').remove(paths); if (st.error) throw st.error; }
+      const r = await supabase.from('tenders').delete().eq('id', tid);
+      if (r.error) throw r.error;
+      setSelected(null);
+    } catch { setMessage('Anbudet kunde inte tas bort. Försök igen.'); }
+    await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
   }
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -138,10 +164,10 @@ export function TendersPage() {
     </div>
     {!show && message && <p role="status" className="small mt12">{message}</p>}
     {(tenders.isError || documents.isError) && <div role="alert" className="row mt16"><span>Anbuden kunde inte hämtas.</span><Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { void tenders.refetch(); void documents.refetch(); }}>Försök igen</Button></div>}
-    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button></div>
+    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button><Button variant="prototype" className="btn btn-ghost" disabled={analyzing} onClick={() => void removeTender()}><Trash2 size={16} />Ta bort anbud</Button></div>
       {analysisProgress && <p role="status" className="small mt16">{analysisProgress}</p>}
       {currentTender?.error && <p role="alert" className="small mt16">{currentTender.error}</p>}
-      {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <Button key={d.id} variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button>)}</div>}
+      {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <div key={d.id} className="row tender-file-item"><Button variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button><Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} aria-label={`Ta bort ${d.file_name}`} onClick={() => void removeFile(d)}><Trash2 size={16} />Ta bort</Button></div>)}</div>}
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
     </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <Button key={t.id} variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
   </>;
