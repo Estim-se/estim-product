@@ -1018,6 +1018,54 @@ export type Database = {
           },
         ]
       }
+      tender_insights: {
+        Row: {
+          analysis_run: string
+          company_id: string
+          created_at: string
+          error: string | null
+          result: Json | null
+          status: string
+          tender_id: string
+          updated_at: string
+        }
+        Insert: {
+          analysis_run: string
+          company_id: string
+          created_at?: string
+          error?: string | null
+          result?: Json | null
+          status: string
+          tender_id: string
+          updated_at?: string
+        }
+        Update: {
+          analysis_run?: string
+          company_id?: string
+          created_at?: string
+          error?: string | null
+          result?: Json | null
+          status?: string
+          tender_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_insights_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_insights_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: true
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenders: {
         Row: {
           analysis_run: string | null
@@ -1165,6 +1213,10 @@ export type Database = {
         Args: { did: string; rid: string }
         Returns: boolean
       }
+      estim_claim_tender_insights: {
+        Args: { rid: string; tid: string }
+        Returns: boolean
+      }
       estim_company_active: { Args: { cid: string }; Returns: boolean }
       estim_complete_tender: {
         Args: { files: Json; tid: string }
@@ -1204,6 +1256,10 @@ export type Database = {
       }
       estim_finish_tender_document: {
         Args: { did: string; result: Json; rid: string }
+        Returns: undefined
+      }
+      estim_finish_tender_insights: {
+        Args: { p_error: string; p_result: Json; rid: string; tid: string }
         Returns: undefined
       }
       estim_import_prices: { Args: { payload: Json }; Returns: number }
