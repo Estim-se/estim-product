@@ -5,3 +5,4 @@
 - Validate a complete internal risk-area review before saving existing insights JSON; this prevents unchecked areas without changing persisted results or the tender UI.
 - Extract quantity operands and sum-of-products rules in a separate third tender step; fixed-point arithmetic calculates totals, assumptions remain separate, and current-run company-private storage rejects stale results.
 - Keep tender cost settings in separate company-scoped storage and persist AI catalog bindings, manual inputs and source-backed demolition; deterministic decimal arithmetic recalculates costs without AI, and unpriced assumption items remain visible until manually completed.
+- Generate tender exports only in browser actions from existing company-authorized reads; Excel formulas mirror the cost helper and prepared blobs retain click activation for downloads without new storage or AI calls.
