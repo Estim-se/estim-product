@@ -1,6 +1,6 @@
 # Prototype rebuild
 
-- [ ] Anbud step 4: third AI step returns source-backed quantity rules; code calculates totals, assumptions stay separate, company-private persistence and Swedish sections. Rerun Testlärkan and show the complete list; no hours, prices or publication.
+- [x] Anbud step 4: third AI step returns source-backed quantity rules; original Excel cell selections counted in code and fixed-point arithmetic calculates totals. Company-private run-bound tender_quantities, Swedish Mängder/Antaganden sections. Testlärkan: 13 quantities and 3 assumptions saved/read back, arithmetic and PDF citations verified; full result shown. 280 tests and automatic build pass; desktop/tablet/phone saved-result fixtures and live company-isolation tests pass. Actual signed-in Analysera page remains unverified because external preview session creation is unavailable. No hours, prices or publication; earlier tender results preserved.
 
 - [x] Mandatory 13-area tender risk checklist with validated area/risk coverage; Testlärkan rerun yields 11 risks including AFC.13 and combined AFC.61/AFC.65. Physical-page citations verified, risk list saved/read back; existing key data, questions, classifications and status preserved. 252 tests pass, final 27 focused tests pass and automatic build OK. Actual authenticated UI remains unavailable on external Supabase; old browser fixture failed on QueryClient context and is not claimed verified. Updated risks shown; no publication.
 
