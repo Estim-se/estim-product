@@ -1,6 +1,7 @@
 # Prototype rebuild
 
-- [ ] Anbud: merge duplicate risks retaining citations, cover every clarification/contradiction with questions, add risks-only rerun and explicit low-quantity confirmation across app/PDF/Excel; rerun Baggen, show all questions, no publication.
+- [x] Anbud: merged duplicate risks retaining citations; risk-linked questions and date contradictions covered; risk-only rerun and low-quantity confirmation in app/PDF/Excel. Baggen saved Analyserat: 19 risks (7 high, 11 medium, 1 low), 12 sourced questions including the prior three; all eight clarification risks covered. Classifications, key data, quantities and calculation matches unchanged. 401 tests and build OK; saved-data desktop/phone views and Excel/PDF checks pass. Full question report prepared; no publication.
+- [ ] Verify authenticated Baggen-page risk-only button and confirmation save/read-back; blocked by unavailable permitted external-Supabase preview session. Private job and company-isolation tests passed; saved-result UI tested separately.
 
 - [x] Baggen: panel estimate gating, kitchen recipe fallback, apartment/local demolition, four example catalog types, distinct address/floor estimates and missing-post coverage check. Recalculated and saved Analyserat: 34 rows, 31 priced, 3406 h, provisional subtotal 3349896.39 kr excl. VAT. Earlier analysis unchanged; 383 tests and build pass; saved-data desktop/phone estimate editing verified. Authenticated button flow unavailable on external Supabase; no publication.
 
