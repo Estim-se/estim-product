@@ -75,3 +75,4 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Bundle Anbud PDF, unchanged formula workbook and source-backed questions in a browser ZIP prepared before download; company logos use private company-scoped storage and authenticated branding reads, never cross-company or demo identity.
 
 - Keep tender room recipes and per-apartment quantity arithmetic in browser-safe pure helpers, and rerun quantities/calculation through the existing private job pipeline to preserve completed contract-analysis results.
+- Price explicitly supported tender estimates provisionally while keeping their low certainty and assumptions; unresolved measurements still require manual input, so known object counts are not confused with missing quantities.

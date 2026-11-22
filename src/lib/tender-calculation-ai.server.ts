@@ -31,7 +31,7 @@ export async function matchTenderCost(quantities: TenderQuantities, settings: Ca
   const seen=new Set<string>();const bindings:{post:string;type_id:string|null;manual_hours:null;manual_list_price:null}[]=[];
   for(const b of raw.matches){if(!known.includes(b.post)||seen.has(b.post)||(b.post==='Rivning per lägenhet'&&!quantities.items.some(i=>i.post===b.post)&&!quantities.assumptions.some(a=>assumptionItems(a).some(i=>i.post===b.post))))continue;seen.add(b.post);bindings.push({post:b.post,type_id:b.type_id&&settings.post_types.some(t=>t.id===b.type_id)?b.type_id:closestTenderPostType(b.post,settings),manual_hours:null,manual_list_price:null});}
   for(const post of known)if(!seen.has(post)){seen.add(post);bindings.push({post,type_id:closestTenderPostType(post,settings),manual_hours:null,manual_list_price:null});}
-  const demolitionPost=!!demolition&&!quantities.items.some(i=>i.post==='Rivning per lägenhet');
-  if(demolition&&demolitionPost)bindings.push({post:'Rivning per lägenhet',type_id:demolition.type_id&&settings.post_types.some(t=>t.id===demolition.type_id)?demolition.type_id:null,manual_hours:null,manual_list_price:null});
+  const demolitionPost=!!demolition&&!known.some(post=>/rivning/i.test(post));
+  if(demolition&&demolitionPost)bindings.push({post:'Rivning per lägenhet',type_id:demolition.type_id&&settings.post_types.some(t=>t.id===demolition.type_id)?demolition.type_id:closestTenderPostType('Rivning per lägenhet',settings),manual_hours:null,manual_list_price:null});
   return validateBindings({bindings,demolition:demolition&&demolitionPost?{post:'Rivning per lägenhet',quantity:'0',source:demolition.source,apartment_operand_id:demolition.apartment_operand_id,...(flag?{flag}:{})}:null},quantities,settings);
 }
