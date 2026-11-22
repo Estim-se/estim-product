@@ -1,0 +1,5 @@
+import { expect, it } from 'vitest';
+import { PDFDocument } from 'pdf-lib';
+import { extractTenderPdfPageText } from '@/lib/tender-pdf-text.server';
+it('extracts digital PDF text separately for each physical page without AI',async()=>{const pdf=await PDFDocument.create();pdf.addPage().drawText('AFA.11 Example company');pdf.addPage().drawText('AFC.62 Payment 60 days');const pages=await extractTenderPdfPageText(await pdf.save());expect(pages).toHaveLength(2);expect(pages[0]).toContain('AFA.11 Example company');expect(pages[1]).toContain('AFC.62 Payment 60 days');});
+it('empty scan-like pages remain empty so they require document OCR instead of invented text',async()=>{const pdf=await PDFDocument.create();pdf.addPage().drawRectangle({x:10,y:10,width:100,height:100});expect(await extractTenderPdfPageText(await pdf.save())).toEqual(['']);});

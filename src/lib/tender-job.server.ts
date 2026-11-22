@@ -8,7 +8,7 @@ import type { TenderInsights } from './tender-insights';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
-const CACHE_VERSION = 'anbud-reliability-2026-11-22-1';
+const CACHE_VERSION = 'anbud-reliability-2026-11-22-3';
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -41,7 +41,7 @@ export async function kickTenderJob(tid: string) {
 async function readingVersion(db: Db, job: Job) {
   const r = await db.from('tenders').select('reading_version').eq('id', job.tender_id).eq('company_id', job.company_id).single();
   if (r.error || !r.data) throw Error('Anbudet kunde inte läsas.');
-  return String(r.data.reading_version);
+  return `${String(r.data.reading_version)}:pdf-text-v1`;
 }
 async function loadInputs(db: Db, job: Job, afFirst: boolean) {
   const rows = await db.from('tender_documents').select('id,file_name,file_type,path,size,doc_type,page_count,analysis_status,content_hash').eq('tender_id', job.tender_id).eq('company_id', job.company_id).eq('analysis_status', 'analysed').order('file_name');
@@ -155,7 +155,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const inputs = await loadInputs(db, job, false);
     const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
-    const result = await cachedStep(db, job, step, settings.data?.room_recipes ?? null, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v4' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

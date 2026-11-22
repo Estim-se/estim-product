@@ -1,9 +1,9 @@
 # Prototype rebuild
 
-- [ ] Anbud reliability: repair Baggen2 checklist references; tolerant output validation and bounded retries.
-- [ ] Cache file reads/results, split large sources, add explicit reread and fixed catalog proposals.
-- [ ] Electrical scope checklist in page/exports; source-only Testlärkan/Provbänken regression fixtures.
-- [ ] Run Testlärkan, Provbänken and Baggen three times each, compare rows/totals and enforce future publication gate. No publication.
+- [x] Anbud reliability: call-local checklist recovery, flagged invalid references/numbers, two status-aware retries, preserved completed steps. Focused 119 tests and automatic build pass.
+- [x] Company/hash/version caches, bounded PDF/Office chunks, digital PDF text extraction with scanned-page AI fallback, explicit reread and catalog-only proposals.
+- [x] Shared 18-area scope audit and proposals in page/PDF/Excel; fasit expectations isolated in test-only helper. Desktop/mobile proposal approval and confirmation verified with isolated fixtures.
+- [ ] Nine-run/fasit release proof NOT passed: latest Testlärkan ran three times identically but fasit still missed the cellar-light row; source-completeness correction added, not yet rerun. Provbänken/Baggen proof incomplete; authenticated page E2E unavailable with external Supabase. Running test jobs paused with completed steps preserved. No publication; do not mark ready. Separate live regression tests encountered database statement timeouts; unrelated modules unchanged.
 
 - [x] Anbud: merged duplicate risks retaining citations; risk-linked questions and date contradictions covered; risk-only rerun and low-quantity confirmation in app/PDF/Excel. Baggen saved Analyserat: 19 risks (7 high, 11 medium, 1 low), 12 sourced questions including the prior three; all eight clarification risks covered. Classifications, key data, quantities and calculation matches unchanged. 401 tests and build OK; saved-data desktop/phone views and Excel/PDF checks pass. Full question report prepared; no publication.
 - [ ] Verify authenticated Baggen-page risk-only button and confirmation save/read-back; blocked by unavailable permitted external-Supabase preview session. Private job and company-isolation tests passed; saved-result UI tested separately.

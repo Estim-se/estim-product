@@ -28,6 +28,14 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
     for (const cell of line.split('\t')) { const m = cell.match(/^([A-Z]+\d+): (.*)$/); if (m?.[1] && m[2] !== undefined) cells.set(m[1], decode(m[2]).replace(/ \(formel:.*\)$/, '').trim()); }
   }
   if (!found) throw new Error('Objektlistans blad saknas.');
+  // An apartment ID is not a stairwell address. Repair only when explicit column headers prove the boundary.
+  if(selection.operation==='Unika trapphusplan'){
+    const requested=selection.address_range?.match(/^([A-Z]+)\d+:[A-Z]+\d+$/)?.[1];
+    const headers=[...cells.entries()].filter(([cell])=>Number(cell.match(/\d+$/)?.[0])<start);
+    const apartmentHeader=headers.some(([cell,value])=>cell.match(/^[A-Z]+/)?.[0]===requested&&/^(?:lgh|lägenhet|lägenhetsnummer|lgh.?nr|objekt.?id)$/i.test(value));
+    const stairHeader=headers.find(([,value])=>/^(?:trapphus|port|trappuppgång)$/i.test(value));
+    if(apartmentHeader&&stairHeader){const column=stairHeader[0].match(/^[A-Z]+/)?.[0];if(column)selection.address_range=`${column}${start}:${column}${end}`;}
+  }
   let result = 0n, matched = 0; const unique = new Set<string>();
   for (let row = start; row <= end; row++) {
     const value = cells.get(`${match[1]}${row}`);

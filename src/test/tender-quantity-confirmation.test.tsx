@@ -24,3 +24,9 @@ it('Excel gates low-quantity formulas on an editable confirmation cell',async()=
  const book=await createTenderWorkbook({name:'Baggen',quantities,settings,matches,insights:null,documents:[]});const sheet=book.getWorksheet('Kalkyl');
  expect(sheet?.getCell('M2').value).toBe(0);expect(sheet?.getCell('E2').value).toBe(2);expect(sheet?.getCell('F2').value).toBe(1500);expect(sheet?.getCell('H2').formula).toBe('IF(OR(M2=0,COUNT(B2,E2,F2)<3),"",ROUND(B2*E2,6))');
 });
+it('a proposal contributes nothing until an existing catalog type and low quantity are both approved',()=>{
+ function Table(){const [m,set]=useState<CalculationMatches>({...matches,bindings:matches.bindings.map(b=>({...b,type_id:null}))});return <TenderCostTable quantities={quantities} settings={settings} matches={m} onChange={set}/>;}
+ render(<Table/>);expect(screen.getAllByText('0,00 kr').length).toBeGreaterThan(0);
+ fireEvent.change(screen.getByRole('combobox',{name:'Godkänn posttyp för Totalmätare'}),{target:{value:'00000000-0000-4000-8000-000000000001'}});fireEvent.click(screen.getByRole('button',{name:'Godkänn'}));
+ expect(screen.getAllByText('0,00 kr').length).toBeGreaterThan(0);fireEvent.click(screen.getByRole('checkbox',{name:'Bekräfta Totalmätare'}));expect(screen.getByText('2 758,26 kr')).toBeTruthy();
+});
