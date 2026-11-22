@@ -1034,6 +1034,7 @@ export type Database = {
           list_discount: number
           material_markup: number
           post_types: Json
+          room_recipes: Json | null
           updated_at: string
         }
         Insert: {
@@ -1046,6 +1047,7 @@ export type Database = {
           list_discount?: number
           material_markup?: number
           post_types?: Json
+          room_recipes?: Json | null
           updated_at?: string
         }
         Update: {
@@ -1058,6 +1060,7 @@ export type Database = {
           list_discount?: number
           material_markup?: number
           post_types?: Json
+          room_recipes?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -1565,6 +1568,10 @@ export type Database = {
       estim_prepare_auto_send: { Args: { jid: string }; Returns: string }
       estim_prepare_send: { Args: { tid: string }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
+      estim_recalculate_tender_job: {
+        Args: { p_base_url: string; tid: string }
+        Returns: string
+      }
       estim_receive: {
         Args: { actor?: string; cid: string; payload: Json }
         Returns: Json
