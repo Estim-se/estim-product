@@ -1,0 +1,69 @@
+{
+  "_comment": "Stored example tool outputs for the third risk call (economy, design, insurance, missing documents). Generic fixtures, not taken from any real tender.",
+  "emptyWithStatuses": {
+    "risks": [],
+    "risk_checklist": [
+      { "area": "Ersättningsform och indexreglering", "assessment": "Normalt", "af_code": "AFC.61" },
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Normalt", "af_code": "AFC.65" },
+      { "area": "Projekteringsansvar", "assessment": "Ej nämnt", "af_code": null },
+      { "area": "Försäkringskrav", "assessment": "Normalt", "af_code": "AFC.54" },
+      { "area": "Saknade handlingar", "assessment": "Ej nämnt" }
+    ]
+  },
+  "ejNamntWithoutSource": {
+    "risks": [],
+    "risk_checklist": [
+      { "area": "Ersättningsform och indexreglering", "assessment": "Ej nämnt", "af_code": null },
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Ej nämnt" },
+      { "area": "Projekteringsansvar", "assessment": "Ej nämnt", "af_code": null },
+      { "area": "Försäkringskrav", "assessment": "Ej nämnt" },
+      { "area": "Saknade handlingar", "assessment": "Ej nämnt", "af_code": null }
+    ]
+  },
+  "normalWithoutSource": {
+    "risks": [
+      { "title": "Fast pris utan indexreglering", "description": "Kostnadsökningar under kontraktstiden bärs av entreprenören.", "severity": "Medel", "suggestion": "Prissätt", "af_code": "AFC.61", "page": null }
+    ],
+    "risk_checklist": [
+      { "area": "Ersättningsform och indexreglering", "assessment": "Risk", "af_code": "AFC.61" },
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Normalt", "af_code": null },
+      { "area": "Projekteringsansvar", "assessment": "Normalt", "af_code": "AFC.999" },
+      { "area": "Försäkringskrav", "assessment": "Normalt", "af_code": "AFC.54" },
+      { "area": "Saknade handlingar", "assessment": "Ej nämnt", "af_code": null }
+    ]
+  },
+  "missingChecklist": {
+    "risks": [
+      { "title": "Fast pris utan indexreglering", "description": "Kostnadsökningar bärs av entreprenören.", "af_code": "AFC.61" }
+    ]
+  },
+  "emptyWithIncompleteChecklist": {
+    "risks": [],
+    "risk_checklist": [
+      { "area": "Ersättningsform och indexreglering", "assessment": "Normalt", "af_code": "AFC.61" },
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Normalt", "af_code": "AFC.65" }
+    ]
+  },
+  "riskWithPartialChecklist": {
+    "risks": [
+      { "title": "Lågt ÄTA-påslag", "description": "Endast 5 % påslag på ÄTA-arbeten.", "severity": "Hög", "af_code": "AFC.65" }
+    ],
+    "risk_checklist": [
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Risk", "af_code": "AFC.65" }
+    ]
+  },
+  "wordingDriftAndOversizedText": {
+    "risks": [
+      { "title": "Fast pris", "description": "OVERSIZED", "severity": "Kritisk", "suggestion": "Prissätt", "af_code": "AFC.61", "page": 0 }
+    ],
+    "risk_checklist": [
+      { "area": "ersättningsform  och indexreglering", "assessment": "Risk", "af_code": "AFC.61" },
+      { "area": "ÄTA-ersättning och påslag", "assessment": "Normalt", "af_code": "AFC.65" },
+      { "area": "Projekteringsansvar", "assessment": "Ej nämnt", "af_code": null },
+      { "area": "Försäkringskrav", "assessment": "Normalt", "af_code": "AFC.54" },
+      { "area": "Saknade handlingar", "assessment": "Ej nämnt", "af_code": null }
+    ]
+  },
+  "brokenJson": "{\"risks\":[{\"title\":\"Fast pris utan index\",\"description\":\"Kostnadsökningar bärs av",
+  "truncated": "{\"risks\":[{\"title\":\"Fast pris utan index\",\"description\":\"Kostnadsökningar bärs av entreprenören.\"}],\"risk_checklist\":[{\"area\":\"Ersättningsform"
+}

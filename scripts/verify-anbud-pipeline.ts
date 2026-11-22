@@ -39,7 +39,7 @@ async function run(tid:string){
    await Bun.sleep(5000);
   }
   const saved=await checked(db.from('tenders').select('status,error').eq('id',tid).single());
-  if(j.status!=='done'||saved.status!=='analysed'){report.push({tender:t.name,run:n,status:saved.status,total:null,step:j.failed_step,error:j.error??saved.error});writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(t.name,n,'FAILED',j.failed_step,j.error);return;}
+  if(j.status!=='done'||saved.status!=='analysed'){const parts=(await checked(db.from('tender_jobs').select('parts').eq('tender_id',tid).single())).parts??{};report.push({tender:t.name,run:n,status:saved.status,total:null,step:j.failed_step,error:j.error??saved.error,rejected:parts[`rejected:${j.failed_step}`]??null});writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(t.name,n,'FAILED',j.failed_step,j.error);return;}
   const iq=await checked(db.from('tender_insights').select('result,status').eq('tender_id',tid).single());
   const q=await checked(db.from('tender_quantities').select('result,status').eq('tender_id',tid).single());
   const m=await checked(db.from('tender_calculation_matches').select('result').eq('tender_id',tid).single());

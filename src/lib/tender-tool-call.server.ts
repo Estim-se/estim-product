@@ -2,6 +2,13 @@
 export const TENDER_MAX_OUTPUT_TOKENS = 64000;
 
 export class TenderIncompleteOutput extends Error {}
+// Raw model output of each rejected attempt, kept so a failed step can be inspected afterwards.
+export const TENDER_RAW_OUTPUT_LIMIT = 60_000;
+export type TenderRejectedAttempt = { attempt: number; reason: string; stop_reason: string | null; raw: string };
+export class TenderRejectedOutput extends Error {
+  constructor(message: string, readonly attempts: TenderRejectedAttempt[]) { super(message); }
+}
+type Capture = { raw: string; stop: string };
 export class TenderGatewayError extends Error {
   constructor(message: string, readonly status: number, readonly waitMs = 0) { super(message); }
 }
@@ -13,7 +20,7 @@ export function tenderDocumentBlock(bytes: Uint8Array) {
 
 type ToolCall = { key: string; model: string; system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
 
-async function attempt(c: ToolCall): Promise<unknown> {
+async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
   const content = [...c.content];
   // Cache the large document prefix so a retry does not pay for the documents twice.
   const last = content.length - 1;
@@ -33,7 +40,7 @@ async function attempt(c: ToolCall): Promise<unknown> {
   if (!response.body) throw new Error('AI:n returnerade inget svar.');
   const reader = response.body.getReader(), decoder = new TextDecoder();
   const blocks = new Map<number, string>(), output = new Map<number, string>();
-  let buffer = '', stop = '', finished = false, size = 0;
+  let buffer = '', stop = '', finished = false, size = 0, prose = '';
   try {
     while (true) {
       const { value, done } = await reader.read(); if (done) break;
@@ -47,11 +54,18 @@ async function attempt(c: ToolCall): Promise<unknown> {
         if (event.type === 'error') throw new Error('AI-analysen avbröts av leverantören.');
         if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') blocks.set(event.index, event.content_block.name);
         if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta' && blocks.get(event.index) === c.tool) output.set(event.index, (output.get(event.index) ?? '') + event.delta.partial_json);
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') prose += event.delta.text ?? '';
         if (event.type === 'message_delta') stop = event.delta?.stop_reason ?? '';
         if (event.type === 'message_stop') finished = true;
       }
     }
-  } finally { reader.releaseLock(); }
+  } finally {
+    reader.releaseLock();
+    // Captured even when the stream breaks, so truncated and malformed output can be inspected.
+    const tool = [...output.values()].join('\n');
+    capture.raw = prose ? `${tool}${tool ? '\n' : ''}[text]\n${prose}` : tool;
+    capture.stop = stop;
+  }
   if (stop === 'refusal') throw new Error('AI:n avböjde att analysera anbudet.');
   const json = [...output.values()];
   if (stop === 'max_tokens') throw new TenderIncompleteOutput('svaret klipptes vid maxgränsen för svarslängd');
@@ -66,14 +80,21 @@ const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { na
 export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
   let retryIncomplete = false;
+  const rejected: TenderRejectedAttempt[] = [];
   for (let i = 0; i < 3; i++) {
-    try { return validate(await attempt(i===0?c:{...c,...(retryIncomplete && c.retryContent ? {content:c.retryContent} : {}),system:`${c.system}\nDet föregående försöket var ofullständigt: ${reason}. Gör en ny fullständig källbaserad kontroll. Returnera konkreta resultat, aldrig placeholder eller ofyllda exempel.`})); }
+    const capture: Capture = { raw: '', stop: '' };
+    // Only metadata is logged; the raw text may contain tender content and is returned to the caller for private storage.
+    const keep = () => {
+      rejected.push({ attempt: i + 1, reason, stop_reason: capture.stop || null, raw: capture.raw.slice(0, TENDER_RAW_OUTPUT_LIMIT) });
+      console.warn('[tender-rejected]', { step: c.tool, attempt: i + 1, reason, stop: capture.stop || null, length: capture.raw.length });
+    };
+    try { return validate(await attempt(i===0?c:{...c,...(retryIncomplete && c.retryContent ? {content:c.retryContent} : {}),system:`${c.system}\nDet föregående försöket var ofullständigt: ${reason}. Gör en ny fullständig källbaserad kontroll. Returnera konkreta resultat, aldrig placeholder eller ofyllda exempel.`}, capture)); }
     catch (e) {
-      if (e instanceof TenderIncompleteOutput) { reason = e.message; retryIncomplete = true; }
+      if (e instanceof TenderIncompleteOutput) { reason = e.message; retryIncomplete = true; keep(); }
       else if (isSchemaError(e)) {
         const issues=(e as {issues?:{path:unknown[];code:string}[]}).issues??[];
         console.error('[tender-validation]',{step:c.tool,issues:issues.slice(0,12).map(x=>({path:x.path.join('.'),code:x.code}))});
-        reason = 'svaret följde inte det strukturerade formatet'; retryIncomplete = true;
+        reason = 'svaret följde inte det strukturerade formatet'; retryIncomplete = true; keep();
       }
       else if (e instanceof TenderGatewayError) {
         if (e.status !== 429 && e.status < 500) throw e;
@@ -82,10 +103,15 @@ export async function streamTenderTool<T>(c: ToolCall, incomplete: string, valid
         reason = e.message;
         await new Promise(resolve => setTimeout(resolve, Math.max(e.waitMs, 1000 * 2 ** i)));
         continue;
-      } else if (e instanceof TypeError || e instanceof Error && ['AbortError', 'TimeoutError'].includes(e.name)) reason = 'anslutningen avbröts';
-      else throw e;
+      } else if (e instanceof TypeError || e instanceof Error && ['AbortError', 'TimeoutError'].includes(e.name)) { reason = 'anslutningen avbröts'; if (capture.raw) keep(); }
+      else {
+        // Terminal rejections of a received answer keep the raw output too; other failures pass through unchanged.
+        if (!capture.raw || !(e instanceof Error)) throw e;
+        reason = e.message; keep();
+        throw new TenderRejectedOutput(e.message, rejected);
+      }
       if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** i));
     }
   }
-  throw new Error(`${incomplete} (${reason}).`);
+  throw new TenderRejectedOutput(`${incomplete} (${reason}).`, rejected);
 }
