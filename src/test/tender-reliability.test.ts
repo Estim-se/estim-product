@@ -6,15 +6,31 @@ import { validateTenderRiskReview } from '@/lib/tender-risk-checklist';
 import { tenderPageRanges, tenderTextParts } from '@/lib/tender-source-parts';
 import { tenderCoverage } from '@/lib/tender-coverage';
 import { resolveObjectCount } from '@/lib/tender-object-counts';
+import { extractTenderInsightStep } from '@/lib/tender-insights-ai.server';
+import { NOT_SPECIFIED } from '@/lib/tender-insights';
+import { TENDER_RISK_GROUPS } from '@/lib/tender-risk-checklist';
 const id='00000000-0000-4000-8000-000000000001';
 const doc={id,file_name:'AF.pdf',file_type:'pdf',page_count:2,text:null};
 const source={document_id:id,page:1,af_code:'AFC.13',evidence:'Gränsdragning'};
 const risk={title:'Håltagning',description:'Entreprenören utför håltagning.',source,deviation:null,consequence:'Pengar',severity:'Hög',suggestion:'Prissätt'};
 const streamed=()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'test'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:'{"ok":true}'}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''));
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
+it('does not mark a placeholder financial risk call completed and retries it twice',async()=>{
+ vi.useFakeTimers();const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
+ const raw={risks:[],risk_checklist:Object.fromEntries(areas.map((area,i)=>[String(i),{area,assessment:'Risk',reason:'placeholder',risk_indexes:[i]}]))};
+ const fetch=vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join('')));vi.stubGlobal('fetch',fetch);
+ const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ const rejected=expect(pending).rejects.toThrow('risklistan är tom');await vi.runAllTimersAsync();await rejected;expect(fetch).toHaveBeenCalledTimes(3);
+});
 it('retries transient 503 and 429 responses twice before saving usable output',async()=>{
  vi.useFakeTimers();const fetch=vi.fn().mockResolvedValueOnce(new Response('',{status:503})).mockResolvedValueOnce(new Response('',{status:429,headers:{'Retry-After':'2'}})).mockResolvedValueOnce(streamed());vi.stubGlobal('fetch',fetch);
  const pending=streamTenderTool({key:'test',model:'test',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw);await vi.runAllTimersAsync();expect(await pending).toEqual({ok:true});expect(fetch).toHaveBeenCalledTimes(3);
+});
+it('forces the structured tool on older configured models too',async()=>{
+ const fetch=vi.fn(async()=>streamed());vi.stubGlobal('fetch',fetch);
+ await streamTenderTool({key:'test',model:'anthropic/claude-sonnet-4-6',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',raw=>raw);
+ const init=fetch.mock.calls[0] as unknown as [unknown,RequestInit]|undefined;
+ expect(JSON.parse(String(init?.[1]?.body)).tool_choice).toEqual({type:'tool',name:'test'});
 });
 it.each([400,401,402,403])('does not retry unchanged terminal HTTP %i requests',async status=>{
  const fetch=vi.fn(async()=>new Response('',{status}));vi.stubGlobal('fetch',fetch);await expect(streamTenderTool({key:'test',model:'test',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw)).rejects.toThrow();expect(fetch).toHaveBeenCalledTimes(1);

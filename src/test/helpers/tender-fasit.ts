@@ -44,17 +44,23 @@ const requiredRisks:Record<string,RegExp[][]>={
  'Testlärkan':[[/vite/i,/utan tak|obegräns/i],[/PCB|asbest|miljöfarl/i],[/befintlig/i,/invent|rivning/i],[/håltagning/i,/brand.*tät/i],[/kvarboende|6 veckor|sex veckor/i],[/garanti/i,/5|fem/i],[/betalning/i,/45/i],[/index/i,/5\s*%|fem procent/i]],
  'Provbänken':[[/garanti/i,/10|tio/i],[/dolda fel|befintlig/i],[/ÄTA/i,/50\s*000|50000/i],[/säkerhet/i,/20\s*%|tjugo procent/i],[/öppning|semester|fast.*datum/i],[/samordning/i],[/projektering/i],[/betalning/i,/60/i],[/försäkring/i,/20|tjugo/i]],
 };
+const additionalKeys:Record<string,Record<string,RegExp[]>>={
+ 'Testlärkan':{'Objekt':[/54/,/1962/,/källar/i,/tre|3/i,/sex|6/i],'Entreprenadform':[/utförande/i,/sidoentreprenad/i],'Etapper':[/tre|3/i,/trapphus/i,/6|sex/i],'Vite':[/1\s*%/,/arbetsdag/i,/(?:inte|ej) begränsat|utan tak|obegräns/i],'Säkerhet':[/10\s*%/,/5\s*%/],'ÄTA-regler':[/skrift/i,/5\s*%/],'Försäkring':[/5\s*000\s*000|5\s*MSEK/i]},
+ 'Provbänken':{'Objekt':[/1988/,/900/,/två|2/i,/förskola/i,/sex|6/i],'Entreprenadform':[/totalentreprenad/i,/delad/i],'Etapper':[/plan\s*1/i,/plan\s*2/i,/överlapp/i],'Vite':[/10\s*000/,/kalenderdag/i,/20\s*%/],'Säkerhet':[/20\s*%/,/garantitid/i],'ÄTA-regler':[/50\s*000/,/inte|ej/i,/inget påslag|0\s*%/i],'Försäkring':[/20\s*000\s*000|20\s*MSEK/i,/entreprenadförsäkring/i]},
+};
 export function checkTenderFasit(name:'Testlärkan'|'Provbänken',snapshot:FasitSnapshot):string[]{
  const issues:string[]=[];
  const items=[...snapshot.quantities.items,...snapshot.quantities.assumptions.flatMap(assumptionItems)].filter((r,i,all)=>all.findIndex(x=>x.post===r.post&&x.unit===r.unit)===i);
  for(const e of tenderQuantityExpectations[name]){const found=items.filter(i=>e.pattern.test(i.post)&&!e.exclude?.test(i.post));const value=found.reduce((sum,i)=>sum+Number(i.quantity),0);if(value!==e.value)issues.push(`${e.name}: ${value}, förväntat ${e.value}`);}
  for(const [field,pattern] of Object.entries(commonKeys[name]??{})){const k=snapshot.insights.key_data.find(k=>k.field===field);if(!k||!pattern.test(k.value)||k.source?.flag||!k.source)issues.push(`${field}: saknas, fel värde eller overifierad källa`);}
+ for(const [field,patterns] of Object.entries(additionalKeys[name]??{})){const k=snapshot.insights.key_data.find(k=>k.field===field);if(!k||!patterns.every(p=>p.test(k.value))||!k.source||k.source.flag)issues.push(`${field}: ofullständig fasituppgift; producerat ${k?.value??'saknas'}`);}
  const texts=snapshot.insights.risks.map(r=>`${r.title} ${r.description}`);
  for(const patterns of requiredRisks[name]??[]){if(!texts.some(t=>patterns.every(p=>p.test(t))))issues.push(`Risk saknas: ${patterns.map(p=>p.source).join(' + ')}`);}
  if(name==='Provbänken'){
   const deadline=snapshot.insights.key_data.find(k=>k.field==='Anbudstid');const file=snapshot.documents.find(d=>d.id===deadline?.source?.document_id);if(!file?.file_name.toLowerCase().endsWith('.docx'))issues.push('Anbudstid måste komma från förfrågningsbrevet DOCX');
   if(texts.some(t=>/vite/i.test(t)&&/utan tak|obegräns/i.test(t)))issues.push('Vitet har tak 20 %, får inte påstås vara utan tak');
   if(snapshot.insights.risks.some(r=>/EM.?index|indexreglering/i.test(r.title)))issues.push('Gynnsam EM-indexreglering får inte bli risk');
+  if(snapshot.insights.risks.some(r=>/begränsad.*arbetstid|arbetstid.*begräns/i.test(`${r.title} ${r.description}`)))issues.push('Gynnsamma arbetstider 07–18 och lördag får inte bli en begränsningsrisk utan särskilt källstöd');
   if(items.some(i=>/rivning.*lägenhet|rivning.*lgh/i.test(i.post)))issues.push('Rivning gäller byggnaden, inte lägenheter');
  }
  return issues;

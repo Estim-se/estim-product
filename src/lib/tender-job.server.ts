@@ -8,7 +8,7 @@ import type { TenderInsights } from './tender-insights';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
-const CACHE_VERSION = 'anbud-reliability-2026-11-22-3';
+const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -144,9 +144,9 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const { validateTenderInsights } = await import('./tender-insights');
     let sorted = validateTenderInsights({ key_data: current.result.key_data, risks: merged, questions: [] }, inputs, true).risks;
     const allDone = riskSteps.every(k => k === step || job.steps[k] === 'done');
-    const { mergeTenderRisks } = await import('./tender-risk-merging');
+    const { mergeTenderRisks, reconcileTenderIndexRisks } = await import('./tender-risk-merging');
     sorted=mergeTenderRisks(sorted);
-    if(allDone){const {mergeTenderRiskGroups}=await import('./tender-insights-ai.server');sorted=await cachedStep(db,job,'risk_merge',sorted,()=>mergeTenderRiskGroups(sorted,key,model));}
+    if(allDone){const {mergeTenderRiskGroups,reviewTenderRiskFacts}=await import('./tender-insights-ai.server');sorted=await cachedStep(db,job,'risk_merge',sorted,()=>mergeTenderRiskGroups(sorted,key,model));sorted=reconcileTenderIndexRisks(sorted,current.result.key_data??[]);sorted=await cachedStep(db,job,'risk_facts',{risks:sorted,key_data:current.result.key_data},()=>reviewTenderRiskFacts(sorted,current.result.key_data??[],inputs,key,model));}
     await saveInsights(db, job, { ...current.result, risks: sorted }, { ...current.steps, risks: allDone ? 'done' : 'running' }, 'analyzing');
     return { [step]: value };
   }

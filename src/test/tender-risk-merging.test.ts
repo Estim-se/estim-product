@@ -1,8 +1,14 @@
 import { expect, it } from 'vitest';
-import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, insightSources, mergeTenderRisks } from '@/lib/tender-risk-merging';
+import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, insightSources, mergeTenderRisks, reconcileTenderIndexRisks } from '@/lib/tender-risk-merging';
 import type { TenderInsights } from '@/lib/tender-insights';
 const source=(page:number)=>({document_id:'00000000-0000-4000-8000-000000000001',page,af_code:null,evidence:`Källa ${page}`});
 const risk=(title:string,page=1):TenderInsights['risks'][number]=>({title,description:title,source:source(page),severity:'Hög',suggestion:'Reservera',consequence:'Tid och pengar',deviation:null});
+it('positive EM-index cannot be labelled without indexation while the sourced 50000 ÄTA risk survives',()=>{
+ const keys:TenderInsights['key_data']=[{field:'Ersättningsform',value:'Fast pris. Indexreglering sker enligt EM-index.',source:source(2)},{field:'ÄTA-regler',value:'ÄTA under 50 000 kr ersätts inte. Inget påslag.',source:source(2)}];
+ const out=reconcileTenderIndexRisks([risk('Fast pris utan indexreglering och ÄTA'),risk('EM-indexreglering')],keys);
+ expect(out).toHaveLength(1);expect(out[0]?.description).toBe('ÄTA under 50 000 kr ersätts inte. Inget påslag.');expect(out[0]?.title).toBe('ÄTA-ersättning och påslag');
+});
+it('an explicitly absent indexation remains a risk',()=>{expect(reconcileTenderIndexRisks([risk('Fast pris utan indexreglering')],[{field:'Ersättningsform',value:'Ingen indexreglering',source:source(2)}])).toHaveLength(1);});
 it('merges duplicate missing electrical document risks and keeps every source',()=>{
  const out=mergeTenderRisks([risk('Underlag för befintliga el-installationer saknas',4),risk('Saknade handlingar för befintliga el- och teleinstallationer',9)]);
  expect(out).toHaveLength(1);expect(insightSources(out[0]??risk('Missing'))).toEqual([source(4),source(9)]);

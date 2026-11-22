@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Continue release verification: first report every current fasit mismatch with expected/actual/cause, repair each independently, then report all nine full runs and totals; no publication before all checks pass.
+
 - [x] Anbud reliability: call-local checklist recovery, flagged invalid references/numbers, two status-aware retries, preserved completed steps. Focused 119 tests and automatic build pass.
 - [x] Company/hash/version caches, bounded PDF/Office chunks, digital PDF text extraction with scanned-page AI fallback, explicit reread and catalog-only proposals.
 - [x] Shared 18-area scope audit and proposals in page/PDF/Excel; fasit expectations isolated in test-only helper. Desktop/mobile proposal approval and confirmation verified with isolated fixtures.

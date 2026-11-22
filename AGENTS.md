@@ -79,3 +79,4 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Merge tender risks by issue while retaining all citations; index-linked questions enforce clarification coverage, and a private risk-only job preserves the existing analysis run and cost data.
 - Persist low-quantity confirmation on calculation bindings and mirror exclusion gates in editable Excel formulas; certainty remains unchanged after confirmation.
 - Keep Anbud file/result caches company-scoped and versioned; only approved catalog types enter totals, with unmatched proposals and shared scope-audit output preventing silent omissions.
+- Reconcile index risks against verified compensation/ÄTA data and always audit quantity subspaces; checklist entries cannot invent additional installations.

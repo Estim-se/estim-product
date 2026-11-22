@@ -21,7 +21,7 @@ async function attempt(c: ToolCall): Promise<unknown> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/messages', {
     method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json', 'X-Lovable-AIG-SDK': 'fetch' },
     signal: AbortSignal.timeout(150_000),
-    body: JSON.stringify({ model: c.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: c.model.endsWith('claude-sonnet-5') ? { type: 'tool', name: c.tool } : { type: 'auto' } }),
+    body: JSON.stringify({ model: c.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'tool', name: c.tool } }),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { message?: string; error?: { message?: string } } | null;
@@ -66,7 +66,7 @@ const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { na
 export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
   for (let i = 0; i < 3; i++) {
-    try { return validate(await attempt(c)); }
+    try { return validate(await attempt(i===0?c:{...c,system:`${c.system}\nDet föregående försöket var ofullständigt: ${reason}. Gör en ny fullständig källbaserad kontroll. Returnera konkreta resultat, aldrig placeholder eller ofyllda exempel.`})); }
     catch (e) {
       if (e instanceof TenderIncompleteOutput) reason = e.message;
       else if (isSchemaError(e)) {

@@ -28,6 +28,19 @@ export function mergeTenderRisks(risks:Risk[],groups:number[][]=[]):Risk[]{
  });return [...result.values()].sort((a,b)=>severity[a.severity]-severity[b.severity]);
 }
 export const needsRiskQuestion=(r:Risk)=>r.suggestion==='Fråga beställaren'||/motstrid|motsäg|motsäg|konflikt|olika uppgifter/i.test(`${r.title} ${r.description}`);
+// Ordinary positive indexation cannot become an adverse condition through risk merging.
+export function reconcileTenderIndexRisks(risks:Risk[],keyData:TenderInsights['key_data']):Risk[]{
+ const compensation=keyData.find(k=>k.field==='Ersättningsform');
+ if(!compensation?.source||compensation.source.flag||!/(?:indexreglering sker|med indexreglering).*EM.?index/i.test(compensation.value))return risks;
+ const changes=keyData.find(k=>k.field==='ÄTA-regler');
+ return risks.flatMap(r=>{
+  if(!/indexreglering|EM.?index/i.test(r.title))return [r];
+  if(/ÄTA/i.test(`${r.title} ${r.description}`)&&changes?.source&&!changes.source.flag){
+   return [{...r,title:'ÄTA-ersättning och påslag',description:changes.value,source:changes.source,sources:insightSources({...r,sources:[...insightSources(r),changes.source]})}];
+  }
+  return [];
+ });
+}
 export function ensureRiskQuestions(questions:TenderInsights['questions'],risks:Risk[]):TenderInsights['questions']{
  const result=questions.map(q=>({...q,sources:insightSources(q)}));
  risks.forEach((r,i)=>{if(!needsRiskQuestion(r))return;
