@@ -1077,6 +1077,7 @@ export type Database = {
         Row: {
           analysis_status: string
           company_id: string
+          content_hash: string | null
           created_at: string
           doc_type: string | null
           error: string | null
@@ -1093,6 +1094,7 @@ export type Database = {
         Insert: {
           analysis_status?: string
           company_id: string
+          content_hash?: string | null
           created_at?: string
           doc_type?: string | null
           error?: string | null
@@ -1109,6 +1111,7 @@ export type Database = {
         Update: {
           analysis_status?: string
           company_id?: string
+          content_hash?: string | null
           created_at?: string
           doc_type?: string | null
           error?: string | null
@@ -1136,6 +1139,44 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tenders"
             referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      tender_file_cache: {
+        Row: {
+          company_id: string
+          content_hash: string
+          created_at: string
+          part: number
+          reading_version: string
+          result: Json
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          content_hash: string
+          created_at?: string
+          part: number
+          reading_version: string
+          result: Json
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          content_hash?: string
+          created_at?: string
+          part?: number
+          reading_version?: string
+          result?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_file_cache_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1336,6 +1377,41 @@ export type Database = {
           },
         ]
       }
+      tender_result_cache: {
+        Row: {
+          company_id: string
+          created_at: string
+          fingerprint: string
+          result: Json
+          step: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          fingerprint: string
+          result: Json
+          step: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          fingerprint?: string
+          result?: Json
+          step?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_result_cache_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenders: {
         Row: {
           analysis_run: string | null
@@ -1345,6 +1421,7 @@ export type Database = {
           error: string | null
           id: string
           name: string
+          reading_version: string
           status: string
           updated_at: string
         }
@@ -1356,6 +1433,7 @@ export type Database = {
           error?: string | null
           id?: string
           name: string
+          reading_version?: string
           status?: string
           updated_at?: string
         }
@@ -1367,6 +1445,7 @@ export type Database = {
           error?: string | null
           id?: string
           name?: string
+          reading_version?: string
           status?: string
           updated_at?: string
         }
@@ -1577,6 +1656,10 @@ export type Database = {
         Returns: Json
       }
       estim_request: { Args: { payload: Json }; Returns: string }
+      estim_reread_tender_job: {
+        Args: { p_base_url: string; tid: string }
+        Returns: string
+      }
       estim_rerun_tender_risks: {
         Args: { p_base_url: string; p_company_id: string; tid: string }
         Returns: string

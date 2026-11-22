@@ -1,0 +1,22 @@
+ALTER TABLE public.tender_documents ADD COLUMN content_hash text;
+ALTER TABLE public.tenders ADD COLUMN reading_version text NOT NULL DEFAULT 'v1';
+CREATE TABLE public.tender_file_cache(company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE, content_hash text NOT NULL, reading_version text NOT NULL, part integer NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(company_id,content_hash,reading_version,part));
+GRANT SELECT ON public.tender_file_cache TO authenticated; GRANT ALL ON public.tender_file_cache TO service_role;
+ALTER TABLE public.tender_file_cache ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tender_file_cache_read ON public.tender_file_cache FOR SELECT TO authenticated USING(company_id=public.my_company());
+CREATE TABLE public.tender_result_cache(company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE, fingerprint text NOT NULL, step text NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(company_id,fingerprint,step));
+GRANT SELECT ON public.tender_result_cache TO authenticated; GRANT ALL ON public.tender_result_cache TO service_role;
+ALTER TABLE public.tender_result_cache ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tender_result_cache_read ON public.tender_result_cache FOR SELECT TO authenticated USING(company_id=public.my_company());
+CREATE OR REPLACE FUNCTION public.estim_tender_cache_updated() RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
+CREATE TRIGGER tender_file_cache_updated BEFORE UPDATE ON public.tender_file_cache FOR EACH ROW EXECUTE FUNCTION public.estim_tender_cache_updated();
+CREATE TRIGGER tender_result_cache_updated BEFORE UPDATE ON public.tender_result_cache FOR EACH ROW EXECUTE FUNCTION public.estim_tender_cache_updated();
+CREATE OR REPLACE FUNCTION public.estim_reread_tender_job(tid uuid,p_base_url text) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$ BEGIN
+PERFORM 1 FROM public.tenders WHERE id=tid AND company_id=public.my_company() FOR UPDATE;
+IF NOT FOUND THEN RAISE EXCEPTION 'Anbudet kunde inte hittas.'; END IF;
+IF EXISTS(SELECT 1 FROM public.tender_jobs WHERE tender_id=tid AND status='running') THEN RAISE EXCEPTION 'Anbudet analyseras redan.'; END IF;
+UPDATE public.tenders SET reading_version=gen_random_uuid()::text WHERE id=tid;
+RETURN public.estim_start_tender_job(tid,false,p_base_url);
+END $$;
+REVOKE ALL ON FUNCTION public.estim_reread_tender_job(uuid,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.estim_reread_tender_job(uuid,text) TO authenticated;
