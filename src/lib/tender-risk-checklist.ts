@@ -19,7 +19,7 @@ export const TENDER_RISK_AREAS = [
 
 // Risk review runs in three smaller AI calls so each call finishes well within platform request limits.
 // Index/compensation and ÄTA stay in one group so their combination risk is assessed together.
-export const TENDER_RISK_GROUPS: readonly (readonly TenderRiskArea[])[] = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11, 12]].map(g => g.map(i => TENDER_RISK_AREAS[i]!));
+export const TENDER_RISK_GROUPS: readonly (readonly TenderRiskArea[])[] = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11, 12]].map(g => g.flatMap(i => TENDER_RISK_AREAS[i] ? [TENDER_RISK_AREAS[i]] : []));
 export type TenderRiskArea = typeof TENDER_RISK_AREAS[number];
 
 export function tenderRiskChecklistPrompt(areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
@@ -44,7 +44,21 @@ const reviewSchema = (areas: readonly TenderRiskArea[]) => z.object({
 });
 
 // Keep review metadata internal; the persisted result and existing UI stay unchanged.
-export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
+export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS, resilient = false) {
+  if (resilient) {
+    // Checklist indices are local to this call, not identifiers in the merged/sorted risk list.
+    // A broken internal cross-reference must not discard otherwise usable source-backed risks.
+    const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const { risk_checklist: checklist, ...insights } = obj;
+    const rows = Array.isArray(checklist) ? checklist : [];
+    const risks = Array.isArray(insights['risks']) ? insights['risks'] : [];
+    const broken = rows.some(row => {
+      const indexes = row?.risk_indexes;
+      return !Array.isArray(indexes) || indexes.some(i => !Number.isInteger(i) || i < 0 || i >= risks.length);
+    });
+    if (broken) console.warn('[tender-validation]', { step: 'risk_checklist', issue: 'invalid_local_reference' });
+    return validateTenderInsights(insights, documents, true);
+  }
   const review = reviewSchema(areas).parse(raw);
   if (new Set(review.risk_checklist.map(row => row.area)).size !== areas.length) throw new Error('AI-resultatet saknar en fullständig riskchecklista.');
   const { risk_checklist: _review, ...insights } = raw as Record<string, unknown>;

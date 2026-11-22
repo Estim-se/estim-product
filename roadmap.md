@@ -1,5 +1,10 @@
 # Prototype rebuild
 
+- [ ] Anbud reliability: repair Baggen2 checklist references; tolerant output validation and bounded retries.
+- [ ] Cache file reads/results, split large sources, add explicit reread and fixed catalog proposals.
+- [ ] Electrical scope checklist in page/exports; source-only Testlärkan/Provbänken regression fixtures.
+- [ ] Run Testlärkan, Provbänken and Baggen three times each, compare rows/totals and enforce future publication gate. No publication.
+
 - [x] Anbud: merged duplicate risks retaining citations; risk-linked questions and date contradictions covered; risk-only rerun and low-quantity confirmation in app/PDF/Excel. Baggen saved Analyserat: 19 risks (7 high, 11 medium, 1 low), 12 sourced questions including the prior three; all eight clarification risks covered. Classifications, key data, quantities and calculation matches unchanged. 401 tests and build OK; saved-data desktop/phone views and Excel/PDF checks pass. Full question report prepared; no publication.
 - [ ] Verify authenticated Baggen-page risk-only button and confirmation save/read-back; blocked by unavailable permitted external-Supabase preview session. Private job and company-isolation tests passed; saved-result UI tested separately.
 
