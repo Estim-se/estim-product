@@ -36,11 +36,17 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   const validate = (raw: unknown) => {
     const obj = (raw ?? {}) as Record<string, unknown>;
     if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
-    if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents, areas).risks;
+    if (step === 'risks') {
+      const checklist=obj['risk_checklist'];
+      const rows=Array.isArray(checklist)?checklist:areas.map((_,i)=>(checklist as Record<string,unknown>|null)?.[String(i)]);
+      return validateTenderRiskReview({ ...obj, risk_checklist:rows,key_data: keyData, questions: [] }, documents, areas).risks;
+    }
     const questions=validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
     return ensureTenderDateQuestion(ensureRiskQuestions(retainTenderQuestions(questions,previous.questions??[]),previous.risks??[]),keyData);
   };
-  return streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
+  const checklistItem=tenderRiskReviewWireSchema.properties.risk_checklist.items;
+  const schema=step==='risks'?{...STEP.risks.schema,properties:{...STEP.risks.schema.properties,risk_checklist:{type:'object',additionalProperties:false,required:areas.map((_,i)=>String(i)),properties:Object.fromEntries(areas.map((area,i)=>[String(i),{...checklistItem,properties:{...checklistItem.properties,area:{type:'string',enum:[area]}}}]))}}}:s.schema;
+  return streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
 }
 
 export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){
