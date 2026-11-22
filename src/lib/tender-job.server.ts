@@ -119,8 +119,11 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const riskSteps = job.plan.filter(k => k.startsWith('risks:'));
     const merged = riskSteps.flatMap(k => (parts[k] as TenderInsights['risks'] | undefined) ?? []);
     const { validateTenderInsights } = await import('./tender-insights');
-    const sorted = validateTenderInsights({ key_data: current.result.key_data, risks: merged, questions: [] }, inputs).risks;
+    let sorted = validateTenderInsights({ key_data: current.result.key_data, risks: merged, questions: [] }, inputs).risks;
     const allDone = riskSteps.every(k => k === step || job.steps[k] === 'done');
+    const { mergeTenderRisks } = await import('./tender-risk-merging');
+    sorted=mergeTenderRisks(sorted);
+    if(allDone){const {mergeTenderRiskGroups}=await import('./tender-insights-ai.server');sorted=await mergeTenderRiskGroups(sorted,key,model);}
     await saveInsights(db, job, { ...current.result, risks: sorted }, { ...current.steps, risks: allDone ? 'done' : 'running' }, 'analyzing');
     return { [step]: value };
   }

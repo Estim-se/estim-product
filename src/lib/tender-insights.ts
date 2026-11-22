@@ -5,8 +5,8 @@ export const NOT_SPECIFIED = 'Ej angivet i underlaget';
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), af_code: z.string().trim().max(80).nullable(), evidence: z.string().trim().min(1).max(1500) }).strict();
 export const tenderInsightsSchema = z.object({
   key_data: z.array(z.object({ field: z.enum(TENDER_KEY_FIELDS), value: z.string().trim().min(1).max(3000), source: sourceSchema.nullable() }).strict()).length(17),
-  risks: z.array(z.object({ title: z.string().trim().min(1).max(240), description: z.string().trim().min(1).max(2000), source: sourceSchema, deviation: z.string().trim().max(1000).nullable(), consequence: z.enum(['Tid', 'Pengar', 'Tid och pengar']), severity: z.enum(['Hög', 'Medel', 'Låg']), suggestion: z.enum(['Prissätt', 'Reservera', 'Fråga beställaren']) }).strict()).max(60),
-  questions: z.array(z.object({ question: z.string().trim().min(1).max(2000), source: sourceSchema }).strict()).max(60),
+  risks: z.array(z.object({ title: z.string().trim().min(1).max(240), description: z.string().trim().min(1).max(2000), source: sourceSchema, sources: z.array(sourceSchema).max(60).optional(), deviation: z.string().trim().max(1000).nullable(), consequence: z.enum(['Tid', 'Pengar', 'Tid och pengar']), severity: z.enum(['Hög', 'Medel', 'Låg']), suggestion: z.enum(['Prissätt', 'Reservera', 'Fråga beställaren']) }).strict()).max(60),
+  questions: z.array(z.object({ question: z.string().trim().min(1).max(2000), source: sourceSchema, sources: z.array(sourceSchema).max(60).optional(), risk_indices: z.array(z.number().int().nonnegative()).max(60).optional() }).strict()).max(120),
 }).strict();
 export type TenderInsights = z.infer<typeof tenderInsightsSchema>;
 export type InsightDocument = { id: string; file_name: string; page_count: number | null; file_type: string; text?: string | null };
@@ -29,12 +29,13 @@ export function validateTenderInsights(raw: unknown, documents: InsightDocument[
   }
   result.risks.forEach(r => {
     check(r.source);
+    r.sources?.forEach(check);
     // Only report the rule citation actually supplied by the document, never an AI-invented standard clause.
     if (r.deviation !== null) {
       const rule = r.source.evidence.match(/(?:AB\s*04|ABT\s*06)\s+kap\.?\s*\d+\s*§\s*\d+/i)?.[0];
       r.deviation = rule ? `Underlaget anger ändring av ${rule}.` : null;
     }
-  }); result.questions.forEach(q => check(q.source));
+  }); result.questions.forEach(q => { check(q.source); q.sources?.forEach(check); });
   const severity = { Hög: 0, Medel: 1, Låg: 2 };
   result.risks.sort((a, b) => severity[a.severity] - severity[b.severity]);
   result.key_data.sort((a, b) => TENDER_KEY_FIELDS.indexOf(a.field) - TENDER_KEY_FIELDS.indexOf(b.field));
