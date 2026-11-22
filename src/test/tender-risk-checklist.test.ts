@@ -30,10 +30,14 @@ describe('Flat tender risk review', () => {
     const output = reviewed(); output.risks.push({title:'Kontrollera ansvar',description:'Ansvarsgränsen behöver klarläggas.'});
     const result=validateTenderRiskReview(output,[document],TENDER_RISK_AREAS,true); expect(result.risks).toHaveLength(1); expect(result.risks[0]?.severity).toBe('Låg'); expect(result.risks[0]?.source.flag).toBe('Källa saknas – kontrollera');
   });
-  it('accepts empty risks only with one sourced Normalt row per area', () => {
+  it('accepts empty risks whenever every area has a status, flagging unsourced Normalt rows', () => {
     const output=reviewed(); expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(true);
-    const row=output.risk_checklist[0]; if(!row)throw Error('Fixture missing'); row.assessment='Ej nämnt'; expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(false);
-    row.assessment='Normalt'; row.af_code='AFC.999'; expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(false);
+    const row=output.risk_checklist[0]; if(!row)throw Error('Fixture missing'); row.assessment='Ej nämnt'; (row as {af_code:string|null}).af_code=null;
+    expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(true);
+    expect(linkTenderRiskChecklist(output,[document])[0]?.flagged).toBe(false);
+    row.assessment='Normalt'; row.af_code='AFC.999'; expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(true);
+    expect(linkTenderRiskChecklist(output,[document])[0]?.flag).toBe('unsourced_normal');
+    expect(validateTenderRiskReview(output,[document],TENDER_RISK_AREAS,true).risks.map(r=>r.title)).toEqual([TENDER_RISK_AREAS[0]]);
   });
   it('never attributes an ambiguous AF code to an arbitrary document',()=>{
     const sources=resolveTenderRiskSources('AFC.13',2,[document,{...document,id:'00000000-0000-4000-8000-000000000002'}]); expect(sources[0]?.flag).toBe('Källa saknas – kontrollera');

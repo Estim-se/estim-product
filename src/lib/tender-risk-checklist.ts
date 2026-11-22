@@ -22,15 +22,16 @@ export const TENDER_RISK_AREAS = [
 export const TENDER_RISK_GROUPS: readonly (readonly TenderRiskArea[])[] = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11, 12]].map(g => g.flatMap(i => TENDER_RISK_AREAS[i] ? [TENDER_RISK_AREAS[i]] : []));
 export type TenderRiskArea = typeof TENDER_RISK_AREAS[number];
 
+// The prompt asks only for the flat wire format; sources are rebuilt in code from the AF code.
 export function tenderRiskChecklistPrompt(areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
   const subset = areas.length < TENDER_RISK_AREAS.length;
   return `Obligatorisk riskchecklista: gå igenom VARJE område nedan för varje anbud, även när nyckeldata redan återger villkoret. Läs alla relevanta AF-avsnitt och övriga handlingar, inte bara dokumentens sammanfattningar.
 ${areas.map((area, i) => `${i + 1}. ${area}`).join('\n')}
-${subset ? 'Övriga checklisteområden granskas i separata anrop: rapportera här bara risker som hör till områdena ovan, och checklistan ska innehålla exakt dessa områden.\n' : ''}Rapportera minst en källbelagd risk för varje område där underlaget innehåller något ovanligt, oklart eller ofördelaktigt för entreprenören. Risk behöver INTE vara en avvikelse från AB 04/ABT 06. Gissa ingen regelreferens. Gissa inte standardvillkor eller branschpraxis. Jämför inte med en ”normal betalningscykel” eller okända leverantörsgarantier: beskriv bara det dokumenterade villkoret och dess konkreta likviditets-/ansvarsrisk. Saknad information är inte automatiskt en risk; ange konkret osäkerhet eller dokumenterad saknad handling som påverkar tid eller pengar.
-Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagning, brandtätning, rivning eller samordning även mot andra entreprenörer. Återge ansvar och kostnads-/tidsföljd som en egen risk, med källa (t.ex. AFC.13 när den koden finns).
-Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens beskrivning (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden.
+${subset ? 'Övriga checklisteområden granskas i separata anrop: rapportera här bara risker som hör till områdena ovan, och checklistan ska innehålla exakt dessa områden.\n' : ''}Rapportera minst en risk med AF-kod för varje område där underlaget innehåller något ovanligt, oklart eller ofördelaktigt för entreprenören. Risk behöver INTE vara en avvikelse från AB 04/ABT 06. Gissa ingen regelreferens. Gissa inte standardvillkor eller branschpraxis. Jämför inte med en ”normal betalningscykel” eller okända leverantörsgarantier: beskriv bara det dokumenterade villkoret och dess konkreta likviditets-/ansvarsrisk. Saknad information är inte automatiskt en risk; ange konkret osäkerhet eller dokumenterad saknad handling som påverkar tid eller pengar.
+Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagning, brandtätning, rivning eller samordning även mot andra entreprenörer. Återge ansvar och kostnads-/tidsföljd som en egen risk med AF-kod (t.ex. AFC.13 när den koden finns).
+Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens af_code (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden.
 Ett tydligt formulerat villkor kan ändå vara ofördelaktigt: bedöm följden, inte bara om villkoret är oklart eller ändrar AB. Kontrollera exempelvis säkerheters kapitalbindning/kostnad under en lång garantitid även om procentsatserna är tydliga. Beskriv fem års materialansvar och 45 dagars likviditetspåverkan direkt utan påståenden om vad standardavtalet annars skulle ha gett.
-Returnera två platta listor: risks (title, description, severity, suggestion, af_code, page) och risk_checklist (area, assessment, af_code). Inga källobjekt, riskindex eller extra struktur. Endast title och description krävs för en risk; övriga riskfält kan utelämnas om okända. Ange exakt en checklistrad per område med Risk, Normalt eller Ej nämnt. Normalt kräver stöd i en verklig AF-kod; Ej nämnt betyder att området inte behandlas. Risk betyder att risks innehåller motsvarande konkreta problem, kopplat genom AF-koden. En tom risklista är giltig endast om ALLA områden uttryckligen är Normalt och varje rad har en verifierbar AF-kod. Använd aldrig placeholder.`;
+Returnera två platta listor: risks (title, severity, description, suggestion, af_code, page) och risk_checklist (area, assessment, af_code). Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. Ange exakt en checklistrad per område ovan, med områdets namn exakt som det står, och assessment Risk, Normalt eller Ej nämnt. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
 }
 export const TENDER_RISK_CHECKLIST_PROMPT = tenderRiskChecklistPrompt();
 
@@ -46,9 +47,72 @@ export const tenderRiskReviewWireSchema = {
       required: ['area', 'assessment'] } },
   }, required: ['risks', 'risk_checklist'],
 };
-const flatRisk = z.object({ title: z.string().trim().min(1).max(240), description: z.string().trim().min(1).max(2000), severity: z.enum(['Hög', 'Medel', 'Låg']).optional(), suggestion: z.enum(['Prissätt', 'Reservera', 'Fråga beställaren']).optional(), af_code: z.string().nullable().optional(), page: z.number().int().positive().nullable().optional() });
-const flatChecklist = z.object({ area: z.string(), assessment: z.enum(['Risk', 'Normalt', 'Ej nämnt']), af_code: z.string().nullable().optional() });
+
+type FlatRisk = { title: string; description: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
+type Assessment = 'Risk' | 'Normalt' | 'Ej nämnt';
+type FlatChecklistRow = { area: TenderRiskArea; assessment: Assessment; af_code: string | null };
+export type TenderChecklistFlag = 'missing' | 'unsourced_normal' | 'unlinked_risk';
+
+const SEVERITIES = ['Hög', 'Medel', 'Låg'] as const;
+const SUGGESTIONS = ['Prissätt', 'Reservera', 'Fråga beställaren'] as const;
+const ASSESSMENTS = ['Risk', 'Normalt', 'Ej nämnt'] as const;
 const codes = (value: unknown): string[] => typeof value === 'string' ? [...new Set(value.toUpperCase().match(/AF[A-Z]\.\d+(?:\.\d+)*/g) ?? [])] : [];
+const text = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+const record = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const normalize = (value: string) => value.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// Tolerates small wording drift (case, spacing, an omitted parenthetical) without guessing between areas.
+function matchArea(name: unknown, areas: readonly TenderRiskArea[]): TenderRiskArea | null {
+  if (typeof name !== 'string' || !name.trim()) return null;
+  const wanted = normalize(name);
+  const exact = areas.find(area => normalize(area) === wanted);
+  if (exact) return exact;
+  const short = areas.filter(area => normalize(area.split(' (')[0] ?? area) === wanted.split(' (')[0]);
+  return short.length === 1 ? short[0] ?? null : null;
+}
+
+// Display fields are trimmed and invalid optional fields dropped, so one oversized or odd field never discards the call.
+export function parseFlatTenderRisks(raw: unknown): FlatRisk[] {
+  const list = record(raw)?.['risks'];
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 60).flatMap(item => {
+    const row = record(item);
+    if (!row) return [];
+    const title = text(row['title'], 240) || text(row['description'], 240);
+    const description = text(row['description'], 2000) || title;
+    if (!title || /placeholder/i.test(`${title} ${description}`)) return [];
+    const page = typeof row['page'] === 'number' && Number.isInteger(row['page']) && row['page'] > 0 ? row['page'] : null;
+    return [{ title, description,
+      ...(SEVERITIES.includes(row['severity'] as never) ? { severity: row['severity'] as NonNullable<FlatRisk['severity']> } : {}),
+      ...(SUGGESTIONS.includes(row['suggestion'] as never) ? { suggestion: row['suggestion'] as NonNullable<FlatRisk['suggestion']> } : {}),
+      af_code: typeof row['af_code'] === 'string' ? row['af_code'].slice(0, 80) : null, page }];
+  });
+}
+
+function parseFlatChecklist(raw: unknown, areas: readonly TenderRiskArea[]): FlatChecklistRow[] | null {
+  const list = record(raw)?.['risk_checklist'];
+  if (!Array.isArray(list)) return null;
+  return list.slice(0, 40).flatMap(item => {
+    const row = record(item);
+    const area = matchArea(row?.['area'], areas);
+    if (!row || !area || !ASSESSMENTS.includes(row['assessment'] as never)) return [];
+    return [{ area, assessment: row['assessment'] as Assessment, af_code: typeof row['af_code'] === 'string' ? row['af_code'].slice(0, 80) : null }];
+  });
+}
+
+// A response is rejected only when it is structurally broken; everything else is kept and flagged.
+export function tenderRiskReviewProblem(raw: unknown, areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS): string | null {
+  const obj = record(raw);
+  if (!obj || !Array.isArray(obj['risks'])) return 'svaret saknar risklistan';
+  const rows = parseFlatChecklist(raw, areas);
+  if (!rows) return 'svaret saknar riskchecklistan';
+  if (!rows.length) return 'riskchecklistan saknar status för anropets områden';
+  if (!parseFlatTenderRisks(raw).length) {
+    const missing = areas.filter(area => !rows.some(row => row.area === area));
+    if (missing.length) return `risklistan är tom och riskchecklistan saknar status för ${missing.length} av ${areas.length} områden`;
+  }
+  return null;
+}
 
 export function resolveTenderRiskSources(afCode: unknown, page: unknown, documents: InsightDocument[]) {
   const requested = codes(afCode);
@@ -71,49 +135,56 @@ export function resolveTenderRiskSources(afCode: unknown, page: unknown, documen
   return [{ document_id: UNKNOWN_SOURCE_ID, page: null, af_code: typeof afCode === 'string' ? afCode : null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }];
 }
 
+// "Ej nämnt" never needs a source. Unsourced "Normalt" and unlinked "Risk" rows are flagged, never rejected.
 export function linkTenderRiskChecklist(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
-  const risks = z.array(flatRisk).max(60).parse(obj['risks']);
-  const rows = z.array(flatChecklist).max(13).parse(obj['risk_checklist']);
+  const risks = parseFlatTenderRisks(raw);
+  const rows = parseFlatChecklist(raw, areas) ?? [];
   return areas.map(area => {
     const matching = rows.filter(row => row.area === area);
     const row = matching.length === 1 ? matching[0] : undefined;
     const source = resolveTenderRiskSources(row?.af_code, null, documents)[0];
     const areaCodes = codes(row?.af_code);
     const risk_indexes = risks.flatMap((risk, index) => codes(risk.af_code).some(code => areaCodes.includes(code)) ? [index] : []);
-    return { area, assessment: row?.assessment ?? 'Ej nämnt', risk_indexes, source,
-      flagged: !row || (row.assessment === 'Normalt' && !!source?.flag) || (row.assessment === 'Risk' && (!risk_indexes.length || !!source?.flag)) };
+    const flag: TenderChecklistFlag | null = !row ? 'missing'
+      : row.assessment === 'Normalt' && source?.flag ? 'unsourced_normal'
+      : row.assessment === 'Risk' && (!risk_indexes.length || source?.flag) ? 'unlinked_risk' : null;
+    return { area, assessment: row?.assessment ?? 'Ej nämnt', risk_indexes, source, flagged: flag !== null, flag };
   });
 }
 
+const FLAG_TEXT: Record<TenderChecklistFlag, string> = {
+  missing: 'Riskchecklistan saknar en entydig bedömning för detta område.',
+  unsourced_normal: 'Området bedömdes som Normalt utan verifierbar AF-källa.',
+  unlinked_risk: 'Området bedömdes som Risk utan en kopplad risk med verifierbar AF-källa.',
+};
+
 // Keep checklist metadata internal; the persisted result and existing UI stay unchanged.
 export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS, resilient = false) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const obj = record(raw) ?? {};
   // Older saved/mocked results remain readable, but are never the new provider contract.
   if (Array.isArray(obj['risks']) && obj['risks'].some(r => r?.source)) {
     if (resilient) return validateTenderInsights({ key_data: obj['key_data'], risks: obj['risks'], questions: obj['questions'] ?? [] }, documents, true);
   }
-  const risks = z.array(flatRisk).max(60).parse(obj['risks']);
-  const links = linkTenderRiskChecklist(raw, documents, areas);
+  if (!resilient) z.object({ risks: z.array(z.unknown()).max(60), risk_checklist: z.array(z.unknown()) }).passthrough().parse(obj);
+  const risks = parseFlatTenderRisks(obj);
+  const links = linkTenderRiskChecklist(obj, documents, areas);
   if (!resilient && links.some(row => row.flagged)) throw new Error('AI-resultatet saknar en fullständig riskchecklista.');
   const expanded = risks.map(risk => {
     const sources = resolveTenderRiskSources(risk.af_code, risk.page, documents);
     return { ...risk, source: sources[0], sources, consequence: 'Tid och pengar', deviation: null };
   });
-  // A missing checklist-to-risk link becomes a visible review warning, never a failed analysis.
+  // A flagged checklist row becomes a visible review warning, never a failed analysis.
   for (const row of links) {
-    if (!row.flagged) continue;
-    expanded.push({ title: row.area, description: `${SOURCE_WARNING}. Kontrollera riskbedömningen för detta område.`, source: { document_id: UNKNOWN_SOURCE_ID, page: null, af_code: null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }, sources: [], consequence: 'Tid och pengar', deviation: null });
+    if (!row.flag) continue;
+    expanded.push({ title: row.area, description: `${SOURCE_WARNING}. ${FLAG_TEXT[row.flag]}`, source: { document_id: UNKNOWN_SOURCE_ID, page: null, af_code: null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }, sources: [], consequence: 'Tid och pengar', deviation: null });
   }
   return validateTenderInsights({ key_data: obj['key_data'], risks: expanded, questions: obj['questions'] ?? [] }, documents, true);
 }
 
-export function isCompleteEmptyRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[]) {
-  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
-  if (!Array.isArray(obj['risks']) || obj['risks'].length) return false;
-  const rows = z.array(flatChecklist).safeParse(obj['risk_checklist']);
-  if (!rows.success || rows.data.length !== areas.length) return false;
-  return linkTenderRiskChecklist(raw, documents, areas).every(row => row.assessment === 'Normalt' && !row.flagged);
+// An empty risk list is complete when every area of the call has a checklist status, whatever that status is.
+export function isCompleteEmptyRiskReview(raw: unknown, _documents: InsightDocument[], areas: readonly TenderRiskArea[]) {
+  if (!Array.isArray(record(raw)?.['risks']) || parseFlatTenderRisks(raw).length) return false;
+  return tenderRiskReviewProblem(raw, areas) === null;
 }
 
 export function tenderAfRetryText(text: string) {

@@ -14,13 +14,20 @@ const doc={id,file_name:'AF.pdf',file_type:'pdf',page_count:2,text:null};
 const source={document_id:id,page:1,af_code:'AFC.13',evidence:'Gränsdragning'};
 const risk={title:'Håltagning',description:'Entreprenören utför håltagning.',source,deviation:null,consequence:'Pengar',severity:'Hög',suggestion:'Prissätt'};
 const streamed=()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'test'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:'{"ok":true}'}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''));
-afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
-it('does not mark a placeholder financial risk call completed and retries it twice',async()=>{
- vi.useFakeTimers();const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
+afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();vi.restoreAllMocks();});
+it('saves unlinked Risk rows as flagged warnings instead of failing the risk call',async()=>{
+ const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
  const raw={risks:[],risk_checklist:areas.map(area=>({area,assessment:'Risk',af_code:'AFC.999'}))};
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''))));
+ const risks=await extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFC.46 Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ expect(risks.map(r=>r.title).sort()).toEqual([...areas].sort());expect(risks.every(r=>r.source.flag==='Källa saknas – kontrollera')).toBe(true);
+});
+it('retries a risk call without a checklist twice, narrowing the retry to AFC/AFD sections',async()=>{
+ vi.useFakeTimers();vi.spyOn(console,'warn').mockImplementation(()=>{});const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
+ const raw={risks:[{title:'Placeholder',description:'placeholder'}]};
  const fetch=vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join('')));vi.stubGlobal('fetch',fetch);
  const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFA.1 Beställare\nAFC.46 Garantitid 10 år\nAFB.1 Anbud',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
- const rejected=expect(pending).rejects.toThrow('risklistan är tom');await vi.runAllTimersAsync();await rejected;expect(fetch).toHaveBeenCalledTimes(3);
+ const rejected=expect(pending).rejects.toThrow('saknar riskchecklistan');await vi.runAllTimersAsync();await rejected;expect(fetch).toHaveBeenCalledTimes(3);
  const retry=JSON.parse(String((fetch.mock.calls[1] as unknown as [unknown,RequestInit]|undefined)?.[1]?.body));
  const input=retry.messages[0].content.map((c:{text?:string})=>c.text??'').join('\n'); expect(input).toContain('AFC.46 Garantitid 10 år'); expect(input).not.toContain('AFA.1 Beställare'); expect(input).not.toContain('AFB.1 Anbud');
 });
