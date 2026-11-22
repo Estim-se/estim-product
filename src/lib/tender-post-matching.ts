@@ -1,0 +1,31 @@
+import type { CalculationSettings } from './tender-calculation';
+
+const normalize=(s:string)=>s.toLocaleLowerCase('sv').normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9]+/g,' ').trim();
+function meaning(name:string) {
+  const n=normalize(name);
+  if (/diskmaskin/.test(n)) return 'diskmaskin';
+  if (/kyl|frys/.test(n)) return 'kylfrys';
+  if (/perilex/.test(n)) return 'perilex';
+  if (/central/.test(n)) return /lagenhet/.test(n)?'central-lgh':/lokal/.test(n)?'central-lokal':/fastighets|huvud/.test(n)?'central-fastighet':null;
+  if (/brandvarnare/.test(n)) return 'brandvarnare';
+  if (/matare|matning/.test(n)) return 'elmatare';
+  if (/laddplat|laddning/.test(n)&&/ledning|installation|kabel/.test(n)) return 'laddledning';
+  if (/handdukstork/.test(n)) return 'handdukstork';
+  if (/spegelskap/.test(n)) return 'spegelskap';
+  if (/dimmer/.test(n)) return 'dimmer';
+  if (/lamputtag|takuttag|belysningsuttag/.test(n)) return 'lamputtag';
+  if (/uttag/.test(n)) return /utomhus|fasad/.test(n)?'utomhusuttag':/ip44/.test(n)?'uttag-ip44':/16a/.test(n)?'uttag-16a':'vagguttag';
+  if (/spot/.test(n)) return 'spot';
+  if (/armatur/.test(n)) return /badrum/.test(n)?'armatur-badrum':/kok/.test(n)?'armatur-kok':/trapphus/.test(n)?'armatur-trapphus':/kallare/.test(n)?'armatur-kallare':null;
+  if (/rivning/.test(n)) return 'rivning';
+  if (/spis/.test(n)) return 'spis';
+  if (/golvvarme/.test(n)) return 'golvvarme';
+  return null;
+}
+// Deterministic fallback handles semantic equivalents, never inventing a catalog type or price.
+export function closestTenderPostType(post:string, settings:CalculationSettings) {
+  const exact=settings.post_types.find(t=>normalize(t.name)===normalize(post));
+  if (exact) return exact.id;
+  const kind=meaning(post);
+  return kind ? settings.post_types.find(t=>meaning(t.name)===kind)?.id ?? null : null;
+}

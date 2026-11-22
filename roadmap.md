@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Fix Baggen semantic matching and assumption coverage; add example post types and editable room recipes, per-apartment arithmetic and quantities/calculation-only background rerun. Verify Baggen and report full calculation without publishing.
+
 - [x] Bundled reference-layout Anbud PDF, unchanged formula kalkyl.xlsx and source-backed questions TXT in one ZIP. Added optional company-private logo upload/replace/remove in Företag, authenticated current branding and own-company RLS. 323 tests pass, build OK; desktop/mobile fixture ZIP downloads have no click errors, six PDF pages inspected with uploaded-logo and initials variants, workbook retains 91 formulas and TXT five questions. Logo save/read-back and denied-save cleanup verified with mocks; real signed-in flow unavailable on external Supabase. No publication.
 
 - [x] Redesigned only Anbud PDF against the six-page uploaded reference: company identity/initials, repeated header/footer, overview KPIs/warning/deadlines, full calculation, short references and analysis sections. Saved Testlärkan generates six pages; inspected each and corrected spacing, merged assumption sources and vector logo rendering. Desktop/phone isolated download controls deliver PDF and unchanged Excel; 315 tests pass, final eight export tests pass, automatic build OK. Actual signed-in tender page and uploaded-company-logo branch remain unverified; no publication or company-data changes.
