@@ -1,6 +1,8 @@
 # Prototype rebuild
 
-- [ ] Continue release verification: first report every current fasit mismatch with expected/actual/cause, repair each independently, then report all nine full runs and totals; no publication before all checks pass.
+- [ ] Continue release verification with general fixes only; retry empty/placeholder risk output using only relevant AF contract sections, require sourced normal checklist assessments for empty risks, rerun all three tenders after every fix, stop after three identical failures, and report nine runs/totals/fasit without publishing.
+- [ ] Stopped on 2026-11-22 after all three first runs failed at risks:1: the AI service rejected the expanded strict checklist/source format (compiled grammar too large). Failed code withdrawn; no further AI attempts and no publication. Next permitted correction: simplify the general risk output format before repeating verification; six repeat runs and fasit proof remain unrun.
+- [x] Withdrawn-fix regression suite: 435 tests pass and automatic build OK. Restored the completed pre-verification Testlärkan/Baggen snapshots; Provbänken remains failed with newly completed key data retained. Exact failed run evidence recorded separately; restored results are not claimed as successful new runs.
 
 - [x] Anbud reliability: call-local checklist recovery, flagged invalid references/numbers, two status-aware retries, preserved completed steps. Focused 119 tests and automatic build pass.
 - [x] Company/hash/version caches, bounded PDF/Office chunks, digital PDF text extraction with scanned-page AI fallback, explicit reread and catalog-only proposals.
