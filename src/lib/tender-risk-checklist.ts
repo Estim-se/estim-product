@@ -17,27 +17,36 @@ export const TENDER_RISK_AREAS = [
   'Saknade handlingar',
 ] as const;
 
-export const TENDER_RISK_CHECKLIST_PROMPT = `Obligatorisk riskchecklista: gå igenom VARJE område nedan för varje anbud, även när nyckeldata redan återger villkoret. Läs alla relevanta AF-avsnitt och övriga handlingar, inte bara dokumentens sammanfattningar.
-${TENDER_RISK_AREAS.map((area, i) => `${i + 1}. ${area}`).join('\n')}
-Rapportera minst en källbelagd risk för varje område där underlaget innehåller något ovanligt, oklart eller ofördelaktigt för entreprenören. Risk behöver INTE vara en avvikelse från AB 04/ABT 06; behåll deviation=null om dokumenterad regelreferens saknas. Gissa inte standardvillkor eller branschpraxis. Jämför inte med en ”normal betalningscykel” eller okända leverantörsgarantier: beskriv bara det dokumenterade villkoret och dess konkreta likviditets-/ansvarsrisk. Saknad information är inte automatiskt en risk; ange konkret osäkerhet eller dokumenterad saknad handling som påverkar tid eller pengar.
+// Risk review runs in three smaller AI calls so each call finishes well within platform request limits.
+// Index/compensation and ÄTA stay in one group so their combination risk is assessed together.
+export const TENDER_RISK_GROUPS: readonly (readonly TenderRiskArea[])[] = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11, 12]].map(g => g.map(i => TENDER_RISK_AREAS[i]!));
+export type TenderRiskArea = typeof TENDER_RISK_AREAS[number];
+
+export function tenderRiskChecklistPrompt(areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
+  const subset = areas.length < TENDER_RISK_AREAS.length;
+  return `Obligatorisk riskchecklista: gå igenom VARJE område nedan för varje anbud, även när nyckeldata redan återger villkoret. Läs alla relevanta AF-avsnitt och övriga handlingar, inte bara dokumentens sammanfattningar.
+${areas.map((area, i) => `${i + 1}. ${area}`).join('\n')}
+${subset ? 'Övriga checklisteområden granskas i separata anrop: rapportera här bara risker som hör till områdena ovan, och checklistan ska innehålla exakt dessa områden.\n' : ''}Rapportera minst en källbelagd risk för varje område där underlaget innehåller något ovanligt, oklart eller ofördelaktigt för entreprenören. Risk behöver INTE vara en avvikelse från AB 04/ABT 06; behåll deviation=null om dokumenterad regelreferens saknas. Gissa inte standardvillkor eller branschpraxis. Jämför inte med en ”normal betalningscykel” eller okända leverantörsgarantier: beskriv bara det dokumenterade villkoret och dess konkreta likviditets-/ansvarsrisk. Saknad information är inte automatiskt en risk; ange konkret osäkerhet eller dokumenterad saknad handling som påverkar tid eller pengar.
 Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagning, brandtätning, rivning eller samordning även mot andra entreprenörer. Återge ansvar och kostnads-/tidsföljd som en egen risk, med källa (t.ex. AFC.13 när den koden finns).
 Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens beskrivning (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden.
 Ett tydligt formulerat villkor kan ändå vara ofördelaktigt: bedöm följden, inte bara om villkoret är oklart eller ändrar AB. Kontrollera exempelvis säkerheters kapitalbindning/kostnad under en lång garantitid även om procentsatserna är tydliga. Beskriv fem års materialansvar och 45 dagars likviditetspåverkan direkt utan påståenden om vad standardavtalet annars skulle ha gett.
 Returnera risk_checklist med exakt en bedömning per område: area, assessment (Risk/Ingen belagd risk), reason (kort underlagsbaserad motivering), risk_indexes (nollbaserade index i risks före sortering). Risk kräver minst ett giltigt riskindex; Ingen belagd risk kräver tom lista. Kontrollera innan du svarar att inget ofördelaktigt område saknar motsvarande risk. Checklistan är en intern fullständighetskontroll; risks är risklistan som visas.`;
+}
+export const TENDER_RISK_CHECKLIST_PROMPT = tenderRiskChecklistPrompt();
 
-const reviewSchema = z.object({
+const reviewSchema = (areas: readonly TenderRiskArea[]) => z.object({
   risk_checklist: z.array(z.object({
-    area: z.enum(TENDER_RISK_AREAS),
+    area: z.enum(TENDER_RISK_AREAS).refine(a => areas.includes(a)),
     assessment: z.enum(['Risk', 'Ingen belagd risk']),
     reason: z.string().trim().min(1).max(2000),
     risk_indexes: z.array(z.number().int().nonnegative()).max(60),
-  }).strict()).length(TENDER_RISK_AREAS.length),
+  }).strict()).length(areas.length),
 });
 
 // Keep review metadata internal; the persisted result and existing UI stay unchanged.
-export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[]) {
-  const review = reviewSchema.parse(raw);
-  if (new Set(review.risk_checklist.map(row => row.area)).size !== TENDER_RISK_AREAS.length) throw new Error('AI-resultatet saknar en fullständig riskchecklista.');
+export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
+  const review = reviewSchema(areas).parse(raw);
+  if (new Set(review.risk_checklist.map(row => row.area)).size !== areas.length) throw new Error('AI-resultatet saknar en fullständig riskchecklista.');
   const { risk_checklist: _review, ...insights } = raw as Record<string, unknown>;
   const risks = insights['risks'];
   if (!Array.isArray(risks)) throw new Error('AI-resultatet saknar risklista.');

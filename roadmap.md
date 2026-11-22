@@ -124,3 +124,5 @@
 - [ ] R1: email-link delivery and click-through — external Supabase mail delivery and redirect allowlist unverified; disposable authenticated accounts verified the real-data flow instead.
 - [x] Fix preview workspace-context identity during live provider updates; all five pages and Jonas approval verified on desktop and phone, with 19 targeted tests passing.- Quote PDF preview on Offerter (done); sending by mail/business system pending
 - Delete WhatsApp threads for Hassan + Mohamed (done)
+
+- [x] Anbud: unsourced calculation posts are flagged (Låg, "Källa saknas – kontrollera", Antaganden) instead of failing; demolition looked up in el-rambeskrivning/AF

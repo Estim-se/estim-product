@@ -23,6 +23,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ApiPublicReceiveMessageRouteImport } from './routes/api/public/receive-message'
+import { Route as ApiPublicTenderJobRouteImport } from './routes/api/public/tender-job'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -94,6 +95,11 @@ const ApiPublicReceiveMessageRoute = ApiPublicReceiveMessageRouteImport.update({
   path: '/api/public/receive-message',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicTenderJobRoute = ApiPublicTenderJobRouteImport.update({
+  id: '/api/public/tender-job',
+  path: '/api/public/tender-job',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/tender-job'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/tender-job'
   id:
     | '__root__'
     | '/'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/tender-job'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ApiPublicReceiveMessageRoute: typeof ApiPublicReceiveMessageRoute
+  ApiPublicTenderJobRoute: typeof ApiPublicTenderJobRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -311,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicReceiveMessageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/tender-job': {
+      id: '/api/public/tender-job'
+      path: '/api/public/tender-job'
+      fullPath: '/api/public/tender-job'
+      preLoaderRoute: typeof ApiPublicTenderJobRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -338,6 +358,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ApiPublicReceiveMessageRoute: ApiPublicReceiveMessageRoute,
+  ApiPublicTenderJobRoute: ApiPublicTenderJobRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

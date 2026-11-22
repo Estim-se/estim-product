@@ -66,3 +66,21 @@ describe('tender step progress and export lock', () => {
     expect(tenderExportBlock({ analyzing: false, tenderStatus: 'analysed', insightsStatus: 'analysed', quantitiesStatus: 'analysed' })).toBeNull();
   });
 });
+
+import { nextTenderJobStep, tenderJobProgress } from '@/lib/tender-analysis';
+import { TENDER_RISK_AREAS, TENDER_RISK_GROUPS } from '@/lib/tender-risk-checklist';
+describe('background tender job', () => {
+  const plan = ['doc:a', 'doc:b', 'key_data', 'risks:1', 'risks:2', 'risks:3', 'questions', 'quantities', 'calculation'];
+  it('resumes at the failed step and skips completed steps', () => {
+    expect(nextTenderJobStep(plan, { 'doc:a': 'done', 'doc:b': 'done', key_data: 'done', 'risks:1': 'done', 'risks:2': 'error' })).toBe('risks:2');
+    expect(nextTenderJobStep(plan, Object.fromEntries(plan.map(k => [k, 'done'])))).toBeNull();
+  });
+  it('reports document and step progress', () => {
+    expect(tenderJobProgress(plan, { 'doc:a': 'done' })).toBe('Analyserar dokument 2 av 2…');
+    expect(tenderJobProgress(plan, { 'doc:a': 'done', 'doc:b': 'done', key_data: 'done' })).toBe('Nyckeldata klar, risker pågår (del 1 av 3)…');
+  });
+  it('splits the risk checklist so every area is reviewed exactly once, with index and ÄTA together', () => {
+    expect(TENDER_RISK_GROUPS.flat().sort()).toEqual([...TENDER_RISK_AREAS].sort());
+    expect(TENDER_RISK_GROUPS.find(g => g.includes('Ersättningsform och indexreglering'))).toContain('ÄTA-ersättning och påslag');
+  });
+});

@@ -35,3 +35,37 @@ export function tenderExportBlock(o: { analyzing: boolean; tenderStatus: string 
   if (o.insightsStatus !== 'analysed' || o.quantitiesStatus !== 'analysed') return 'Exporten blir tillgänglig när analysen är klar.';
   return null;
 }
+
+// Background job plan: one step per document, then the whole-tender steps (risks split into parts).
+export function nextTenderJobStep(plan: readonly string[], steps: Partial<Record<string, TenderStepState>>) {
+  return plan.find(k => steps[k] !== 'done') ?? null;
+}
+const RISK_PART = /^risks:(\d+)$/;
+export function tenderJobProgress(plan: readonly string[], steps: Partial<Record<string, TenderStepState>>) {
+  const docs = plan.filter(k => k.startsWith('doc:'));
+  const docsDone = docs.filter(k => steps[k] === 'done').length;
+  if (docs.some(k => steps[k] === 'error')) return 'Dokumentanalysen misslyckades';
+  if (docsDone < docs.length) return `Analyserar dokument ${docsDone + 1} av ${docs.length}…`;
+  const parts = plan.filter(k => RISK_PART.test(k));
+  const states: Record<string, TenderStepState> = {};
+  for (const [key] of TENDER_PIPELINE_STEPS) {
+    if (key !== 'risks') { const s = steps[key]; if (s) states[key] = s; continue; }
+    const ps = parts.map(k => steps[k] ?? 'pending');
+    states[key] = ps.includes('error') ? 'error' : ps.every(s => s === 'done') ? 'done' : ps.some(s => s !== 'pending') ? 'running' : 'pending';
+  }
+  // A step that is next in line counts as running while the job works on it.
+  const next = nextTenderJobStep(plan, steps);
+  const nextKey = next && RISK_PART.test(next) ? 'risks' : next;
+  if (nextKey && states[nextKey] === 'pending') states[nextKey] = 'running';
+  let text = tenderStepProgress(states);
+  const doneParts = parts.filter(k => steps[k] === 'done').length;
+  if (states['risks'] === 'running' && parts.length > 1) text = text.replace(/risker pågår…/i, m => `${m.slice(0, -1)} (del ${Math.min(doneParts + 1, parts.length)} av ${parts.length})…`);
+  return text;
+}
+export function tenderJobStepLabel(step: string | null | undefined) {
+  if (!step) return '';
+  if (step.startsWith('doc:')) return 'Dokumentanalys';
+  const part = RISK_PART.exec(step);
+  if (part) return `Risker (del ${part[1]})`;
+  return TENDER_PIPELINE_STEPS.find(([k]) => k === step)?.[1] ?? step;
+}

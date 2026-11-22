@@ -1,5 +1,5 @@
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, tenderInsightsWireSchema, validateTenderInsights, type InsightDocument, type TenderInsights } from './tender-insights';
-import { TENDER_RISK_CHECKLIST_PROMPT, tenderRiskReviewWireSchema, validateTenderRiskReview } from './tender-risk-checklist';
+import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, validateTenderRiskReview, type TenderRiskArea } from './tender-risk-checklist';
 import { streamTenderTool, tenderDocumentBlock } from './tender-tool-call.server';
 
 export type TenderInsightInput = InsightDocument & { doc_type: string | null; bytes: Uint8Array; text: string | null };
@@ -18,7 +18,7 @@ const STEP = {
     prompt: 'Frågor till beställaren: frågor färdiga att skicka, med dokument- och sidreferens för det krav som behöver förtydligas. Fråga om oklara, motsägande eller saknade uppgifter som påverkar tid eller pengar, inklusive risker med förslag Fråga beställaren. Tom questions om inget behöver förtydligas.' },
 } as const;
 
-export async function extractTenderInsightStep(step: TenderInsightStep, documents: TenderInsightInput[], key: string, model: string, previous: Partial<TenderInsights> = {}) {
+export async function extractTenderInsightStep(step: TenderInsightStep, documents: TenderInsightInput[], key: string, model: string, previous: Partial<TenderInsights> = {}, areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
   if (!documents.length) throw new Error('Inga analyserbara dokument finns.');
   const s = STEP[step];
   const content: unknown[] = [];
@@ -27,14 +27,14 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
     content.push(d.text === null ? tenderDocumentBlock(d.bytes) : { type: 'text', text: `<dokument>\n${d.text}\n</dokument>` });
   }
   const tail: unknown[] = [{ type: 'text', text: CONTRACT }];
-  if (step === 'risks') tail.push({ type: 'text', text: TENDER_RISK_CHECKLIST_PROMPT });
+  if (step === 'risks') tail.push({ type: 'text', text: tenderRiskChecklistPrompt(areas) });
   if (step === 'questions') tail.push({ type: 'text', text: `Redan sparade risker (kontext, upprepa inte som risker): ${JSON.stringify((previous.risks ?? []).map(r => ({ title: r.title, suggestion: r.suggestion })))}` });
   const keyData = previous.key_data ?? [];
   if (step !== 'key_data' && keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
   const validate = (raw: unknown) => {
     const obj = (raw ?? {}) as Record<string, unknown>;
     if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
-    if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents).risks;
+    if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents, areas).risks;
     return validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
   };
   return streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);

@@ -15,44 +15,47 @@ export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem
 const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']) }).strict();
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable() }).strict()) }).strict();
 
+export const UNSOURCED = 'Källa saknas – kontrollera';
 export function calculateTenderQuantities(raw: unknown, documents: InsightDocument[]): TenderQuantities {
   // Bound collections before schema decoding, including model output.
   if (!raw || typeof raw !== 'object' || !('operands' in raw) || !Array.isArray(raw.operands) || raw.operands.length > 400 || !('items' in raw) || !Array.isArray(raw.items) || raw.items.length > 200 || !('assumptions' in raw) || !Array.isArray(raw.assumptions) || raw.assumptions.length > 200) throw new Error('Mängdreglerna är för stora eller ogiltiga.');
   for (const i of raw.items) if (!i || !Array.isArray(i.terms) || i.terms.length > 200 || i.terms.some((t: { factors?: unknown }) => !Array.isArray(t.factors) || t.factors.length > 4)) throw new Error('Ogiltig mängdberäkning.');
   const rules = tenderQuantityRulesSchema.parse(raw);
-  function check(source: Source) {
+  function verified(source: Source) {
     const doc = documents.find(d => d.id === source.document_id);
-    if (!doc) throw new Error('Mängden hänvisar till ett okänt dokument.');
-    if (doc.file_type === 'pdf' ? source.page === null || doc.page_count === null || source.page > doc.page_count : source.page !== null) throw new Error('Mängden har en ogiltig sidreferens.');
-    if (doc.text && !doc.text.replace(/\s+/g, ' ').includes(source.evidence.replace(/\s+/g, ' '))) throw new Error('Mängdens källcitat saknas i dokumentet.');
+    if (!doc) return false;
+    if (doc.file_type === 'pdf' ? source.page === null || doc.page_count === null || source.page > doc.page_count : source.page !== null) return false;
+    return !(doc.text && !doc.text.replace(/\s+/g, ' ').includes(source.evidence.replace(/\s+/g, ' ')));
   }
+  // Flag, don't fail: a figure without a verifiable source becomes an assumption (Låg) marked for checking.
+  const flag = (o: z.infer<typeof operandSchema>) => { o.basis = 'Antagande'; o.list_selection = null; if (!o.label.includes(UNSOURCED)) o.label = `${o.label} (${UNSOURCED})`; if (o.source && !verified(o.source)) o.source = null; };
+  rules.operands = rules.operands.filter((o, i) => rules.operands.findIndex(x => x.id === o.id) === i);
   const operands = new Map(rules.operands.map(o => [o.id, o]));
-  if (operands.size !== rules.operands.length) throw new Error('Mängdregler innehåller dubbla id.');
   for (const o of rules.operands) {
-    if (o.basis !== 'Antagande' && !o.source) throw new Error('Mängduppgiften saknar källa.');
+    if (o.basis !== 'Antagande' && !o.source) { flag(o); continue; }
     const doc = documents.find(d => d.id === o.source?.document_id);
     if (o.list_selection) {
-      if (o.basis !== 'Lista' || doc?.file_type !== 'xlsx' || !doc.text || !o.source) throw new Error('Objekturvalet saknar en läsbar Excel-källa.');
-      o.value = resolveObjectCount(doc.text, o.list_selection);
-      o.source.evidence = objectSelectionEvidence(doc.text, o.list_selection);
-    } else if (o.basis !== 'Antagande' && doc?.file_type === 'xlsx') throw new Error('Excel-antal måste räknas från ett cellurval.');
-    if (o.source) check(o.source);
+      if (o.basis !== 'Lista' || doc?.file_type !== 'xlsx' || !doc.text || !o.source) { flag(o); continue; }
+      try { o.value = resolveObjectCount(doc.text, o.list_selection); o.source.evidence = objectSelectionEvidence(doc.text, o.list_selection); }
+      catch { flag(o); continue; }
+    } else if (o.basis !== 'Antagande' && doc?.file_type === 'xlsx') { flag(o); continue; }
+    if (o.source && !verified(o.source)) { if (o.basis === 'Antagande') o.source = null; else flag(o); }
   }
   function sources(values: Source[]) { return values.filter((s, i) => values.findIndex(v => v.document_id === s.document_id && v.page === s.page && v.evidence === s.evidence) === i); }
   // Fixed-point BigInt arithmetic: no eval and no floating-point rounding.
   const scale = 1_000_000n;
   function fixed(value: string) { const [whole = '0', fraction = ''] = value.split('.'); return BigInt(whole) * scale + BigInt(fraction.padEnd(6, '0')); }
   function decimal(value: bigint, digits: number) { const s = value.toString().padStart(digits + 1, '0'); return `${s.slice(0, -digits)}.${s.slice(-digits)}`.replace(/\.?0+$/, ''); }
-  const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => { if (a.source) check(a.source); return { description: a.description, sources: a.source ? [a.source] : [], item: null }; }) };
+  const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => ({ description: a.description, sources: a.source && verified(a.source) ? [a.source] : [], item: null })) };
   const posts = new Set<string>();
   for (const i of rules.items) {
-    if (posts.has(`${i.post.toLowerCase()}|${i.unit}`)) throw new Error('Samma mängdpost förekommer flera gånger.');
+    if (posts.has(`${i.post.toLowerCase()}|${i.unit}`)) continue;
     posts.add(`${i.post.toLowerCase()}|${i.unit}`);
     const used: z.infer<typeof operandSchema>[] = [];
     let total = 0n;
     const expression = i.terms.map(t => {
       let product = 1n;
-      const values = t.factors.map(id => { const o = operands.get(id); if (!o) throw new Error('Beräkningen hänvisar till en okänd mängduppgift.'); used.push(o); product *= fixed(o.value); return o.value.replace('.', ','); });
+      const values = t.factors.map(id => { let o = operands.get(id); if (!o) { o = { id, label: `Okänd mängduppgift (${UNSOURCED})`, value: '0', basis: 'Antagande', source: null, list_selection: null } as z.infer<typeof operandSchema>; } used.push(o); product *= fixed(o.value); return o.value.replace('.', ','); });
       total += product * scale ** BigInt(4 - t.factors.length);
       return values.join(' × ');
     }).join(' + ');

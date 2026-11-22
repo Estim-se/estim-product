@@ -6,6 +6,12 @@ const id = '00000000-0000-4000-8000-000000000001';
 const doc = { id, file_name: 'Teknik.pdf', file_type: 'pdf', page_count: 2, bytes: new Uint8Array([1]), doc_type: 'Teknisk beskrivning/Rambeskrivning', text: null };
 const source = { document_id: id, page: 1, evidence: '4 dubbla uttag per kök.' };
 function rules(): TenderQuantityRules { return { operands: ['18', '8', '10', '12'].map((value, i) => ({ id: `n${i}`, label: `Grundtal ${i}`, value, basis: 'Text', source })), items: [{ post: 'Dubbla vägguttag', unit: 'st', rule: 'Uttag per lägenhetstyp.', terms: [{ factors: ['n0', 'n1'] }, { factors: ['n0', 'n2'] }, { factors: ['n0', 'n3'] }], assumption: null }], assumptions: [] }; }
+// Flag, don't fail: an unverifiable figure keeps the post, marked Låg under Antaganden.
+function expectFlagged(out: ReturnType<typeof calculateTenderQuantities>) {
+  expect(out.items).toHaveLength(0);
+  expect(out.assumptions.some(a => a.item?.certainty === 'Låg' && a.description.includes('Källa saknas – kontrollera'))).toBe(true);
+}
+
 describe('Tender quantity rules and arithmetic', () => {
   afterEach(() => vi.unstubAllGlobals());
   it('calculates 18 × 8 + 18 × 10 + 18 × 12 in code, not the AI', () => {
@@ -38,17 +44,17 @@ describe('Tender quantity rules and arithmetic', () => {
   });
   it('marks drawing counts Medel', () => { const r = rules(), o = r.operands[0]; if (!o) throw Error('Missing fixture'); o.basis = 'Ritning'; expect(calculateTenderQuantities(r,[doc]).items[0]?.certainty).toBe('Medel'); });
   it('rejects missing evidence, foreign documents and invalid PDF pages', () => {
-    const r = rules(), o = r.operands[0]; if (!o) throw Error('Missing fixture'); o.source = null; expect(() => calculateTenderQuantities(r,[doc])).toThrow('saknar källa');
-    o.source = { ...source, document_id: '00000000-0000-4000-8000-000000000002' }; expect(() => calculateTenderQuantities(r,[doc])).toThrow('okänt dokument');
-    o.source = { ...source, page: 3 }; expect(() => calculateTenderQuantities(r,[doc])).toThrow('sidreferens');
+    const r = rules(), o = r.operands[0]; if (!o) throw Error('Missing fixture'); o.source = null; expectFlagged(calculateTenderQuantities(r,[doc]));
+    o.source = { ...source, document_id: '00000000-0000-4000-8000-000000000002' }; expectFlagged(calculateTenderQuantities(r,[doc]));
+    o.source = { ...source, page: 3 }; expectFlagged(calculateTenderQuantities(r,[doc]));
   });
   it('verifies Office citations and never invents Excel print pages', () => {
-    const r = rules(); expect(() => calculateTenderQuantities(r,[{ ...doc, file_type: 'docx', text: '18 lägenheter' }])).toThrow('sidreferens');
-    r.operands.forEach(o => { o.source = { ...source, page: null }; }); expect(() => calculateTenderQuantities(r,[{ ...doc, file_type: 'docx', text: '18 lägenheter' }])).toThrow('källcitat');
+    const r = rules(); expectFlagged(calculateTenderQuantities(r,[{ ...doc, file_type: 'docx', text: '18 lägenheter' }]));
+    r.operands.forEach(o => { o.source = { ...source, page: null }; }); expectFlagged(calculateTenderQuantities(r,[{ ...doc, file_type: 'docx', text: '18 lägenheter' }]));
     expect(calculateTenderQuantities(r,[{ ...doc, file_type: 'docx', text: source.evidence }]).items[0]?.quantity).toBe('540');
   });
-  it('rejects unknown factors instead of silently treating them as zero', () => { const r = rules(), item = r.items[0]; if (!item) throw Error('Missing fixture'); item.terms = [{ factors: ['missing'] }]; expect(() => calculateTenderQuantities(r,[doc])).toThrow('okänd mängduppgift'); });
-  it('rejects duplicate operands and duplicated posts', () => { const r = rules(), o = r.operands[0], item = r.items[0]; if (!o || !item) throw Error('Missing fixture'); r.operands.push(o); expect(() => calculateTenderQuantities(r,[doc])).toThrow('dubbla id'); r.operands.pop(); r.items.push(item); expect(() => calculateTenderQuantities(r,[doc])).toThrow('flera gånger'); });
+  it('flags unknown factors as an assumption instead of a confirmed quantity', () => { const r = rules(), item = r.items[0]; if (!item) throw Error('Missing fixture'); item.terms = [{ factors: ['missing'] }]; expectFlagged(calculateTenderQuantities(r,[doc])); });
+  it('keeps one copy of duplicate operands and duplicated posts', () => { const r = rules(), o = r.operands[0], item = r.items[0]; if (!o || !item) throw Error('Missing fixture'); r.operands.push({ ...o }); r.items.push({ ...item }); const out = calculateTenderQuantities(r,[doc]); expect(out.items.filter(i => i.post === item.post)).toHaveLength(1); });
   it('rejects finished totals, hours and prices in the structured AI output', () => { for (const extra of [{ total: 540 }, { hours: 100 }, { price: 3000 }]) expect(() => calculateTenderQuantities({ ...rules(), ...extra }, [doc])).toThrow(); });
   it('rejects negative numbers, expressions and excessive precision', () => { for (const value of ['-1', '18*8', '1.1234567']) { const r = rules(), o = r.operands[0]; if (!o) throw Error('Missing fixture'); o.value = value; expect(() => calculateTenderQuantities(r,[doc])).toThrow(); } });
   it('keeps requirements without a count separate, not as zero quantities', () => { const r = rules(); r.items = []; r.assumptions = [{ description: 'Kabellängder kan inte bestämmas utan ritning.', source }]; const result = calculateTenderQuantities(r,[doc]); expect(result.items).toEqual([]); expect(result.assumptions[0]?.item).toBeNull(); });
@@ -60,7 +66,7 @@ describe('Tender quantity rules and arithmetic', () => {
     expect(result.items[0]?.quantity).toBe('90'); expect(result.rules.operands[0]?.value).toBe('3');
     expect(result.rules.operands[0]?.source?.evidence).toBe('A5: A101');
     o.source.page = 1;
-    expect(() => calculateTenderQuantities(r,[{ ...doc, file_type:'xlsx', text:'Blad: Lägenheter\nA5: A101\nA6: A102\nA7: A103' },{ ...doc,id:pdfId }])).toThrow('sidreferens');
+    expect(calculateTenderQuantities(r,[{ ...doc, file_type:'xlsx', text:'Blad: Lägenheter\nA5: A101\nA6: A102\nA7: A103' },{ ...doc,id:pdfId }]).assumptions.length).toBeGreaterThan(0);
   });
   it('sends object lists first, technical documents next and drawings last in one streamed call', async () => {
     const events = [{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'mangdregler' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(rules()) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];

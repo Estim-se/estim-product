@@ -10,7 +10,7 @@ export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(1000
 export type CalculationSettings = z.infer<typeof calculationSettingsSchema>;
 export const emptyCalculationSettings: CalculationSettings = { hourly_rate: 0, material_markup: 0, list_discount: 0, establishment: 0, contingency: 0, post_types: [], example_values: false };
 const bindingSchema = z.object({ post: z.string().min(1).max(240), type_id: z.string().uuid().nullable(), manual_hours: amount.max(10000).nullable(), manual_list_price: amount.nullable(), manual_quantity: amount.nullable().optional() }).strict();
-const demolitionSchema = z.object({ post: z.literal('Rivning per lägenhet'), quantity: z.string().regex(/^\d+(\.\d+)?$/), source: z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().min(1).max(1500) }).strict(), apartment_operand_id: z.string().min(1).max(80) }).strict();
+const demolitionSchema = z.object({ post: z.literal('Rivning per lägenhet'), quantity: z.string().regex(/^\d+(\.\d+)?$/), source: z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().min(1).max(1500) }).strict(), apartment_operand_id: z.string().min(1).max(80), flag: z.literal('Källa saknas – kontrollera').optional() }).strict();
 export const calculationMatchesSchema = z.object({ bindings: z.array(bindingSchema).max(401), demolition: demolitionSchema.nullable() }).strict();
 export type CalculationMatches = z.infer<typeof calculationMatchesSchema>;
 export function validateSettingsInput(v: unknown) {
@@ -46,7 +46,7 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   if (m.demolition && !items.some(i => i.post === m.demolition?.post)) {
     const operand = q.rules.operands.find(o => o.id === m.demolition?.apartment_operand_id);
     if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');
-    items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: 'Hög' });
+    items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: m.demolition.flag ? `Rivning per lägenhet. ${m.demolition.flag}.` : 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: m.demolition.flag ? 'Låg' : 'Hög' });
   }
   const rows = items.map(i => {
     const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);

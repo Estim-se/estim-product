@@ -5,18 +5,18 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { FileText, FolderOpen, Plus, Upload, X, ArrowLeft, ScanText, Trash2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { analyzeTenderDocument, beginTenderAnalysis, abortTenderAnalysis, cancelTenderUpload, completeTender, createTender, listTenderDocuments, listTenders, openTenderDocument } from '@/lib/tenders.functions';
+import { cancelTenderUpload, completeTender, createTender, listTenderDocuments, listTenders, openTenderDocument } from '@/lib/tenders.functions';
 import { prepareTenderFiles, tenderPath, tenderSize, tenderMime, type Tender, type TenderDocument } from '@/lib/tenders';
-import { analyzeSequentially, tenderExportBlock, tenderStatus, tenderStepProgress, type TenderStepState } from '@/lib/tender-analysis';
+import { tenderExportBlock, tenderJobProgress, tenderJobStepLabel, tenderStatus } from '@/lib/tender-analysis';
+import { getTenderJob, nudgeTenderJob, startTenderJob } from '@/lib/tender-job.functions';
 import { TopHeader } from './top-header';
 import { useWorkspace } from './workspace-context';
-import { getTenderInsights, analyzeTenderInsights } from '@/lib/tender-insights.functions';
+import { getTenderInsights } from '@/lib/tender-insights.functions';
 import { TenderInsightsSections } from './tender-insights';
-import { getTenderQuantities, analyzeTenderQuantities } from '@/lib/tender-quantities.functions';
+import { getTenderQuantities } from '@/lib/tender-quantities.functions';
 import { TenderQuantitiesSections } from './tender-quantities';
 import { TenderCalculationSettings } from './tender-calculation-settings';
 import { TenderCalculation } from './tender-calculation';
-import { matchTenderCalculation } from '@/lib/tender-calculation.functions';
 import { TenderExport } from './tender-export';
 
 export function TendersPage() {
@@ -26,12 +26,11 @@ export function TendersPage() {
   const queryClient = useQueryClient();
   const list = useServerFn(listTenders), docs = useServerFn(listTenderDocuments);
   const create = useServerFn(createTender), complete = useServerFn(completeTender), cancel = useServerFn(cancelTenderUpload), openFile = useServerFn(openTenderDocument);
-  const beginAnalysis = useServerFn(beginTenderAnalysis), analyzeDocument = useServerFn(analyzeTenderDocument), abortAnalysis = useServerFn(abortTenderAnalysis);
-  const loadInsights = useServerFn(getTenderInsights), extractInsights = useServerFn(analyzeTenderInsights);
-  const loadQuantities = useServerFn(getTenderQuantities), extractQuantities = useServerFn(analyzeTenderQuantities);
-  const matchCalculation = useServerFn(matchTenderCalculation);
+  const startJob = useServerFn(startTenderJob), loadJob = useServerFn(getTenderJob), nudgeJob = useServerFn(nudgeTenderJob);
+  const loadInsights = useServerFn(getTenderInsights);
+  const loadQuantities = useServerFn(getTenderQuantities);
   const [tab, setTab] = useState<'tenders' | 'settings'>('tenders');
-  const [analyzing, setAnalyzing] = useState(false), [analysisProgress, setAnalysisProgress] = useState('');
+  const [starting, setStarting] = useState(false);
   const [selected, setSelected] = useState<Tender | null>(null);
   const [show, setShow] = useState(false), [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
@@ -44,6 +43,22 @@ export function TendersPage() {
   const documents = useQuery({ queryKey: ['tender-documents', company, selected?.id], queryFn: () => selected ? docs({ data: { id: selected.id } }) : Promise.resolve([]), enabled: real && !!company && !!selected });
   const insights = useQuery({ queryKey: ['tender-insights', company, selected?.id], queryFn: () => selected ? loadInsights({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
   const quantities = useQuery({ queryKey: ['tender-quantities', company, selected?.id], queryFn: () => selected ? loadQuantities({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
+  const job = useQuery({ queryKey: ['tender-job', company, selected?.id], queryFn: () => selected ? loadJob({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected,
+    refetchInterval: q => q.state.data?.status === 'running' ? 4000 : false });
+  const analyzing = starting || job.data?.status === 'running';
+  const analysisProgress = job.data?.status === 'running' ? tenderJobProgress(job.data.plan, job.data.steps) || 'Analysen startar…' : '';
+  const jobSignature = job.data ? `${job.data.status}:${JSON.stringify(job.data.steps)}` : '';
+  const lastSignature = useRef('');
+  useEffect(() => {
+    // Refresh saved step results as soon as a step finishes, and wake a stalled job.
+    if (!selected || !job.data || !jobSignature) return;
+    if (lastSignature.current && lastSignature.current !== jobSignature) {
+      const tid = selected.id;
+      for (const key of ['tenders', 'tender-documents', 'tender-insights', 'tender-quantities', 'tender-calculation-matches']) void queryClient.invalidateQueries({ queryKey: key === 'tenders' ? [key, company] : [key, company, tid] });
+    }
+    lastSignature.current = jobSignature;
+    if (job.data.status === 'running') void nudgeJob({ data: { id: selected.id } }).catch(() => undefined);
+  }, [jobSignature, job.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = real ? tenders.data ?? [] : localTenders;
   const fileRows: TenderDocument[] = real ? documents.data ?? [] : localDocuments.filter(d => d.tender_id === selected?.id);
 
@@ -51,41 +66,22 @@ export function TendersPage() {
   const exportBlock = documents.isFetching || insights.isPending || quantities.isPending || documents.isError || insights.isError || quantities.isError
     ? 'Exporten blir tillgänglig när analysen har hämtats.'
     : tenderExportBlock({ analyzing, tenderStatus: currentTender?.status, insightsStatus: insights.data?.status, quantitiesStatus: quantities.data?.status });
-  async function analyze() {
+  // The analysis runs as a server-side job; the page only polls its status and shows progress.
+  async function analyze(resume = false) {
     if (!selected || !real || analyzing || !fileRows.length) return;
     const tid = selected.id;
-    let run: string | null = null;
-    setAnalyzing(true); setMessage(''); setAnalysisProgress('');
+    setStarting(true); setMessage('');
     try {
-      const started = await beginAnalysis({ data: { id: tid } }); run = started.run;
-      await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
-      const rid = started.run;
-      await analyzeSequentially(fileRows, async d => {
-        const result = await analyzeDocument({ data: { id: d.id, run: rid } });
-        await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
-        if (result.stop) throw new Error(result.error ?? 'AI-analysen avbröts.');
-      }, (done, total) => setAnalysisProgress(`Analyserar dokument ${Math.min(done + 1, total)} av ${total}…`));
-      const states: Record<string, TenderStepState> = {};
-      const step = async (key: string, work: () => Promise<unknown>) => {
-        states[key] = 'running'; setAnalysisProgress(tenderStepProgress(states));
-        try { await work(); states[key] = 'done'; } catch (e) { states[key] = 'error'; setAnalysisProgress(tenderStepProgress(states)); throw e; }
-        setAnalysisProgress(tenderStepProgress(states));
-        await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, tid] });
-      };
-      for (const s of ['key_data', 'risks', 'questions'] as const) await step(s, () => extractInsights({ data: { id: tid, run: rid, step: s } }));
-      await step('quantities', () => extractQuantities({ data: { id: tid, run: rid } }));
-      run = null;
-      await step('calculation', () => matchCalculation({ data: { id: tid } }));
+      await startJob({ data: { id: tid, resume } });
+      await queryClient.invalidateQueries({ queryKey: ['tender-job', company, tid] });
     } catch (error) {
-      if (run) { try { await abortAnalysis({ data: { id: tid, run } }); } catch { /* Persisted run can be restarted after its lease expires. */ } }
-      setMessage(error instanceof Error ? error.message : 'Analysen misslyckades. Försök igen.');
+      setMessage(error instanceof Error ? error.message : 'Analysen kunde inte startas. Försök igen.');
     } finally {
-      setAnalyzing(false);
+      setStarting(false);
       await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
       await queryClient.invalidateQueries({ queryKey: ['tender-documents', company, tid] });
       await queryClient.invalidateQueries({ queryKey: ['tender-insights', company, tid] });
       await queryClient.invalidateQueries({ queryKey: ['tender-quantities', company, tid] });
-      await queryClient.invalidateQueries({ queryKey: ['tender-calculation-matches', company, tid] });
     }
   }
   async function removeFile(d: TenderDocument) {
@@ -199,14 +195,15 @@ export function TendersPage() {
     </div>
     {!show && message && <p role="status" className="small mt12">{message}</p>}
     {(tenders.isError || documents.isError) && <div role="alert" className="row mt16"><span>Anbuden kunde inte hämtas.</span><Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { void tenders.refetch(); void documents.refetch(); }}>Försök igen</Button></div>}
-    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button><Button variant="prototype" className="btn btn-ghost" disabled={analyzing} onClick={() => void removeTender()}><Trash2 size={16} />Ta bort anbud</Button></div>
+    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button>{job.data?.status === 'error' && !analyzing && <Button variant="prototype" className="btn btn-primary" disabled={!real || documents.isFetching} onClick={() => void analyze(true)}><ScanText size={16} />Fortsätt analysen</Button>}<Button variant="prototype" className="btn btn-ghost" disabled={analyzing} onClick={() => void removeTender()}><Trash2 size={16} />Ta bort anbud</Button></div>
       {real && (exportBlock ? <div className="row wrap mt16"><Button variant="prototype" className="btn btn-ghost" disabled aria-describedby="tender-export-block"><Download size={16} />Exportera</Button><span id="tender-export-block" className="small muted">{exportBlock}</span></div> : <div className="row mt16"><TenderExport key={`${company}-${selected.id}`} id={selected.id} name={selected.name} insights={insights.data?.status === 'analysed' ? insights.data.result : null} quantities={quantities.data?.status === 'analysed' ? quantities.data.result : null} documents={fileRows}/></div>)}
       {analysisProgress && <p role="status" className="small mt16">{analysisProgress}</p>}
-      {currentTender?.error && <p role="alert" className="small mt16">{currentTender.error}</p>}
+      {currentTender?.error && !analyzing && <p role="alert" className="small mt16">{job.data?.status === 'error' && job.data.failed_step ? `${tenderJobStepLabel(job.data.failed_step)} misslyckades: ` : ''}{currentTender.error}{job.data?.status === 'error' ? ' Klicka på Fortsätt analysen för att fortsätta från det steget; klara steg körs inte om.' : ''}</p>}
+      {analyzing && <p className="small muted mt16">Analysen körs på servern. Du kan stänga eller ladda om sidan.</p>}
       {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <div key={d.id} className="row tender-file-item"><Button variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button><Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} aria-label={`Ta bort ${d.file_name}`} onClick={() => void removeFile(d)}><Trash2 size={16} />Ta bort</Button></div>)}</div>}
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
       {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
-      {insights.data?.result && !analyzing && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
+      {insights.data?.result && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
       {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
       {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
       {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result} documents={fileRows}/>:null} />}

@@ -40,7 +40,7 @@ export const analyzeTenderInsights = createServerFn({ method: 'POST' }).middlewa
     const configured = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
     value = await extractTenderInsightStep(data.step, inputs, key, configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`, previous);
   } catch (e) { error = e instanceof Error ? e.message.slice(0, 500) : 'Anbudsanalysen misslyckades.'; }
-  const rpc = db.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
+  const rpc = db.rpc.bind(db) as unknown as (name: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
   if (error) {
     await rpc('estim_save_tender_insight_step', { tid: data.id, rid: data.run, p_step: data.step, p_value: null });
     const saved = await db.rpc('estim_finish_tender_insights', { tid: data.id, rid: data.run, p_result: null as never, p_error: error });

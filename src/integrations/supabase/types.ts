@@ -1187,6 +1187,104 @@ export type Database = {
           },
         ]
       }
+      tender_job_secrets: {
+        Row: {
+          base_url: string | null
+          created_at: string
+          tender_id: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          base_url?: string | null
+          created_at?: string
+          tender_id: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          base_url?: string | null
+          created_at?: string
+          tender_id?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_job_secrets_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: true
+            referencedRelation: "tender_jobs"
+            referencedColumns: ["tender_id"]
+          },
+        ]
+      }
+      tender_jobs: {
+        Row: {
+          analysis_run: string
+          company_id: string
+          created_at: string
+          error: string | null
+          failed_step: string | null
+          hops: number
+          kicked_at: string | null
+          lease_until: string | null
+          parts: Json
+          plan: Json
+          status: string
+          steps: Json
+          tender_id: string
+          updated_at: string
+        }
+        Insert: {
+          analysis_run: string
+          company_id: string
+          created_at?: string
+          error?: string | null
+          failed_step?: string | null
+          hops?: number
+          kicked_at?: string | null
+          lease_until?: string | null
+          parts?: Json
+          plan?: Json
+          status: string
+          steps?: Json
+          tender_id: string
+          updated_at?: string
+        }
+        Update: {
+          analysis_run?: string
+          company_id?: string
+          created_at?: string
+          error?: string | null
+          failed_step?: string | null
+          hops?: number
+          kicked_at?: string | null
+          lease_until?: string | null
+          parts?: Json
+          plan?: Json
+          status?: string
+          steps?: Json
+          tender_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_jobs_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: true
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tender_quantities: {
         Row: {
           analysis_run: string
@@ -1386,6 +1484,10 @@ export type Database = {
         Args: { rid: string; tid: string }
         Returns: boolean
       }
+      estim_claim_tender_job: {
+        Args: { p_token: string; tid: string }
+        Returns: Json
+      }
       estim_claim_tender_quantities: {
         Args: { rid: string; tid: string }
         Returns: boolean
@@ -1444,6 +1546,7 @@ export type Database = {
         Args: { cid: string; payload: Json; tid: string }
         Returns: number
       }
+      estim_kick_tender_job: { Args: { tid: string }; Returns: boolean }
       estim_login_begin: { Args: { h: string }; Returns: string }
       estim_login_finish: {
         Args: {
@@ -1488,6 +1591,10 @@ export type Database = {
         Returns: undefined
       }
       estim_session_valid: { Args: never; Returns: boolean }
+      estim_start_tender_job: {
+        Args: { p_base_url: string; p_resume: boolean; tid: string }
+        Returns: string
+      }
       my_company: { Args: never; Returns: string }
     }
     Enums: {
