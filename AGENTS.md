@@ -71,3 +71,4 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Company documents: private `company-documents` bucket under `<company_id>/` plus company-scoped `company_documents` rows; keeps files tenant-isolated.
 
 - Keep tender analysis isolated; see src/lib/AGENTS.md for its server and parsing boundaries.
+- Keep Anbud PDF presentation separate from Excel and cost logic; use existing company identity and app palette, repeat page furniture, and paginate measured text so export styling cannot alter calculated data.

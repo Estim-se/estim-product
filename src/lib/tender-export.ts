@@ -9,7 +9,7 @@ export type TenderExportInput = {
   matches: CalculationMatches;
   quantities: TenderQuantities;
   insights: TenderInsights | null;
-  documents: { id: string; file_name: string }[];
+  documents: { id: string; file_name: string; doc_type?: string | null; page_count?: number | null; file_type?: string }[];
 };
 export function tenderExportName(name: string, extension: 'xlsx' | 'pdf') {
   return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || 'Anbud'} – anbudsbas.${extension}`;

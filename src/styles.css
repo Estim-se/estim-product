@@ -30,6 +30,17 @@
   --prototype-tone-24: #fff;
   --prototype-tone-25: #E7EFD6;
   --prototype-tone-26: rgba(20,16,30,.3);
+  --tender-pdf-ink: #242030;
+  --tender-pdf-paper: #FFFFFF;
+  --tender-pdf-cream: #F6F5F0;
+  --tender-pdf-muted: #717079;
+  --tender-pdf-line: #E5E3DC;
+  --tender-pdf-sage: #C9D8D1;
+  --tender-pdf-sage-ink: #405D52;
+  --tender-pdf-warning: #F7EDCD;
+  --tender-pdf-warning-ink: #A56B08;
+  --tender-pdf-danger: #F6DEDA;
+  --tender-pdf-danger-ink: #B63426;
 }
 @theme inline {
   --font-sans: 'Instrument Sans', system-ui, sans-serif;

@@ -7,8 +7,10 @@ import { getTenderCalculationMatches, getTenderCalculationSettings } from '@/lib
 import { deliverTenderFile, tenderExportName, type TenderExportInput } from '@/lib/tender-export';
 import { tenderInsightsSchema } from '@/lib/tender-insights';
 import { tenderQuantitiesSchema } from '@/lib/tender-quantities';
+import { useWorkspace } from './workspace-context';
+import type { TenderPdfBranding } from '@/lib/tender-export-pdf';
 
-export function TenderExportDownloads({ name, prepare }: { name: string; prepare: () => Promise<TenderExportInput> }) {
+export function TenderExportDownloads({ name, prepare, branding }: { name: string; prepare: () => Promise<TenderExportInput>; branding?: TenderPdfBranding }) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [files, setFiles] = useState<{ xlsx: Blob; pdf: Blob } | null>(null);
   const run = useRef(0);
@@ -18,7 +20,7 @@ export function TenderExportDownloads({ name, prepare }: { name: string; prepare
     try {
       const input = await prepare();
       const [{ generateTenderXlsx }, { generateTenderPdf }] = await Promise.all([import('@/lib/tender-export-xlsx'), import('@/lib/tender-export-pdf')]);
-      const [xlsx, pdf] = await Promise.all([generateTenderXlsx(input), generateTenderPdf(input)]);
+      const [xlsx, pdf] = await Promise.all([generateTenderXlsx(input), generateTenderPdf(input, branding)]);
       if (current === run.current) setFiles({ xlsx, pdf });
     } catch { if (current === run.current) setError('Exporten kunde inte skapas. Försök igen.'); }
     finally { if (current === run.current) setBusy(false); }
@@ -35,9 +37,13 @@ export function TenderExportDownloads({ name, prepare }: { name: string; prepare
     </Dialog.Content></Dialog.Portal>
   </Dialog.Root>;
 }
-export function TenderExport({ id, name, insights, quantities, documents }: { id: string; name: string; insights: unknown; quantities: unknown; documents: {id:string;file_name:string}[] }) {
+export function TenderExport({ id, name, insights, quantities, documents }: { id: string; name: string; insights: unknown; quantities: unknown; documents: TenderExportInput['documents'] }) {
+  const workspace = useWorkspace();
+  const company = workspace.data?.company;
+  const companyRecord = company as Record<string, unknown> | null | undefined;
+  const logoUrl = companyRecord?.['logo_url'];
   const settings = useServerFn(getTenderCalculationSettings), matches = useServerFn(getTenderCalculationMatches);
-  return <TenderExportDownloads name={name} prepare={async () => {
+  return <TenderExportDownloads name={name} branding={{ companyName: company?.name ?? 'Företag', ...(typeof logoUrl === 'string' ? { logoUrl } : {}) }} prepare={async () => {
     const [s,m] = await Promise.all([settings(),matches({data:{id}})]);
     return { name, settings:s, matches:m ?? {bindings:[],demolition:null}, insights:insights ? tenderInsightsSchema.parse(insights) : null, documents, quantities:quantities ? tenderQuantitiesSchema.parse(quantities) : {rules:{operands:[],items:[],assumptions:[]},items:[],assumptions:[]} };
   }}/>;
