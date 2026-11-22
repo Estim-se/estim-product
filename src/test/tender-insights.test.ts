@@ -76,10 +76,10 @@ describe('Tender-wide extraction rules', () => {
     expect(body.stream).toBe(true); expect(body.max_tokens).toBe(64000);
     expect(body.messages[0].content[0].text).toContain('HUVUDKÄLLA'); expect(body.messages[0].content[1].type).toBe('document');
   });
-  it('retries exactly once when the output is cut off at the token limit', async () => {
+  it('retries twice when the output is cut off at the token limit', async () => {
     const call = vi.fn(async () => stream('nyckeldata', { key_data: [] }, 'max_tokens')); vi.stubGlobal('fetch', call);
     await expect(extractTenderInsightStep('key_data', [doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('maxgränsen');
-    expect(call).toHaveBeenCalledTimes(2);
+    expect(call).toHaveBeenCalledTimes(3);
   });
   it('refuses risks without saved key data', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => stream('risker', { risks: [], risk_checklist: [] })));

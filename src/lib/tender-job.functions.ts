@@ -66,3 +66,14 @@ export const rerunTenderRisks = createServerFn({method:'POST'}).middleware([requ
  if(import.meta.env.DEV){const {kickTenderJob}=await import('./tender-job.server');await kickTenderJob(data.id);}
  return {run:r.data};
 });
+
+export const rereadTenderJob = createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator((v:unknown)=>idSchema.parse(v)).handler(async({data,context})=>{
+ const tender=await context.supabase.from('tenders').select('id,company_id').eq('id',data.id).single();
+ if(tender.error||!tender.data)throw Error('Anbudet kunde inte hittas.');
+ const {supabaseAdmin}=await import('@/integrations/supabase/client.server');
+ const rpc=supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as Rpc;
+ const r=await rpc('estim_reread_tender_job',{tid:data.id,p_company_id:tender.data.company_id,p_base_url:jobBaseUrl()});
+ if(r.error||!r.data)throw Error('Underlaget kunde inte läsas om. Kontrollera att ingen analys pågår.');
+ if(import.meta.env.DEV){const {kickTenderJob}=await import('./tender-job.server');await kickTenderJob(data.id);}
+ return {run:r.data};
+});

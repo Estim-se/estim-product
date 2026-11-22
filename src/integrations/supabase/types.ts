@@ -1657,7 +1657,7 @@ export type Database = {
       }
       estim_request: { Args: { payload: Json }; Returns: string }
       estim_reread_tender_job: {
-        Args: { p_base_url: string; tid: string }
+        Args: { p_base_url: string; p_company_id: string; tid: string }
         Returns: string
       }
       estim_rerun_tender_risks: {

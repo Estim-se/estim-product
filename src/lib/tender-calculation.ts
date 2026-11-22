@@ -52,7 +52,7 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   }
   const rows = items.map(i => {
     const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);
-    const hoursPerUnit = b?.manual_hours ?? t?.hours ?? null, listPrice = b?.manual_list_price ?? t?.list_price ?? null;
+    const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
     // Explicit, source-backed estimates are priced provisionally; unresolved measurements still require manual input.
     const needsQuantity = i.certainty === 'Låg' && !i.estimated_quantity;
     const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
@@ -64,11 +64,13 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     const material = rounded(qty * fixed(listPrice) * (100n * S - fixed(s.list_discount)) * (100n * S + fixed(s.material_markup)) * 100n, S ** 4n * 10000n);
     return { ...i, quantity, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: Number(hours) / Number(S), labor: Number(labor) / 100, material: Number(material) / 100, total: Number(labor + material) / 100 };
   });
-  const complete = rows.every(r => r.total !== null);
+  const proposals = rows.filter(r => !s.post_types.some(t => t.id === r.type_id));
+  const catalogRows = rows.filter(r => s.post_types.some(t => t.id === r.type_id));
+  const complete = rows.length > 0 && rows.every(r => r.total !== null);
   const labor = rows.reduce((n, r) => n + BigInt(Math.round((r.labor ?? 0) * 100)), 0n), material = rows.reduce((n, r) => n + BigInt(Math.round((r.material ?? 0) * 100)), 0n), base = labor + material;
   // Both additions are independently calculated from labor plus material.
   const establishment = rounded(base * fixed(s.establishment), 100n * S);
   const contingency = rounded(base * fixed(s.contingency), 100n * S);
   const total = base + establishment + contingency;
-  return { rows, complete, total_hours: rows.reduce((n, r) => n + Math.round((r.hours ?? 0) * 1000000), 0) / 1000000, labor: Number(labor) / 100, material: Number(material) / 100, establishment: Number(establishment) / 100, contingency: Number(contingency) / 100, total: Number(total) / 100 };
+  return { rows: catalogRows, proposals, complete, total_hours: rows.reduce((n, r) => n + Math.round((r.hours ?? 0) * 1000000), 0) / 1000000, labor: Number(labor) / 100, material: Number(material) / 100, establishment: Number(establishment) / 100, contingency: Number(contingency) / 100, total: Number(total) / 100 };
 }

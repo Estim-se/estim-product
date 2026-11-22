@@ -17,7 +17,8 @@ const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m'
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()) }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';
-export function calculateTenderQuantities(raw: unknown, documents: InsightDocument[], rawRecipes: unknown = null): TenderQuantities {
+export function calculateTenderQuantities(raw: unknown, documents: InsightDocument[], rawRecipes: unknown = null, resilient = false): TenderQuantities {
+  if (resilient) raw = recoverQuantityRules(raw);
   // Bound collections before schema decoding, including model output.
   if (!raw || typeof raw !== 'object' || !('operands' in raw) || !Array.isArray(raw.operands) || raw.operands.length > 400 || !('items' in raw) || !Array.isArray(raw.items) || raw.items.length > 200 || !('assumptions' in raw) || !Array.isArray(raw.assumptions) || raw.assumptions.length > 200) throw new Error('Mängdreglerna är för stora eller ogiltiga.');
   for (const i of raw.items) if (!i || !Array.isArray(i.terms) || i.terms.length > 200 || i.terms.some((t: { factors?: unknown }) => !Array.isArray(t.factors) || t.factors.length > 4)) throw new Error('Ogiltig mängdberäkning.');
@@ -99,6 +100,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     const unresolved=used.some(o=>o.basis==='Antagande'&&!o.recipe&&!standard(o));
     const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption;
     const item: QuantityItem = { post: i.post, unit: i.unit, rule: i.rule, quantity: decimal(total, 24), calculation: expression, sources: sources(used.flatMap(o => o.source ? [o.source] : [])), certainty: (recipeBased||standardBased)&&!unresolved&&!used.some(o=>o.label.includes(UNSOURCED)) ? 'Medel' : uncertain ? 'Låg' : used.some(o => o.basis === 'Ritning') ? 'Medel' : 'Hög' };
+    const missingSource = used.some(o => o.label.includes(UNSOURCED));
+    if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
     const supportedEstimate = (i.estimate || /gruppcentral|rivning.*lokal/i.test(i.post) && !!i.assumption)
       && /gruppcentral|fastighetscentral|serviscentral|trapphus.*(?:armatur|belysning)|armatur.*trapphus|rivning.*lokal/i.test(i.post)
       && used.some(o => o.basis !== 'Antagande' && o.source) && used.every(o => Number(o.value) > 0 && !o.label.includes(UNSOURCED));
@@ -112,7 +115,10 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       item.rule=recipeBased?`Enligt typrecept. ${item.rule}`:item.rule;
       result.items.push(item);
       result.assumptions.push({description:recipeBased ? i.assumption && /bänk/i.test(i.assumption) ? i.assumption : 'Enligt typrecept: standardutrustning används endast där antal saknas i handlingarna. Rum per lägenhet hämtas från angivet rumsantal, annars uppskattas det från bostadsytan enligt kalkylinställningarnas ytintervall.' : 'Ett kök, ett badrum och ett vardagsrum per lägenhet antas som standard.',sources:item.sources,item:null});
-    } else if (uncertain) result.assumptions.push({ description: i.assumption || used.filter(o => o.basis === 'Antagande').map(o => o.label).join('; '), sources: item.sources, item });
+    } else if (uncertain) {
+      const description = i.assumption || used.filter(o => o.basis === 'Antagande').map(o => o.label).join('; ');
+      result.assumptions.push({ description: missingSource && !description.includes(UNSOURCED) ? `${UNSOURCED}. ${description}` : description, sources: item.sources, item });
+    }
     else result.items.push(item);
   }
   result.assumptions = uniqueQuantityAssumptions(result.assumptions);
@@ -120,6 +126,32 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
 }
 
 const str = { type: 'string' }, nullableStr = { type: ['string', 'null'] };
+export function recoverQuantityRules(raw: unknown): TenderQuantityRules {
+  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const list = (key: string) => Array.isArray(obj[key]) ? obj[key] as Record<string, unknown>[] : [];
+  const operands = list('operands').slice(0, 400).flatMap((o, index) => {
+    if (!o || typeof o['label'] !== 'string') return [];
+    const normalized = String(o['value'] ?? '').replace(/[\s\u00a0\u202f]/g, '').replace(',', '.');
+    const number = /^\d{1,9}(\.\d{1,6})?$/.test(normalized);
+    const src = sourceSchema.safeParse(o['source']);
+    const selection = selectionSchema.nullable().safeParse(o['list_selection'] ?? null);
+    const recipe = operandSchema.shape.recipe.safeParse(o['recipe'] ?? null);
+    const parsed = operandSchema.safeParse({ id: typeof o['id'] === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,79}$/.test(o['id']) ? o['id'] : `invalid_${index}`, label: `${o['label'].slice(0, 440)}${number ? '' : ` (${UNSOURCED})`}`, value: number ? normalized : '0', basis: number && ['Lista','Text','Ritning','Antagande'].includes(String(o['basis'])) ? o['basis'] : 'Antagande', source: src.success ? src.data : null, list_selection: selection.success ? selection.data : null, recipe: recipe.success ? recipe.data : null });
+    return parsed.success ? [parsed.data] : [];
+  });
+  const items = list('items').slice(0, 200).flatMap(i => {
+    if (!i || typeof i['post'] !== 'string') return [];
+    const parsed = itemSchema.safeParse({ post: i['post'].slice(0, 240), unit: ['st','m','lgh'].includes(String(i['unit'])) ? i['unit'] : 'st', rule: typeof i['rule'] === 'string' && i['rule'] ? i['rule'].slice(0, 2000) : UNSOURCED, terms: Array.isArray(i['terms']) && i['terms'].length ? i['terms'].slice(0, 200).map(t => ({ factors: Array.isArray(t?.factors) && t.factors.length ? t.factors.filter((f: unknown) => typeof f === 'string').slice(0, 4) : ['missing_value'] })) : [{ factors: ['missing_value'] }], assumption: typeof i['assumption'] === 'string' ? i['assumption'].slice(0, 2000) : null, estimate: i['estimate'] === true });
+    return parsed.success ? [parsed.data] : [];
+  });
+  const assumptions = list('assumptions').slice(0, 200).flatMap(a => {
+    if (!a || typeof a['description'] !== 'string' || !a['description'].trim()) return [];
+    const s = sourceSchema.safeParse(a['source']);
+    return [{ description: a['description'].slice(0, 2000), source: s.success ? s.data : null }];
+  });
+  if (!items.length && !operands.length && !Array.isArray(obj['items'])) throw Error('AI-resultatet saknar användbara mängdregler.');
+  return { operands, items, assumptions };
+}
 const source = { type: 'object', additionalProperties: false, properties: { document_id: str, page: { type: ['integer', 'null'] }, evidence: str }, required: ['document_id', 'page', 'evidence'] };
 const nullableSource = { anyOf: [source, { type: 'null' }] };
 const selection = { anyOf: [{ type: 'object', additionalProperties: false, properties: { sheet: str, range: str, operation: { type: 'string', enum: ['Antal','Summa','Unika','Unika trapphusplan','Avrunda upp per rad','Rum per rad'] }, equals: nullableStr, divisor:{type:['number','null']},room:{anyOf:[{type:'string',enum:['Vardagsrum','Sovrum','Hall','Kök']},{type:'null'}]},room_count_range:nullableStr,address_range:nullableStr }, required: ['sheet','range','operation','equals','divisor','room','room_count_range','address_range'] }, { type: 'null' }] };

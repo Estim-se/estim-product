@@ -1,10 +1,8 @@
 import { PDFDocument } from 'pdf-lib';
 import { Unzip, UnzipInflate } from 'fflate';
 import { XMLParser } from 'fast-xml-parser';
-import { skipTenderPdf } from './tender-analysis';
 
 const EXPANDED_LIMIT = 100 * 1024 * 1024;
-const TEXT_LIMIT = 1_000_000;
 type XmlNode = Record<string, unknown>;
 function nodes(value: unknown): XmlNode[] {
   return Array.isArray(value) ? value.filter(v => v && typeof v === 'object') : [];
@@ -61,7 +59,7 @@ export async function readTenderDocument(bytes: Uint8Array, type: string): Promi
     const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
     const pageCount = pdf.getPageCount();
     if (!pageCount) throw new Error('PDF-filen saknar sidor.');
-    return { pageCount, text: null, tooLarge: skipTenderPdf(pageCount) };
+    return { pageCount, text: null, tooLarge: false };
   }
   const files = archives(bytes); let extracted = '', pageCount: number | null = null;
   if (type === 'docx') {
@@ -86,6 +84,5 @@ export async function readTenderDocument(bytes: Uint8Array, type: string): Promi
   } else throw new Error('Filtypen stöds inte.');
   extracted = extracted.trim();
   if (!extracted) throw new Error('Dokumentet saknar läsbar text.');
-  if (extracted.length > TEXT_LIMIT) throw new Error('Dokumentets text är för stor för analys.');
   return { pageCount, text: extracted, tooLarge: false };
 }

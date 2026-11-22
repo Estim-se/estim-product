@@ -1,0 +1,7 @@
+import { expect, it } from 'vitest';
+import { checkTenderFasit, tenderQuantityExpectations, type FasitSnapshot } from './helpers/tender-fasit';
+const empty:FasitSnapshot={insights:{key_data:[],risks:[],questions:[]},quantities:{rules:{operands:[],items:[],assumptions:[]},items:[],assumptions:[]},documents:[]};
+it.each([['Testlärkan',540],['Provbänken',57]] as const)('%s fasit requires exactly %i double wall sockets', (name,value)=>{const rule=tenderQuantityExpectations[name].find(r=>r.name==='Dubbla vägguttag');expect(rule?.value).toBe(value);expect(checkTenderFasit(name,empty)).toContain(`Dubbla vägguttag: 0, förväntat ${value}`);});
+it('Testlärkan requires 216 bathroom spotlights and 54 panels',()=>{const issues=checkTenderFasit('Testlärkan',empty);expect(issues).toContain('Spotlights IP44: 0, förväntat 216');expect(issues).toContain('Lägenhetscentral: 0, förväntat 54');});
+it('Provbänken requires 19 presence sensors and the DOCX deadline source',()=>{const issues=checkTenderFasit('Provbänken',empty);expect(issues).toContain('Närvarogivare: 0, förväntat 19');expect(issues).toContain('Anbudstid måste komma från förfrågningsbrevet DOCX');});
+it('Provbänken rejects demolition per apartment',()=>{const item={post:'Rivning per lägenhet',unit:'lgh' as const,quantity:'29',calculation:'29',rule:'Fel enhet',certainty:'Låg' as const,sources:[]};expect(checkTenderFasit('Provbänken',{...empty,quantities:{...empty.quantities,items:[item]}})).toContain('Rivning gäller byggnaden, inte lägenheter');});

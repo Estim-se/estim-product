@@ -120,7 +120,7 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
     rect(x+r,y,width-h,h,fill); page.drawCircle({x:x+r,y:H-y-r,size:r,color:fill}); page.drawCircle({x:x+width-r,y:H-y-r,size:r,color:fill});
     draw(value,x+(width-bold.widthOfTextAtSize(clean(value),7))/2,y+2,7,true,textColor);
   }
-  const source = (s: {document_id:string;page:number|null;af_code?:string|null} | null) => s ? [`${labels.get(s.document_id) ?? 'Dokument'}${s.page ? ` s. ${s.page}` : ''}`,s.af_code].filter(Boolean).join(' · ') : '';
+  const source = (s: {document_id:string;page:number|null;af_code?:string|null;flag?:string|undefined} | null) => s?.flag ? s.flag : s ? [`${labels.get(s.document_id) ?? 'Källa saknas – kontrollera'}${s.page ? ` s. ${s.page}` : ''}`,s.af_code].filter(Boolean).join(' · ') : '';
   const quantitySource = (sources: TenderExportInput['quantities']['items'][number]['sources']) => quantityReferences(input.quantities,sources).map(s=>`${labels.get(s.document_id) ?? 'Dokument'}${s.location === 'Textkälla' ? '' : ` · ${s.location}`}`).join('; ');
   const key = (field: string) => input.insights?.key_data.find(k=>k.field === field)?.value ?? 'Ej angivet i underlaget';
   function table(headers: string[], widths: number[], rows: string[][], boldFirst = false) {
@@ -210,6 +210,10 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
   const totals=[['Arbete',data.cost.labor],['Material',data.cost.material],['Baskostnad',data.cost.labor+data.cost.material],[`Etablering ${format(input.settings.establishment)} %`,data.cost.establishment],[`Oförutsett ${format(input.settings.contingency)} %`,data.cost.contingency],['Totalt exkl. moms',data.cost.total]] as const;
   totals.forEach(([label,value],i)=>{const x=M+CW-241,last=i===5;if(last)rect(x,top,241,27,ink);draw(label,x+7,top+6,last?10:8.2,last,last?paper:ink);draw(`${format(value)} kr`,W-M-7,top+6,last?10:8.2,last,last?paper:ink,true);top+=last?27:19;rule(top,x,241);});top+=9;
   paragraph('Säkerhet: Hög = angivet i text eller förteckning · Medel = räknat från ritning · Låg = antaget. Mängder räknas fram av programmet, inte gissade av AI:n.',7.5,muted);
+
+  newPage();heading('Kontroll av omfattning',true);
+  table(['Område','Status','Kontroll','Källa'],[113,75,205,100],data.coverage,true);
+  if(data.proposals.length){heading('Förslag på nya poster');table(['Post','Mängd','Enhet','Källa'],[252,55,40,146],data.proposals.map(r=>r.slice(0,4)),true);}
 
   newPage();heading('Nyckeldata ur förfrågningsunderlaget',true);
   table(['Uppgift','Värde','Källa'],[97,296,100],(input.insights?.key_data??[]).map(k=>[k.field,k.value,source(k.source)]),true);

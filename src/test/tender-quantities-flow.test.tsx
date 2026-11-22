@@ -18,6 +18,7 @@ vi.mock('@/lib/tender-job.functions', () => ({
   startTenderJob: async ({ data }: { data: { id: string; resume: boolean } }) => { fixture.starts.push(data); fixture.job = { status:'running', plan:['doc:file','key_data','risks:1','risks:2','risks:3','questions','quantities','calculation'], steps:{ 'doc:file':'done', key_data:'done', 'risks:1':'done' }, error:null, failed_step:null, updated_at:'' }; return { run:'run' }; },
   getTenderJob: async () => fixture.job,
   nudgeTenderJob: async () => ({ kicked:false }),
+  rereadTenderJob: vi.fn(),
   recalculateTenderJob: async ({data}:{data:{id:string}})=>{fixture.recalculations.push(data.id);fixture.job={status:'running',plan:['quantities','calculation'],steps:{quantities:'running',calculation:'pending'},error:null,updated_at:''};return {run:'run'};},
   rerunTenderRisks:async({data}:{data:{id:string}})=>{fixture.riskReruns.push(data.id);fixture.job={status:'running',plan:['risks:1','risks:2','risks:3','questions'],steps:{'risks:1':'running'},error:null,updated_at:''};return {run:'run'};},
 }));

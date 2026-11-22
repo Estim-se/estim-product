@@ -5,8 +5,8 @@ import { calculateTenderCost, type CalculationMatches } from '@/lib/tender-calcu
 import { TenderCostTable } from '@/components/estim/tender-calculation';
 import { createTenderWorkbook } from '@/lib/tender-export-xlsx';
 const quantities={rules:{operands:[],items:[],assumptions:[]},items:[{post:'Totalmätare',unit:'st' as const,quantity:'1',calculation:'1',rule:'Antalet behöver kontrolleras.',certainty:'Låg' as const,sources:[]}],assumptions:[]};
-const settings={hourly_rate:650,material_markup:15,list_discount:30,establishment:5,contingency:5,post_types:[],example_values:true};
-const matches:CalculationMatches={bindings:[{post:'Totalmätare',type_id:null,manual_hours:2,manual_list_price:1500}],demolition:null};
+const settings={hourly_rate:650,material_markup:15,list_discount:30,establishment:5,contingency:5,post_types:[{id:'00000000-0000-4000-8000-000000000001',name:'Totalmätare',hours:2,list_price:1500}],example_values:true};
+const matches:CalculationMatches={bindings:[{post:'Totalmätare',type_id:'00000000-0000-4000-8000-000000000001',manual_hours:2,manual_list_price:1500}],demolition:null};
 afterEach(cleanup);
 it('excludes the low quantity until Bekräfta and includes it without changing certainty',()=>{
  const before=calculateTenderCost(quantities,settings,matches);expect(before.total).toBe(0);expect(before.rows[0]?.awaiting_confirmation).toBe(true);

@@ -9,6 +9,7 @@ export function TenderInsightsSections({ result, documents }: { result: unknown;
   const data = parsed.data;
   function reference(source: TenderInsights['key_data'][number]['source']) {
     if (!source) return '—';
+    if (source.flag) return 'Källa saknas – kontrollera';
     const doc = documents.find(d => d.id === source.document_id);
     return `${doc?.file_name ?? 'Dokument saknas'} · ${source.page === null ? 'Sida ej verifierbar' : `s. ${source.page}`}${source.af_code ? ` · ${source.af_code}` : ''}`;
   }

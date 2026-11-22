@@ -1,13 +1,15 @@
 - Analyse tender files one at a time through authenticated server functions, with atomic per-run/document reservations and immutable file metadata; this prevents overlapping runs and keeps analysis tenant-scoped without touching conversation modules.
 - Tender PDFs are sent as documents after exact page counting; Office files are extracted locally and unknown print-page counts remain null rather than invented.
 - Tender Claude calls use the required streaming Lovable Messages gateway and a server-held gateway key, isolated from the existing reply transport because new Supabase Edge functions are blocked by the platform.
-- Run whole-tender extraction after classification as separate key-data, risk and question requests (each AF-first, one retry on incomplete or schema-invalid output, partial results kept per step) in company-private run-bound JSON; validate source IDs, physical PDF pages and Office citations so summaries cannot become invented contract terms.
-- Validate a complete internal risk-area review before saving existing insights JSON; this prevents unchecked areas without changing persisted results or the tender UI.
+- Run AF-first key-data, risk and question extraction separately with two bounded retries for incomplete/schema-invalid output and transient failures; save each completed step so recovery never repeats successful work.
+- Use call-local risk checklist indexes and recover broken internal references without dropping source-backed risks; this prevents merged or sorted risks from invalidating analysis.
 - Extract quantity operands and sum-of-products rules in a separate third tender step; fixed-point arithmetic calculates totals, assumptions remain separate, and current-run company-private storage rejects stale results.
-- Keep tender cost settings in separate company-scoped storage and persist AI catalog bindings, manual inputs and source-backed demolition; deterministic decimal arithmetic recalculates costs without AI, and unpriced assumption items remain visible until manually completed.
+- Keep company cost settings and AI bindings separate; only approved catalog types enter deterministic totals, while unmatched posts remain visible as proposals until approved.
 - Generate tender exports only in browser actions from existing company-authorized reads; Excel formulas mirror the cost helper and prepared blobs retain click activation for downloads without new storage or AI calls.
 - Run tender analysis as a server-side job (`tender_jobs`): one step per hop under a DB lease with a per-job token; published hops are posted by pg_net to `/api/public/tender-job`, dev runs hops in-process, and resume skips done steps.
 - Tender AI validation flags unverifiable figures (Låg, "Källa saknas – kontrollera", Antaganden) instead of failing the step.
 
 - Match every confirmed and assumed tender post semantically against the company catalog; only unmatched or unresolved-quantity rows require manual inputs. Room recipes are editable company JSON, document counts override recipes, and row-wise area rounding is calculated in code.
 - Recalculate quantities and costs through a company-authorized private job scheduler using the existing analysis run; its two-step plan leaves classifications and insights untouched.
+- Cache physical PDF-page chunks and Office cell text by company/file hash/reading version, and cache step results by source/model/context/settings fingerprints; identical reruns reuse outputs while explicit rereading invalidates caches.
+- Keep the electrical coverage audit in a browser-safe pure helper shared by the tender page, PDF and Excel; proposals and unresolved counts cannot imply priced coverage.

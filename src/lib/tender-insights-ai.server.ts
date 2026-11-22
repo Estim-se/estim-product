@@ -1,6 +1,6 @@
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, tenderInsightsWireSchema, validateTenderInsights, type InsightDocument, type TenderInsights } from './tender-insights';
 import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, validateTenderRiskReview, type TenderRiskArea } from './tender-risk-checklist';
-import { streamTenderTool, tenderDocumentBlock } from './tender-tool-call.server';
+import { streamTenderTool, tenderDocumentBlock, TenderGatewayError, TenderIncompleteOutput } from './tender-tool-call.server';
 import { z } from 'zod';
 import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, mergeTenderRisks, needsRiskQuestion } from './tender-risk-merging';
 
@@ -24,7 +24,7 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   if (!documents.length) throw new Error('Inga analyserbara dokument finns.');
   const s = STEP[step];
   const content: unknown[] = [];
-  for (const d of documents) {
+  for (const d of step === 'questions' ? [] : documents) {
     content.push({ type: 'text', text: `Dokument-id: ${d.id}. Filnamn: ${d.file_name}. Typ: ${d.doc_type}. ${d.doc_type === 'AF' ? 'HUVUDKÄLLA: administrativa föreskrifter.' : 'Kompletterande kontext.'} Sidantal: ${d.page_count ?? 'okänt'}.` });
     content.push(d.text === null ? tenderDocumentBlock(d.bytes) : { type: 'text', text: `<dokument>\n${d.text}\n</dokument>` });
   }
@@ -35,13 +35,14 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   if (step !== 'key_data' && keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
   const validate = (raw: unknown) => {
     const obj = (raw ?? {}) as Record<string, unknown>;
-    if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
+    if (!Array.isArray(obj[step])) throw new TenderIncompleteOutput('saknar användbart stegresultat');
+    if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents, true).key_data;
     if (step === 'risks') {
       const checklist=obj['risk_checklist'];
       const rows=Array.isArray(checklist)?checklist:areas.map((_,i)=>(checklist as Record<string,unknown>|null)?.[String(i)]);
-      return validateTenderRiskReview({ ...obj, risk_checklist:rows,key_data: keyData, questions: [] }, documents, areas).risks;
+      return validateTenderRiskReview({ ...obj, risk_checklist:rows,key_data: keyData, questions: [] }, documents, areas, true).risks;
     }
-    const questions=validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
+    const questions=validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents, true).questions;
     return ensureTenderDateQuestion(ensureRiskQuestions(retainTenderQuestions(questions,previous.questions??[]),previous.risks??[]),keyData);
   };
   const checklistItem=tenderRiskReviewWireSchema.properties.risk_checklist.items;
@@ -54,5 +55,5 @@ export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:st
  const schema={type:'object',additionalProperties:false,properties:{groups:{type:'array',items:{type:'array',items:{type:'integer'}}}},required:['groups']};
  const groups=await streamTenderTool({key,model,system:'Gruppera risker som beskriver SAMMA konkreta problem i anbudsunderlaget, även med olika rubriker/källor. Returnera indexgrupper. Olika riskområden ska inte slås ihop bara för att de har samma källa. Varje index måste finnas exakt en gång. Inga nya risktexter, fakta eller källor. Saknade befintliga elhandlingar, samma felaktiga VS-ritning och samma föreskrivna flyttfirma är exempel på möjliga dubbletter.',content:[{type:'text',text:JSON.stringify(risks.map((r,index)=>({...r,index})))}],tool:'grupper',description:'Grupper av samma risk utan ändring av underlaget.',schema,label:'Sammanslagning av risker'},'Ofullständig risksammanslagning',raw=>{
   const out=z.object({groups:z.array(z.array(z.number().int().min(0).max(risks.length-1)).min(1)).max(60)}).strict().parse(raw);const indices=out.groups.flat();if(indices.length!==risks.length||new Set(indices).size!==risks.length)throw Error('Alla risker måste bevaras.');return out.groups;
- });return mergeTenderRisks(risks,groups);
+ }).catch(e => { if (e instanceof TenderGatewayError && [401,402,403,404].includes(e.status)) throw e; return risks.map((_, index) => [index]); });return mergeTenderRisks(risks,groups);
 }

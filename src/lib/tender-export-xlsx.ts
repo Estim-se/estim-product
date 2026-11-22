@@ -68,6 +68,8 @@ export async function createTenderWorkbook(input: TenderExportInput) {
   const risks = sheet('Risker', ['Allvar', 'Titel', 'Beskrivning', 'Källa', 'Avvikelse AB 04/ABT 06', 'Konsekvens', 'Förslag'], [12,35,70,55,45,20,25]); data.risks.forEach(r => risks.addRow(r));
   const questions = sheet('Frågor till beställaren', ['Nr', 'Fråga', 'Källa'], [10,100,60]); data.questions.forEach(r => questions.addRow(r));
   const assumptions = sheet('Antaganden', ['Antagande', 'Källa'], [100,65]); data.assumptions.forEach(r => assumptions.addRow(r));
+  const coverage = sheet('Kontroll av omfattning', ['Område','Status','Kontroll','Källa'], [38,20,80,65]); data.coverage.forEach(r => coverage.addRow(r));
+  const proposals = sheet('Förslag på nya poster', ['Post','Mängd','Enhet','Källa','Åtgärd'], [48,14,10,65,70]); data.proposals.forEach(r => proposals.addRow(r));
   book.eachSheet(ws => ws.eachRow(row => {
     let lines = 1;
     row.eachCell(c => {

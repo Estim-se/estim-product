@@ -7,11 +7,11 @@ import { classifyTenderDocument } from '@/lib/tender-ai.server';
 
 describe('Tender document analysis rules', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
-  it('allows exactly 100 PDF pages and skips 101', async () => {
-    expect(skipTenderPdf(100)).toBe(false); expect(skipTenderPdf(101)).toBe(true);
+  it('retains PDFs over 100 pages for chunked reading', async () => {
+    expect(skipTenderPdf(100)).toBe(false); expect(skipTenderPdf(101)).toBe(false);
     const pdf = await PDFDocument.create(); for (let i=0;i<101;i++) pdf.addPage();
     const read = await readTenderDocument(await pdf.save(), 'pdf');
-    expect(read).toEqual({ pageCount: 101, text: null, tooLarge: true });
+    expect(read).toEqual({ pageCount: 101, text: null, tooLarge: false });
   });
   it('passes scanned PDFs through as documents without text extraction', async () => {
     const pdf = await PDFDocument.create(); pdf.addPage();

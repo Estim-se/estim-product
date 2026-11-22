@@ -1,14 +1,17 @@
-// Shared streamed Claude tool call for tender analysis steps with one bounded retry on incomplete JSON.
+// Shared streamed Claude extraction with status-aware bounded recovery.
 export const TENDER_MAX_OUTPUT_TOKENS = 64000;
 
 export class TenderIncompleteOutput extends Error {}
+export class TenderGatewayError extends Error {
+  constructor(message: string, readonly status: number, readonly waitMs = 0) { super(message); }
+}
 
 export function tenderDocumentBlock(bytes: Uint8Array) {
   let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: btoa(binary) } };
 }
 
-type ToolCall = { key: string; model: string; system: string; content: unknown[]; tool: string; description: string; schema: unknown; label: string; httpError?: (status: number, safe?: string) => string };
+type ToolCall = { key: string; model: string; system: string; content: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
 
 async function attempt(c: ToolCall): Promise<unknown> {
   const content = [...c.content];
@@ -17,12 +20,15 @@ async function attempt(c: ToolCall): Promise<unknown> {
   if (last >= 0) content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
   const response = await fetch('https://ai.gateway.lovable.dev/v1/messages', {
     method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json', 'X-Lovable-AIG-SDK': 'fetch' },
-    body: JSON.stringify({ model: c.model, max_tokens: TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: c.system, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'auto' } }),
+    signal: AbortSignal.timeout(150_000),
+    body: JSON.stringify({ model: c.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: c.model.endsWith('claude-sonnet-5') ? { type: 'tool', name: c.tool } : { type: 'auto' } }),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { message?: string; error?: { message?: string } } | null;
     const safe = failure?.message ?? failure?.error?.message;
-    throw new Error(c.httpError ? c.httpError(response.status, safe) : safe ? `AI: ${safe.slice(0, 450)}` : `${c.label} misslyckades (fel ${response.status}).`);
+    const wait = response.headers.get('retry-after');
+    const waitMs = wait ? (/^\d+$/.test(wait) ? Number(wait) * 1000 : Math.max(0, Date.parse(wait) - Date.now())) : 0;
+    throw new TenderGatewayError(c.httpError ? c.httpError(response.status, safe) : safe ? `AI: ${safe.slice(0, 450)}` : response.status === 403 ? 'AI-leverantören nekade åtkomst. Kontrollera AI-behörigheten.' : `${c.label} misslyckades (fel ${response.status}).`, response.status, waitMs);
   }
   if (!response.body) throw new Error('AI:n returnerade inget svar.');
   const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -56,10 +62,10 @@ async function attempt(c: ToolCall): Promise<unknown> {
 
 const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError';
 
-// Exactly one retry, only for incomplete/invalid JSON or output that breaks the schema; HTTP errors, refusals and source checks are terminal.
+// Three attempts with backoff; access denials, refusals and malformed requests are terminal.
 export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     try { return validate(await attempt(c)); }
     catch (e) {
       if (e instanceof TenderIncompleteOutput) reason = e.message;
@@ -68,7 +74,16 @@ export async function streamTenderTool<T>(c: ToolCall, incomplete: string, valid
         console.error('[tender-validation]',{step:c.tool,issues:issues.slice(0,12).map(x=>({path:x.path.join('.'),code:x.code}))});
         reason = 'svaret följde inte det strukturerade formatet';
       }
+      else if (e instanceof TenderGatewayError) {
+        if (e.status !== 429 && e.status < 500) throw e;
+        if (i === 2) throw e;
+        if (e.waitMs > 20_000) throw e;
+        reason = e.message;
+        await new Promise(resolve => setTimeout(resolve, Math.max(e.waitMs, 1000 * 2 ** i)));
+        continue;
+      } else if (e instanceof TypeError || e instanceof Error && ['AbortError', 'TimeoutError'].includes(e.name)) reason = 'anslutningen avbröts';
       else throw e;
+      if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** i));
     }
   }
   throw new Error(`${incomplete} (${reason}).`);

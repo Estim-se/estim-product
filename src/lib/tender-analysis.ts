@@ -6,7 +6,7 @@ export const tenderAnalysisSchema = z.object({
   doc_type: z.enum(TENDER_DOC_TYPES), summary: z.string().trim().min(1).max(2000),
   page_count: z.number().int().positive().nullable(),
 }).strict();
-export function skipTenderPdf(pages: number) { return pages > TENDER_PDF_PAGE_LIMIT; }
+export function skipTenderPdf(_pages: number) { return false; }
 export function tenderStatus(status: string) {
   return ({ ready: 'Uppladdat', analyzing: 'Analyserar', analysed: 'Analyserat', error: 'Fel', uploading: 'Ofullständigt' } as Record<string, string>)[status] ?? 'Ofullständigt';
 }
@@ -26,7 +26,7 @@ export function tenderStepProgress(states: Partial<Record<string, TenderStepStat
     return s === 'done' ? [`${name} klar`] : s === 'running' ? [`${name} pågår…`] : s === 'error' ? [`${name} misslyckades`] : [];
   });
   const text = parts.join(', ');
-  return text ? text[0]!.toUpperCase() + text.slice(1) : '';
+  return text ? (text[0] ?? '').toUpperCase() + text.slice(1) : '';
 }
 // Returns a Swedish reason when export must be blocked, or null when export is allowed.
 export function tenderExportBlock(o: { analyzing: boolean; tenderStatus: string | undefined; insightsStatus: string | undefined; quantitiesStatus: string | undefined }) {
@@ -42,6 +42,9 @@ export function nextTenderJobStep(plan: readonly string[], steps: Partial<Record
 }
 const RISK_PART = /^risks:(\d+)$/;
 export function tenderJobProgress(plan: readonly string[], steps: Partial<Record<string, TenderStepState>>) {
+  const reading = plan.filter(k => k.startsWith('read:') || k.startsWith('classify:'));
+  const activeRead = reading.find(k => steps[k] !== 'done');
+  if (activeRead) return activeRead.startsWith('read:') ? `Läser underlaget · dokumentdel ${reading.filter(k=>k.startsWith('read:')&&steps[k]==='done').length+1} av ${reading.filter(k=>k.startsWith('read:')).length}…` : 'Klassificerar läst dokument…';
   const docs = plan.filter(k => k.startsWith('doc:'));
   const docsDone = docs.filter(k => steps[k] === 'done').length;
   if (docs.some(k => steps[k] === 'error')) return 'Dokumentanalysen misslyckades';
@@ -65,6 +68,8 @@ export function tenderJobProgress(plan: readonly string[], steps: Partial<Record
 export function tenderJobStepLabel(step: string | null | undefined) {
   if (!step) return '';
   if (step.startsWith('doc:')) return 'Dokumentanalys';
+  if (step.startsWith('read:')) return 'Läsning av dokumentdel';
+  if (step.startsWith('classify:')) return 'Dokumentklassning';
   const part = RISK_PART.exec(step);
   if (part) return `Risker (del ${part[1]})`;
   return TENDER_PIPELINE_STEPS.find(([k]) => k === step)?.[1] ?? step;

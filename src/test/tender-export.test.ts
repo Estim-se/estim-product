@@ -6,13 +6,13 @@ import { PDFDocument } from 'pdf-lib';
 
 const input: TenderExportInput = {
   name: 'Testlärkan', documents: [{id:'document',file_name:'AF.pdf'}], insights:null,
-  settings:{hourly_rate:650,material_markup:15,list_discount:30,establishment:5,contingency:5,post_types:[],example_values:true},
-  matches:{bindings:[{post:'Dubbelt vägguttag',type_id:null,manual_hours:0.8,manual_list_price:150}],demolition:null},
+  settings:{hourly_rate:650,material_markup:15,list_discount:30,establishment:5,contingency:5,post_types:[{id:'00000000-0000-4000-8000-000000000001',name:'Dubbelt vägguttag',hours:0.8,list_price:150}],example_values:true},
+  matches:{bindings:[{post:'Dubbelt vägguttag',type_id:'00000000-0000-4000-8000-000000000001',manual_hours:0.8,manual_list_price:150}],demolition:null},
   quantities:{rules:{operands:[],items:[],assumptions:[]},items:[{post:'Dubbelt vägguttag',quantity:'540',unit:'st',certainty:'Hög',calculation:'18 × 8 + 18 × 10 + 18 × 12',rule:'Uttag',sources:[]}],assumptions:[]},
 };
 it('exports the company inputs and live formula references, not fixed calculated amounts', async () => {
   const b = await createTenderWorkbook(input), s=b.getWorksheet('Inställningar'), k=b.getWorksheet('Kalkyl');
-  expect(b.worksheets.map(w=>w.name)).toEqual(['Inställningar','Kalkyl','Sammanfattning','Risker','Frågor till beställaren','Antaganden']);
+  expect(b.worksheets.map(w=>w.name)).toEqual(['Inställningar','Kalkyl','Sammanfattning','Risker','Frågor till beställaren','Antaganden','Kontroll av omfattning','Förslag på nya poster']);
   expect(s?.getCell('B2').value).toBe(650);expect(s?.getCell('B3').value).toBe(0.15);expect(s?.getCell('B4').value).toBe(0.3);expect(s?.getCell('B5').value).toBe(0.05);expect(s?.getCell('B6').value).toBe(0.05);
   expect(s?.getCell('B2').fill).toMatchObject({fgColor:{argb:'FFFF00'}});
   expect(k?.getCell('E2').value).toBe(0.8);expect(k?.getCell('F2').value).toBe(150);
@@ -27,9 +27,9 @@ it('exports the company inputs and live formula references, not fixed calculated
 it('retains unpriced posts with quantity and source and blank yellow time and price inputs', async () => {
   const source={document_id:'00000000-0000-4000-8000-000000000001',page:1,evidence:'Stigarledning'};
   const item={post:'Stigarledningar',quantity:'3',unit:'st' as const,certainty:'Låg' as const,calculation:'3 × 1',rule:'Längd saknas',sources:[source]};
-  const b=await createTenderWorkbook({...input,documents:[{id:source.document_id,file_name:'Rambeskrivning.pdf'}],quantities:{...input.quantities,assumptions:[{description:'Längd saknas',sources:[source],item}]}});
+  const b=await createTenderWorkbook({...input,documents:[{id:source.document_id,file_name:'Rambeskrivning.pdf'}],settings:{...input.settings,post_types:[...input.settings.post_types,{id:'00000000-0000-4000-8000-000000000002',name:'Stigarledningar',hours:2,list_price:100}]},matches:{...input.matches,bindings:[...input.matches.bindings,{post:'Stigarledningar',type_id:'00000000-0000-4000-8000-000000000002',manual_hours:null,manual_list_price:null}]},quantities:{...input.quantities,assumptions:[{description:'Längd saknas',sources:[source],item}]}});
   const k=b.getWorksheet('Kalkyl');expect(k?.getCell('A3').value).toBe('Stigarledningar');expect(k?.getCell('B3').value).toBe(3);expect(k?.getCell('G3').value).toBe('Rambeskrivning.pdf · s. 1');
-  expect(k?.getCell('E3').value).toBeNull();expect(k?.getCell('F3').value).toBeNull();expect(k?.getCell('E3').fill).toMatchObject({fgColor:{argb:'FFFF00'}});
+  expect(k?.getCell('E3').value).toBe(2);expect(k?.getCell('F3').value).toBe(100);expect(k?.getCell('E3').fill).toMatchObject({fgColor:{argb:'FFFF00'}});
   expect(k?.getCell('L3').value).toMatchObject({result:'Låg – exkluderad, bekräfta mängd'});expect(k?.getCell('K3').formula).toBe('IF(H3="","",I3+J3)');
 });
 it('sorts high risks before medium/low and deduplicates assumptions without changing source data', () => {
