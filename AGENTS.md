@@ -73,3 +73,5 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Keep tender analysis isolated; see src/lib/AGENTS.md for its server and parsing boundaries.
 - Keep Anbud PDF presentation separate from Excel and cost logic; use existing company identity and app palette, repeat page furniture, and paginate measured text so export styling cannot alter calculated data.
 - Bundle Anbud PDF, unchanged formula workbook and source-backed questions in a browser ZIP prepared before download; company logos use private company-scoped storage and authenticated branding reads, never cross-company or demo identity.
+
+- Keep tender room recipes and per-apartment quantity arithmetic in browser-safe pure helpers, and rerun quantities/calculation through the existing private job pipeline to preserve completed contract-analysis results.

@@ -14,6 +14,8 @@ function meaning(name:string) {
   if (/spegelskap/.test(n)) return 'spegelskap';
   if (/dimmer/.test(n)) return 'dimmer';
   if (/lamputtag|takuttag|belysningsuttag/.test(n)) return 'lamputtag';
+  if (/datauttag|natverk|rj45/.test(n)) return 'datauttag';
+  if (/cee/.test(n)) return 'cee';
   if (/uttag/.test(n)) return /utomhus|fasad/.test(n)?'utomhusuttag':/ip44/.test(n)?'uttag-ip44':/16a/.test(n)?'uttag-16a':'vagguttag';
   if (/spot/.test(n)) return 'spot';
   if (/armatur/.test(n)) return /badrum/.test(n)?'armatur-badrum':/kok/.test(n)?'armatur-kok':/trapphus/.test(n)?'armatur-trapphus':/kallare/.test(n)?'armatur-kallare':null;

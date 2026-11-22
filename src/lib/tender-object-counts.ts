@@ -1,5 +1,6 @@
+import { roomsFromArea, exampleRoomRecipes, type RoomRecipes } from './tender-room-recipes';
 // Resolve model-selected spreadsheet ranges against the original extracted cells.
-export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika'; equals: string | null };
+export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: 'Vardagsrum'|'Sovrum'|'Hall'|'Kök'|null|undefined; room_count_range?: string | null | undefined };
 function decode(value: string) { return value.replace(/&#(x[0-9a-f]+|\d+);/gi, (_, n: string) => String.fromCodePoint(n.startsWith('x') ? parseInt(n.slice(1),16) : Number(n))).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"); }
 export function objectSelectionEvidence(text: string, selection: ObjectSelection): string {
   const range = selection.range.match(/^([A-Z]+)(\d+):[A-Z]+(\d+)$/);
@@ -15,7 +16,7 @@ export function objectSelectionEvidence(text: string, selection: ObjectSelection
   }
   throw new Error('Objektlistans urval saknar källceller.');
 }
-export function resolveObjectCount(text: string, selection: ObjectSelection): string {
+export function resolveObjectCount(text: string, selection: ObjectSelection, recipes: RoomRecipes = exampleRoomRecipes): string {
   const match = selection.range.match(/^([A-Z]{1,3})([1-9]\d*):([A-Z]{1,3})([1-9]\d*)$/);
   if (!match || match[1] !== match[3]) throw new Error('Objektlistan har ett ogiltigt cellområde.');
   const start = Number(match[2]), end = Number(match[4]);
@@ -33,7 +34,22 @@ export function resolveObjectCount(text: string, selection: ObjectSelection): st
     if (value === undefined) throw new Error('Objektlistans cellområde innehåller en okänd cell.');
     if (!value || selection.equals !== null && value !== selection.equals.trim()) continue;
     matched++;
-    if (selection.operation === 'Unika') { unique.add(value); result = BigInt(unique.size) * 1_000_000n; }
+    if (selection.operation === 'Rum per rad') {
+      const roomMatch=selection.room_count_range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      if(selection.room_count_range && (!roomMatch || roomMatch[1]!==roomMatch[3] || Number(roomMatch[2])!==start || Number(roomMatch[4])!==end)) throw Error('Rumskolumnen matchar inte lägenhetsraderna.');
+      const stated=roomMatch ? cells.get(`${roomMatch[1]}${row}`)?.match(/^(\d+)(?:[ ,.]|$)/)?.[1] : null;
+      const area=Number(value.replace(',','.'));
+      const rok=stated && Number(stated)>0 ? Number(stated) : roomsFromArea(area,recipes);
+      if(!selection.room) throw Error('Rumstyp saknas.');
+      result += BigInt(selection.room==='Sovrum'?Math.max(0,rok-2):1)*1_000_000n;
+    }
+    else if (selection.operation === 'Avrunda upp per rad') {
+      const area=Number(value.replace(',','.')), divisor=selection.divisor;
+      if(!Number.isFinite(area)||area<=0||!divisor||!Number.isFinite(divisor)||divisor<=0) throw Error('Ogiltig radvis mängdregel.');
+      const units=BigInt(Math.round(area*1_000_000)), d=BigInt(Math.round(divisor*1_000_000));
+      result += ((units+d-1n)/d)*1_000_000n;
+    }
+    else if (selection.operation === 'Unika') { unique.add(value); result = BigInt(unique.size) * 1_000_000n; }
     else if (selection.operation === 'Antal') result += 1_000_000n;
     else {
       const number = value.replace(',', '.');

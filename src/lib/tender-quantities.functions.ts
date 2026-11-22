@@ -28,7 +28,8 @@ export const analyzeTenderQuantities = createServerFn({ method: 'POST' }).middle
     }
     const key = process.env['LOVABLE_API_KEY']; if (!key) throw new Error('AI-anslutningen saknar nyckel.');
     const configured = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
-    result = await extractTenderQuantities(inputs, key, configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`);
+    const settings=await db.from('tender_calculation_settings').select('room_recipes').maybeSingle();if(settings.error)throw Error('Typrecepten kunde inte hämtas.');
+    result = await extractTenderQuantities(inputs, key, configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`,settings.data?.room_recipes??null);
   } catch (e) { error = e instanceof Error ? e.message.slice(0, 500) : 'Mängdanalysen misslyckades.'; }
   const saved = await db.rpc('estim_finish_tender_quantities', { tid: data.id, rid: data.run, p_result: result, p_error: error ?? '' });
   if (saved.error) throw new Error('Mängderna kunde inte sparas. Underlaget kan ha ändrats.');

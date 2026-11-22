@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { assumptionItems } from './tender-quantity-display';
+import { roomRecipeSchema } from './tender-room-recipes';
 import { tenderQuantitiesSchema, type TenderQuantities } from './tender-quantities';
 
 const amount = z.number().finite().nonnegative().max(100000000).multipleOf(0.000001);
 export const postTypeSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240), hours: amount.max(10000), list_price: amount }).strict();
-export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(100000), material_markup: amount.max(1000), list_discount: amount.max(100), establishment: amount.max(99.999999), contingency: amount.max(99.999999), post_types: z.array(postTypeSchema).max(200), example_values: z.boolean() }).strict().superRefine((s, ctx) => {
+export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(100000), material_markup: amount.max(1000), list_discount: amount.max(100), establishment: amount.max(99.999999), contingency: amount.max(99.999999), post_types: z.array(postTypeSchema).max(200), example_values: z.boolean(), room_recipes: roomRecipeSchema.nullable().optional() }).strict().superRefine((s, ctx) => {
   if (s.establishment + s.contingency >= 100) ctx.addIssue({ code: 'custom', message: 'Etablering och oförutsett måste tillsammans vara mindre än 100 %.' });
   if (new Set(s.post_types.map(t => t.id)).size !== s.post_types.length) ctx.addIssue({ code: 'custom', message: 'Dubbla posttyper.' });
 });
@@ -30,7 +32,7 @@ export function validateBindings(raw: unknown, quantities: TenderQuantities, set
     matches.demolition.quantity = o.value;
     if (!posts.includes(matches.demolition.post)) posts.push(matches.demolition.post);
   }
-  const assumedPosts = quantities.assumptions.flatMap(a => a.item ? [a.item.post] : []);
+  const assumedPosts = quantities.assumptions.flatMap(a => assumptionItems(a).map(i=>i.post));
   if (new Set(matches.bindings.map(b => b.post)).size !== matches.bindings.length || matches.bindings.some(b => !posts.includes(b.post) && !assumedPosts.includes(b.post)) || posts.some(post => !matches.bindings.some(b => b.post === post))) throw Error('Matchningen saknar eller innehåller okända mängdposter.');
   for (const b of matches.bindings) if (b.type_id && !settings.post_types.some(t => t.id === b.type_id)) throw Error('Okänd posttyp.');
   return matches;
@@ -42,7 +44,7 @@ const rounded = (n: bigint, d: bigint) => (n + d / 2n) / d;
 export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown, rawMatches: unknown) {
   const q = tenderQuantitiesSchema.parse(rawQuantities), s = validateSettingsInput(rawSettings), m = validateMatchesInput(rawMatches);
   const items = [...q.items];
-  for (const a of q.assumptions) if (a.item && !items.some(i => i.post === a.item?.post)) items.push(a.item);
+  for (const item of q.assumptions.flatMap(assumptionItems)) if (!items.some(i => i.post === item.post)) items.push(item);
   if (m.demolition && !items.some(i => i.post === m.demolition?.post)) {
     const operand = q.rules.operands.find(o => o.id === m.demolition?.apartment_operand_id);
     if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');

@@ -1,6 +1,7 @@
 # Prototype rebuild
 
-- [ ] Fix Baggen semantic matching and assumption coverage; add example post types and editable room recipes, per-apartment arithmetic and quantities/calculation-only background rerun. Verify Baggen and report full calculation without publishing.
+- [x] Fixed Baggen semantic matching, preserved merged assumption rows, added 14 company example types and editable room recipes, per-apartment rounding and targeted two-step background rerun. Baggen saved as Analyserat: 28 rows, 24 priced, 1887.4 h, subtotal 1826988.02 kr excl. VAT. Original classifications/insights unchanged. 363 tests and automatic compilation passed; desktop/phone saved-result controls verified. Full calculation report delivered; no publication.
+- [ ] Verify authenticated Baggen-page targeted rerun and real recipe saving; blocked by unavailable permitted external-Supabase preview session.
 
 - [x] Bundled reference-layout Anbud PDF, unchanged formula kalkyl.xlsx and source-backed questions TXT in one ZIP. Added optional company-private logo upload/replace/remove in Företag, authenticated current branding and own-company RLS. 323 tests pass, build OK; desktop/mobile fixture ZIP downloads have no click errors, six PDF pages inspected with uploaded-logo and initials variants, workbook retains 91 formulas and TXT five questions. Logo save/read-back and denied-save cleanup verified with mocks; real signed-in flow unavailable on external Supabase. No publication.
 

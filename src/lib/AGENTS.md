@@ -8,3 +8,6 @@
 - Generate tender exports only in browser actions from existing company-authorized reads; Excel formulas mirror the cost helper and prepared blobs retain click activation for downloads without new storage or AI calls.
 - Run tender analysis as a server-side job (`tender_jobs`): one step per hop under a DB lease with a per-job token; published hops are posted by pg_net to `/api/public/tender-job`, dev runs hops in-process, and resume skips done steps.
 - Tender AI validation flags unverifiable figures (Låg, "Källa saknas – kontrollera", Antaganden) instead of failing the step.
+
+- Match every confirmed and assumed tender post semantically against the company catalog; only unmatched or unresolved-quantity rows require manual inputs. Room recipes are editable company JSON, document counts override recipes, and row-wise area rounding is calculated in code.
+- Recalculate quantities and costs through a company-authorized private job scheduler using the existing analysis run; its two-step plan leaves classifications and insights untouched.

@@ -1569,7 +1569,7 @@ export type Database = {
       estim_prepare_send: { Args: { tid: string }; Returns: string }
       estim_quote: { Args: { payload: Json; tid: string }; Returns: number }
       estim_recalculate_tender_job: {
-        Args: { p_base_url: string; tid: string }
+        Args: { p_base_url: string; p_company_id: string; tid: string }
         Returns: string
       }
       estim_receive: {

@@ -43,3 +43,15 @@ export const nudgeTenderJob = createServerFn({ method: 'POST' }).middleware([req
   const { kickTenderJob } = await import('./tender-job.server');
   return { kicked: await kickTenderJob(data.id) };
 });
+
+// Authorize through the user's RLS before loading the private scheduler.
+export const recalculateTenderJob = createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator((v:unknown)=>idSchema.parse(v)).handler(async({data,context})=>{
+  const tender=await context.supabase.from('tenders').select('id,company_id').eq('id',data.id).single();
+  if(tender.error||!tender.data) throw Error('Anbudet kunde inte hittas.');
+  const {supabaseAdmin}=await import('@/integrations/supabase/client.server');
+  const rpc=supabaseAdmin.rpc.bind(supabaseAdmin) as unknown as Rpc;
+  const r=await rpc('estim_recalculate_tender_job',{tid:tender.data.id,p_company_id:tender.data.company_id,p_base_url:jobBaseUrl()});
+  if(r.error||!r.data) throw Error(r.error?.message?.includes('analyseras redan')?'Anbudet analyseras redan.':'Mängderna kunde inte räknas om. Analysera underlaget först.');
+  if(import.meta.env.DEV){const {kickTenderJob}=await import('./tender-job.server');await kickTenderJob(data.id);}
+  return {run:r.data};
+});

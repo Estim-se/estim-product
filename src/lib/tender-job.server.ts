@@ -127,7 +127,9 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
   if (step === 'quantities') {
     const { extractTenderQuantities } = await import('./tender-quantities-ai.server');
     const inputs = await loadInputs(db, job, false);
-    const result = await extractTenderQuantities(inputs, key, model);
+    const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
+    if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
+    const result = await extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null);
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};
@@ -138,7 +140,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const { matchTenderCost } = await import('./tender-calculation-ai.server');
     const q = await db.from('tender_quantities').select('result').eq('tender_id', job.tender_id).eq('analysis_run', job.analysis_run).eq('status', 'analysed').single();
     if (q.error || !q.data) throw new Error('Mängderna saknas.');
-    const s = await db.from('tender_calculation_settings').select('hourly_rate,material_markup,list_discount,establishment,contingency,post_types,example_values').eq('company_id', job.company_id).maybeSingle();
+    const s = await db.from('tender_calculation_settings').select('hourly_rate,material_markup,list_discount,establishment,contingency,post_types,example_values,room_recipes').eq('company_id', job.company_id).maybeSingle();
     if (s.error) throw new Error('Kalkylinställningarna kunde inte hämtas.');
     const inputs = await loadInputs(db, job, false);
     const result = await matchTenderCost(tenderQuantitiesSchema.parse(q.data.result), s.data ? validateSettingsInput(s.data) : emptyCalculationSettings, inputs, key, model);
