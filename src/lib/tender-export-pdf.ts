@@ -1,3 +1,4 @@
+import { insightSources } from './tender-risk-merging';
 import { PDFDocument, PDFOperator, PDFOperatorNames, StandardFonts, drawSvgPath, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 import { tenderExportData, type TenderExportInput } from './tender-export';
 import { quantityReferences, uniqueQuantityAssumptions } from './tender-quantity-display';
@@ -198,7 +199,7 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
     postLines.forEach((l,j)=>draw(l,M+5,top+6+j*11));
     draw(`${format(Number(r.quantity),Number(r.quantity)%1?2:0)} ${r.unit}`,M+222,top+6,8.2,false,ink,true);
     pill(r.certainty,M+232,top+4,34,r.certainty);
-    if(r.total===null)draw('Saknar tid – ange manuellt',M+280,top+6,8,true,warningInk);
+    if(r.total===null)draw(r.awaiting_confirmation?'Låg – exkluderad, bekräfta mängd':'Saknar tid – ange manuellt',M+280,top+6,7,true,warningInk);
     else {
       const values=[format(r.hours??0,1),format(r.labor??0),format(r.material??0),format(r.total)];
       let x=M+275;values.forEach((v,j)=>{x+=colWidths[j+3]??0;draw(v,x-5,top+6,8.2,j===3,ink,true);});
@@ -217,7 +218,7 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
   paragraph('Sorterade efter allvar. Förslag: Prissätt = lägg in i priset · Reservera = skriv förbehåll i anbudet · Fråga = ställ fråga till beställaren.',7.5,muted);
   if(!risks.length)paragraph('Inga registrerade risker.',8.2,muted);
   for(const r of risks) {
-    const titleLines=lines(r.title,CW-115,9,bold), bodyLines=lines(r.description,CW-95,8.2), citation=`Källa: ${source(r.source)} · Konsekvens: ${r.consequence}${r.deviation?` · Avsteg: ${r.deviation}`:''}`, citationLines=lines(citation,CW-45,7.3);
+    const titleLines=lines(r.title,CW-115,9,bold), bodyLines=lines(r.description,CW-95,8.2), citation=`Källa: ${insightSources(r).map(source).join("; ")} · Konsekvens: ${r.consequence}${r.deviation?` · Avsteg: ${r.deviation}`:''}`, citationLines=lines(citation,CW-45,7.3);
     const height=titleLines.length*12+bodyLines.length*11.1+citationLines.length*10+24;
     ensure(Math.min(height,BOTTOM-84));
     pill(r.severity,M,top,36,r.severity);const suggestion=r.suggestion==='Fråga beställaren'?'Fråga':r.suggestion;const pillWidth=Math.max(35,bold.widthOfTextAtSize(suggestion,7)+18);pill(suggestion,W-M-pillWidth,top,pillWidth,'suggestion');
@@ -228,7 +229,7 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
   newPage();heading('Frågor till beställaren',true);
   const questionDeadline=tenderPdfDeadline(input,'Sista dag för frågor'), questionKey=input.insights?.key_data.find(k=>k.field==='Sista dag för frågor');
   if(questionDeadline)paragraph(`Ställs skriftligen till beställaren senast ${questionDeadline}${questionKey?.source?` (${source(questionKey.source)}).`:'.'}`,7.5,muted);
-  table(['Nr','Fråga','Källa'],[29,364,100],(input.insights?.questions??[]).map((q,i)=>[String(i+1),q.question,source(q.source)]),true);
+  table(['Nr','Fråga','Källa'],[29,364,100],(input.insights?.questions??[]).map((q,i)=>[String(i+1),q.question,insightSources(q).map(source).join("; ")]),true);
   if(!data.questions.length)paragraph('Inga registrerade frågor.',8.2,muted);
   heading('Antaganden');paragraph('Det som AI:n inte kunnat läsa sig till. Här är underlaget svagast.',7.5,muted);
   table(['Antagande','Källa'],[367,126],uniqueQuantityAssumptions(input.quantities.assumptions).map(a=>[a.description,quantitySource(a.sources)]));

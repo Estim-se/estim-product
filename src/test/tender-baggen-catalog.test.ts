@@ -23,3 +23,9 @@ it.skipIf(!client)('the private recalculation scheduler rejects a different comp
  expect(r.error).not.toBeNull();expect(r.data).toBeNull();
  const after=await client.from('tender_jobs').select('analysis_run,plan').eq('tender_id',tid).single();expect(after.data).toEqual(before.data);
 });
+it.skipIf(!client)('the private risk scheduler rejects a different company without changing Baggen',async()=>{
+ if(!client)throw Error('No test configuration');const tid='528a6592-3a37-4d8e-a1cd-89b0cefec455';
+ const before=await client.from('tender_jobs').select('analysis_run,plan').eq('tender_id',tid).single();
+ const r=await client.rpc('estim_rerun_tender_risks',{tid,p_company_id:crypto.randomUUID(),p_base_url:null});expect(r.error).not.toBeNull();expect(r.data).toBeNull();
+ expect((await client.from('tender_jobs').select('analysis_run,plan').eq('tender_id',tid).single()).data).toEqual(before.data);
+});

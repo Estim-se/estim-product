@@ -36,3 +36,19 @@ export function ensureRiskQuestions(questions:TenderInsights['questions'],risks:
   result.push({question:`Kan ni förtydliga vad som gäller för "${r.title}"? ${r.description} Vilken uppgift eller omfattning ska ligga till grund för anbudet?`,source:r.source,sources:insightSources(r),risk_indices:[i]});
  });return result;
 }
+
+export function retainTenderQuestions(current:TenderInsights['questions'],previous:TenderInsights['questions']):TenderInsights['questions']{
+ const result=[...current];
+ for(const old of previous){
+  const ow=words(old.question);const same=result.find(q=>{const qw=words(q.question),shared=[...ow].filter(w=>qw.has(w)).length;return old.question.trim()===q.question.trim()||shared>=3&&shared/Math.max(ow.size,qw.size)>=0.6;});
+  if(same)same.sources=insightSources({...same,sources:[...insightSources(same),...insightSources(old)]});
+  else {const {risk_indices:_indices,...clean}=old;result.push(clean);}
+ }return result;
+}
+export function ensureTenderDateQuestion(questions:TenderInsights['questions'],keyData:TenderInsights['key_data']):TenderInsights['questions']{
+ const start=keyData.find(k=>k.field==='Start'),deadline=keyData.find(k=>k.field==='Anbudstid');
+ function date(s:string){const iso=s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);if(iso?.[0])return Date.parse(iso[0]);const m=s.toLowerCase().match(/\b(\d{1,2})\s+(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+(\d{4})/);if(!m?.[1]||!m[2]||!m[3])return null;const month=['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'].indexOf(m[2]);return Date.UTC(Number(m[3]),month,Number(m[1]));}
+ if(!start?.source||!deadline?.source)return questions;const a=date(start.value),b=date(deadline.value);if(a===null||b===null||!(a<b))return questions;
+ if(questions.some(q=>/start/i.test(q.question)&&/anbud/i.test(q.question)))return questions;
+ return [...questions,{question:`Vilket byggstartdatum gäller? Underlaget anger start "${start.value}", före anbudstid "${deadline.value}". Bekräfta rätt startdatum och om tidsplanen ska revideras.`,source:start.source,sources:[start.source,deadline.source]}];
+}

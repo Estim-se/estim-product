@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TendersPage } from '@/components/estim/tenders-page';
 
-const fixture = vi.hoisted(() => ({ starts: [] as { id: string; resume: boolean }[], recalculations: [] as string[], hasInsights: false, job: null as null | Record<string, unknown> }));
+const fixture = vi.hoisted(() => ({ starts: [] as { id: string; resume: boolean }[], recalculations: [] as string[], riskReruns:[] as string[],hasInsights: false, job: null as null | Record<string, unknown> }));
 vi.mock('@tanstack/react-start', () => ({ useServerFn: (f: unknown) => f }));
 vi.mock('@/components/estim/workspace-context', () => ({ useWorkspace: () => ({ mode: 'real', data: { company: { id: 'test-company' } } }) }));
 vi.mock('@/components/estim/top-header', () => ({ TopHeader: () => null }));
@@ -19,11 +19,12 @@ vi.mock('@/lib/tender-job.functions', () => ({
   getTenderJob: async () => fixture.job,
   nudgeTenderJob: async () => ({ kicked:false }),
   recalculateTenderJob: async ({data}:{data:{id:string}})=>{fixture.recalculations.push(data.id);fixture.job={status:'running',plan:['quantities','calculation'],steps:{quantities:'running',calculation:'pending'},error:null,updated_at:''};return {run:'run'};},
+  rerunTenderRisks:async({data}:{data:{id:string}})=>{fixture.riskReruns.push(data.id);fixture.job={status:'running',plan:['risks:1','risks:2','risks:3','questions'],steps:{'risks:1':'running'},error:null,updated_at:''};return {run:'run'};},
 }));
-vi.mock('@/lib/tender-insights.functions', () => ({ getTenderInsights: async () => fixture.hasInsights ? {status:'analysed',result:null} : null }));
+vi.mock('@/lib/tender-insights.functions', () => ({ getTenderInsights: async () => fixture.hasInsights ? {status:'analysed',result:{risks:[],questions:[]}} : null }));
 vi.mock('@/lib/tender-quantities.functions', () => ({ getTenderQuantities: async () => null }));
 vi.mock('@/lib/tender-calculation.functions', () => ({ getTenderCalculationSettings: async () => null, getTenderCalculationMatches: async () => null, saveTenderCalculationSettings: vi.fn(), saveTenderCalculationMatches: vi.fn() }));
-afterEach(() => { cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.hasInsights=false;fixture.job=null; });
+afterEach(() => { cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.riskReruns=[];fixture.hasInsights=false;fixture.job=null; });
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry:false }, mutations: { retry:false } } });
   render(<QueryClientProvider client={qc}><TendersPage /></QueryClientProvider>);
@@ -50,4 +51,9 @@ it('reruns quantities and calculation without starting the full analysis',async(
  fireEvent.click(await screen.findByRole('button',{name:'Räkna om mängder och kalkyl'}));
  await waitFor(()=>expect(fixture.recalculations).toEqual(['tender']));
  expect(fixture.starts).toEqual([]);expect(fixture.job?.['plan']).toEqual(['quantities','calculation']);
+});
+it('reruns only risks and questions without touching the calculation plan',async()=>{
+ fixture.hasInsights=true;renderPage();fireEvent.click(await screen.findByText('Testanbud'));
+ fireEvent.click(await screen.findByRole('button',{name:'Kör om risker och frågor'}));
+ await waitFor(()=>expect(fixture.riskReruns).toEqual(['tender']));expect(fixture.starts).toEqual([]);expect(fixture.recalculations).toEqual([]);expect(fixture.job?.['plan']).toEqual(['risks:1','risks:2','risks:3','questions']);
 });

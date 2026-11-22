@@ -1577,6 +1577,10 @@ export type Database = {
         Returns: Json
       }
       estim_request: { Args: { payload: Json }; Returns: string }
+      estim_rerun_tender_risks: {
+        Args: { p_base_url: string; p_company_id: string; tid: string }
+        Returns: string
+      }
       estim_revoke_invitation: {
         Args: { actor: string; cid: string; iid: string }
         Returns: undefined

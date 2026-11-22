@@ -30,7 +30,7 @@ it('retains unpriced posts with quantity and source and blank yellow time and pr
   const b=await createTenderWorkbook({...input,documents:[{id:source.document_id,file_name:'Rambeskrivning.pdf'}],quantities:{...input.quantities,assumptions:[{description:'Längd saknas',sources:[source],item}]}});
   const k=b.getWorksheet('Kalkyl');expect(k?.getCell('A3').value).toBe('Stigarledningar');expect(k?.getCell('B3').value).toBe(3);expect(k?.getCell('G3').value).toBe('Rambeskrivning.pdf · s. 1');
   expect(k?.getCell('E3').value).toBeNull();expect(k?.getCell('F3').value).toBeNull();expect(k?.getCell('E3').fill).toMatchObject({fgColor:{argb:'FFFF00'}});
-  expect(k?.getCell('L3').value).toMatchObject({result:'Saknar tid – ange manuellt'});expect(k?.getCell('K3').formula).toBe('IF(H3="","",I3+J3)');
+  expect(k?.getCell('L3').value).toMatchObject({result:'Låg – exkluderad, bekräfta mängd'});expect(k?.getCell('K3').formula).toBe('IF(H3="","",I3+J3)');
 });
 it('sorts high risks before medium/low and deduplicates assumptions without changing source data', () => {
   const source={document_id:'document',page:1,af_code:'AFC.13',evidence:'Källa'};

@@ -1,4 +1,5 @@
 import { calculateTenderCost, type CalculationMatches, type CalculationSettings } from './tender-calculation';
+import { insightSources } from './tender-risk-merging';
 import type { TenderInsights } from './tender-insights';
 import type { TenderQuantities } from './tender-quantities';
 import { quantityReferences, uniqueQuantityAssumptions } from './tender-quantity-display';
@@ -23,8 +24,8 @@ export function tenderExportData(input: TenderExportInput) {
     cost,
     rows: cost.rows.map(r => ({ ...r, source: quantitySource(r.sources) })),
     keyData: (input.insights?.key_data ?? []).map(k => [k.field, k.value, source(k.source)]),
-    risks: [...input.insights?.risks ?? []].sort((a,b) => severity[a.severity] - severity[b.severity]).map(r => [r.severity, r.title, r.description, source(r.source), r.deviation ?? '', r.consequence, r.suggestion]),
-    questions: (input.insights?.questions ?? []).map((q,i) => [String(i+1), q.question, source(q.source)]),
+    risks: [...input.insights?.risks ?? []].sort((a,b) => severity[a.severity] - severity[b.severity]).map(r => [r.severity, r.title, r.description, insightSources(r).map(source).join("; "), r.deviation ?? '', r.consequence, r.suggestion]),
+    questions: (input.insights?.questions ?? []).map((q,i) => [String(i+1), q.question, insightSources(q).map(source).join("; ")]),
     assumptions: uniqueQuantityAssumptions(input.quantities.assumptions).map(a => [a.description, quantitySource(a.sources)]),
   };
 }

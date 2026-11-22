@@ -11,7 +11,7 @@ export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(1000
 });
 export type CalculationSettings = z.infer<typeof calculationSettingsSchema>;
 export const emptyCalculationSettings: CalculationSettings = { hourly_rate: 0, material_markup: 0, list_discount: 0, establishment: 0, contingency: 0, post_types: [], example_values: false };
-const bindingSchema = z.object({ post: z.string().min(1).max(240), type_id: z.string().uuid().nullable(), manual_hours: amount.max(10000).nullable(), manual_list_price: amount.nullable(), manual_quantity: amount.nullable().optional() }).strict();
+const bindingSchema = z.object({ post: z.string().min(1).max(240), type_id: z.string().uuid().nullable(), manual_hours: amount.max(10000).nullable(), manual_list_price: amount.nullable(), manual_quantity: amount.nullable().optional(), quantity_confirmed: z.boolean().optional() }).strict();
 const demolitionSchema = z.object({ post: z.literal('Rivning per lägenhet'), quantity: z.string().regex(/^\d+(\.\d+)?$/), source: z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().min(1).max(1500) }).strict(), apartment_operand_id: z.string().min(1).max(80), flag: z.literal('Källa saknas – kontrollera').optional() }).strict();
 export const calculationMatchesSchema = z.object({ bindings: z.array(bindingSchema).max(401), demolition: demolitionSchema.nullable() }).strict();
 export type CalculationMatches = z.infer<typeof calculationMatchesSchema>;
@@ -55,13 +55,14 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     const hoursPerUnit = b?.manual_hours ?? t?.hours ?? null, listPrice = b?.manual_list_price ?? t?.list_price ?? null;
     // Explicit, source-backed estimates are priced provisionally; unresolved measurements still require manual input.
     const needsQuantity = i.certainty === 'Låg' && !i.estimated_quantity;
+    const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
     const manualQuantity = b?.manual_quantity ?? null;
-    if (hoursPerUnit === null || listPrice === null || (needsQuantity && manualQuantity === null)) return { ...i, needs_quantity: needsQuantity, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
+    if (hoursPerUnit === null || listPrice === null || awaitingConfirmation) return { ...i, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
     const quantity = (needsQuantity || i.estimated_quantity) && manualQuantity !== null ? String(manualQuantity) : i.quantity;
     const qty = fixed(quantity), hours = rounded(qty * fixed(hoursPerUnit), S);
     const labor = rounded(hours * fixed(s.hourly_rate) * 100n, S * S);
     const material = rounded(qty * fixed(listPrice) * (100n * S - fixed(s.list_discount)) * (100n * S + fixed(s.material_markup)) * 100n, S ** 4n * 10000n);
-    return { ...i, quantity, needs_quantity: needsQuantity, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: Number(hours) / Number(S), labor: Number(labor) / 100, material: Number(material) / 100, total: Number(labor + material) / 100 };
+    return { ...i, quantity, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: Number(hours) / Number(S), labor: Number(labor) / 100, material: Number(material) / 100, total: Number(labor + material) / 100 };
   });
   const complete = rows.every(r => r.total !== null);
   const labor = rows.reduce((n, r) => n + BigInt(Math.round((r.labor ?? 0) * 100)), 0n), material = rows.reduce((n, r) => n + BigInt(Math.round((r.material ?? 0) * 100)), 0n), base = labor + material;

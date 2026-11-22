@@ -55,6 +55,10 @@ describe.skipIf(!configured)('Company-private tender calculations', () => {
       expect((await other.from('tender_calculation_matches').upsert(calculation)).error).not.toBeNull();
       expect((await other.from('tender_calculation_matches').update({result:{}}).eq('tender_id',tid).select('tender_id')).data).toEqual([]);
       expect((await other.from('tender_calculation_matches').delete().eq('tender_id',tid).select('tender_id')).data).toEqual([]);
+      const confirmed={bindings:[{post:'Kontrollpost',type_id:null,manual_hours:2,manual_list_price:100,quantity_confirmed:true}],demolition:null};
+      expect((await own.from('tender_calculation_matches').update({result:confirmed}).eq('tender_id',tid).select('result').single()).data?.result).toEqual(confirmed);
+      expect((await other.from('tender_calculation_matches').update({result:{...confirmed,bindings:[]}}).eq('tender_id',tid).select('result')).data).toEqual([]);
+      expect((await own.from('tender_calculation_matches').select('result').eq('tender_id',tid).single()).data?.result).toEqual(confirmed);
 
       expect((await own.from('tenders').select('status').eq('id',tid).single()).data?.status).toBe('analysed');
       expect((await other.from('tender_quantities').select('result').eq('tender_id',tid)).data).toEqual([]);

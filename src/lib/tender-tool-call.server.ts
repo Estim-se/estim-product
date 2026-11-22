@@ -63,7 +63,11 @@ export async function streamTenderTool<T>(c: ToolCall, incomplete: string, valid
     try { return validate(await attempt(c)); }
     catch (e) {
       if (e instanceof TenderIncompleteOutput) reason = e.message;
-      else if (isSchemaError(e)) reason = 'svaret följde inte det strukturerade formatet';
+      else if (isSchemaError(e)) {
+        const issues=(e as {issues?:{path:unknown[];code:string}[]}).issues??[];
+        console.error('[tender-validation]',{step:c.tool,issues:issues.slice(0,12).map(x=>({path:x.path.join('.'),code:x.code}))});
+        reason = 'svaret följde inte det strukturerade formatet';
+      }
       else throw e;
     }
   }

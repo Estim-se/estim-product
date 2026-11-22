@@ -1,6 +1,8 @@
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, tenderInsightsWireSchema, validateTenderInsights, type InsightDocument, type TenderInsights } from './tender-insights';
 import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, validateTenderRiskReview, type TenderRiskArea } from './tender-risk-checklist';
 import { streamTenderTool, tenderDocumentBlock } from './tender-tool-call.server';
+import { z } from 'zod';
+import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, mergeTenderRisks, needsRiskQuestion } from './tender-risk-merging';
 
 export type TenderInsightInput = InsightDocument & { doc_type: string | null; bytes: Uint8Array; text: string | null };
 export const TENDER_INSIGHT_STEPS = ['key_data', 'risks', 'questions'] as const;
@@ -14,8 +16,8 @@ const STEP = {
     prompt: `Nyckeldata: exakt en rad för vart och ett av: ${TENDER_KEY_FIELDS.join(', ')}. Extrahera uttryckliga uppgifter, behåll datum och villkor som angivna; avtalsvite/betalningsvillkor återges exakt. Om uppgiften saknas: exakt "${NOT_SPECIFIED}", source=null.` },
   risks: { tool: 'risker', label: 'Risker', description: 'Spara källbelagda risker efter fullständig riskchecklista.', schema: { type: 'object', additionalProperties: false, properties: { risks: props.risks, risk_checklist: tenderRiskReviewWireSchema.properties.risk_checklist }, required: ['risks', 'risk_checklist'] },
     prompt: `Risker: konkreta underlagsbaserade tids-/ekonomiska risker med kort titel, beskrivning, källa, konsekvens Tid/Pengar/Tid och pengar, Hög/Medel/Låg och förslag Prissätt/Reservera/Fråga beställaren. Beskriv avvikelse från AB 04/ABT 06 endast när själva avvikelsen och regelreferensen kan beläggas i dokumenten; annars deviation=null. Hitta inte på kapitel/paragrafer från minnet. Oklara eller motsägande krav blir risker, inte slutsatser. Saknad AF ska framgå som risk om bedömning hindras. Tom risks om inget belagt finns. Checklistans reason ska vara en kort mening.` },
-  questions: { tool: 'fragor', label: 'Frågor till beställaren', description: 'Spara källbelagda frågor till beställaren.', schema: { type: 'object', additionalProperties: false, properties: { questions: props.questions }, required: ['questions'] },
-    prompt: 'Frågor till beställaren: frågor färdiga att skicka, med dokument- och sidreferens för det krav som behöver förtydligas. Fråga om oklara, motsägande eller saknade uppgifter som påverkar tid eller pengar, inklusive risker med förslag Fråga beställaren. Tom questions om inget behöver förtydligas.' },
+  questions: { tool: 'fragor', label: 'Frågor till beställaren', description: 'Spara källbelagda frågor till beställaren.', schema: { type: 'object', additionalProperties: false, properties: { questions: {...props.questions,items:{...props.questions.items,properties:{...props.questions.items.properties,risk_indices:{type:'array',items:{type:'integer',minimum:0}}},required:[...props.questions.items.required,'risk_indices']}} }, required: ['questions'] },
+    prompt: 'Frågor till beställaren: frågor färdiga att skicka, med dokument- och sidreferens. Varje risk markerad required=true MÅSTE täckas av en konkret fråga med risk_indices=[index]. Motsägelser ska alltid bli frågor även när riskens förslag är Prissätt eller Reservera. Ange vilka motstridiga uppgifter som ska klarläggas, t.ex. byggstart före sista anbudsdag. Behåll befintliga frågor när de fortfarande är relevanta, slå ihop bara verkliga dubbletter. För frågor utan riskkoppling risk_indices=[]. Tom questions endast om inget behöver förtydligas.' },
 } as const;
 
 export async function extractTenderInsightStep(step: TenderInsightStep, documents: TenderInsightInput[], key: string, model: string, previous: Partial<TenderInsights> = {}, areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
@@ -28,14 +30,23 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   }
   const tail: unknown[] = [{ type: 'text', text: CONTRACT }];
   if (step === 'risks') tail.push({ type: 'text', text: tenderRiskChecklistPrompt(areas) });
-  if (step === 'questions') tail.push({ type: 'text', text: `Redan sparade risker (kontext, upprepa inte som risker): ${JSON.stringify((previous.risks ?? []).map(r => ({ title: r.title, suggestion: r.suggestion })))}` });
+  if (step === 'questions') tail.push({ type: 'text', text: `Risker att täcka: ${JSON.stringify((previous.risks ?? []).map((r,index) => ({...r,index,required:needsRiskQuestion(r)})))}\nBefintliga frågor som ska behållas om relevanta: ${JSON.stringify(previous.questions??[])}\nSparad nyckeldata, kontrollera motstridiga datum: ${JSON.stringify(previous.key_data??[])}` });
   const keyData = previous.key_data ?? [];
   if (step !== 'key_data' && keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
   const validate = (raw: unknown) => {
     const obj = (raw ?? {}) as Record<string, unknown>;
     if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
     if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents, areas).risks;
-    return validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
+    const questions=validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
+    return ensureTenderDateQuestion(ensureRiskQuestions(retainTenderQuestions(questions,previous.questions??[]),previous.risks??[]),keyData);
   };
   return streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
+}
+
+export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){
+ if(risks.length<2)return risks;
+ const schema={type:'object',additionalProperties:false,properties:{groups:{type:'array',items:{type:'array',items:{type:'integer',minimum:0}}}},required:['groups']};
+ const groups=await streamTenderTool({key,model,system:'Gruppera risker som beskriver SAMMA konkreta problem i anbudsunderlaget, även med olika rubriker/källor. Returnera indexgrupper. Olika riskområden ska inte slås ihop bara för att de har samma källa. Varje index måste finnas exakt en gång. Inga nya risktexter, fakta eller källor. Saknade befintliga elhandlingar, samma felaktiga VS-ritning och samma föreskrivna flyttfirma är exempel på möjliga dubbletter.',content:[{type:'text',text:JSON.stringify(risks.map((r,index)=>({...r,index})))}],tool:'grupper',description:'Grupper av samma risk utan ändring av underlaget.',schema,label:'Sammanslagning av risker'},'Ofullständig risksammanslagning',raw=>{
+  const out=z.object({groups:z.array(z.array(z.number().int().min(0).max(risks.length-1)).min(1)).max(60)}).strict().parse(raw);const indices=out.groups.flat();if(indices.length!==risks.length||new Set(indices).size!==risks.length)throw Error('Alla risker måste bevaras.');return out.groups;
+ });return mergeTenderRisks(risks,groups);
 }
