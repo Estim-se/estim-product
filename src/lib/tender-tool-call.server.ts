@@ -11,7 +11,7 @@ export function tenderDocumentBlock(bytes: Uint8Array) {
   return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: btoa(binary) } };
 }
 
-type ToolCall = { key: string; model: string; system: string; content: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
+type ToolCall = { key: string; model: string; system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
 
 async function attempt(c: ToolCall): Promise<unknown> {
   const content = [...c.content];
@@ -65,14 +65,15 @@ const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { na
 // Three attempts with backoff; access denials, refusals and malformed requests are terminal.
 export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
+  let retryIncomplete = false;
   for (let i = 0; i < 3; i++) {
-    try { return validate(await attempt(i===0?c:{...c,system:`${c.system}\nDet föregående försöket var ofullständigt: ${reason}. Gör en ny fullständig källbaserad kontroll. Returnera konkreta resultat, aldrig placeholder eller ofyllda exempel.`})); }
+    try { return validate(await attempt(i===0?c:{...c,...(retryIncomplete && c.retryContent ? {content:c.retryContent} : {}),system:`${c.system}\nDet föregående försöket var ofullständigt: ${reason}. Gör en ny fullständig källbaserad kontroll. Returnera konkreta resultat, aldrig placeholder eller ofyllda exempel.`})); }
     catch (e) {
-      if (e instanceof TenderIncompleteOutput) reason = e.message;
+      if (e instanceof TenderIncompleteOutput) { reason = e.message; retryIncomplete = true; }
       else if (isSchemaError(e)) {
         const issues=(e as {issues?:{path:unknown[];code:string}[]}).issues??[];
         console.error('[tender-validation]',{step:c.tool,issues:issues.slice(0,12).map(x=>({path:x.path.join('.'),code:x.code}))});
-        reason = 'svaret följde inte det strukturerade formatet';
+        reason = 'svaret följde inte det strukturerade formatet'; retryIncomplete = true;
       }
       else if (e instanceof TenderGatewayError) {
         if (e.status !== 429 && e.status < 500) throw e;

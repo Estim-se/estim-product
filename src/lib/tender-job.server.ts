@@ -61,7 +61,7 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const docs = await db.from('tender_documents').select('id,content_hash,doc_type').eq('tender_id', job.tender_id).eq('company_id', job.company_id).order('id');
   if (docs.error) throw Error('Kontrollsummorna kunde inte läsas.');
   const { tenderHash } = await import('./tender-source-parts');
-  const fingerprint = await tenderHash(JSON.stringify({ version: CACHE_VERSION, reading: await readingVersion(db, job), docs: docs.data, model: aiConfig().model, context }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v1` : CACHE_VERSION, reading: await readingVersion(db, job), docs: docs.data, model: aiConfig().model, context }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return prior.data.result as T;

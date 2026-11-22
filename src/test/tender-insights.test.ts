@@ -63,13 +63,13 @@ describe('Tender-wide extraction rules', () => {
     const e = empty();
     const call = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const tool = JSON.parse(init?.body as string).tools[0].name;
-      return tool === 'nyckeldata' ? stream(tool, { key_data: e.key_data }) : tool === 'risker' ? stream(tool, { risks: [], risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Ingen belagd risk', reason: 'Inget.', risk_indexes: [] })) }) : stream(tool, { questions: [] });
+      return tool === 'nyckeldata' ? stream(tool, { key_data: e.key_data }) : tool === 'risker' ? stream(tool, { risks: [], risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Normalt', af_code: 'AFC.45' })) }) : stream(tool, { questions: [] });
     });
     vi.stubGlobal('fetch', call);
     const docs = [doc, { ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Övrigt', text: 'Kontext' }];
     const key_data = await extractTenderInsightStep('key_data', docs, 'test-key', 'anthropic/claude-sonnet-5') as ReturnType<typeof empty>['key_data'];
     expect(key_data).toHaveLength(17);
-    expect(await extractTenderInsightStep('risks', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data })).toEqual([]);
+    expect(await extractTenderInsightStep('risks', [{...doc,text:'Fysisk sida: 2\nAFC.45 Vite gäller.'}, ...docs.slice(1)], 'test-key', 'anthropic/claude-sonnet-5', { key_data })).toEqual([]);
     expect(await extractTenderInsightStep('questions', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data, risks: [] })).toEqual([]);
     expect(call).toHaveBeenCalledTimes(3);
     const body = JSON.parse(call.mock.calls[0]?.[1]?.body as string);

@@ -17,10 +17,12 @@ const streamed=()=>new Response([{type:'content_block_start',index:0,content_blo
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
 it('does not mark a placeholder financial risk call completed and retries it twice',async()=>{
  vi.useFakeTimers();const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
- const raw={risks:[],risk_checklist:Object.fromEntries(areas.map((area,i)=>[String(i),{area,assessment:'Risk',reason:'placeholder',risk_indexes:[i]}]))};
+ const raw={risks:[],risk_checklist:areas.map(area=>({area,assessment:'Risk',af_code:'AFC.999'}))};
  const fetch=vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join('')));vi.stubGlobal('fetch',fetch);
- const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFA.1 Beställare\nAFC.46 Garantitid 10 år\nAFB.1 Anbud',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
  const rejected=expect(pending).rejects.toThrow('risklistan är tom');await vi.runAllTimersAsync();await rejected;expect(fetch).toHaveBeenCalledTimes(3);
+ const retry=JSON.parse(String((fetch.mock.calls[1] as unknown as [unknown,RequestInit]|undefined)?.[1]?.body));
+ const input=retry.messages[0].content.map((c:{text?:string})=>c.text??'').join('\n'); expect(input).toContain('AFC.46 Garantitid 10 år'); expect(input).not.toContain('AFA.1 Beställare'); expect(input).not.toContain('AFB.1 Anbud');
 });
 it('retries transient 503 and 429 responses twice before saving usable output',async()=>{
  vi.useFakeTimers();const fetch=vi.fn().mockResolvedValueOnce(new Response('',{status:503})).mockResolvedValueOnce(new Response('',{status:429,headers:{'Retry-After':'2'}})).mockResolvedValueOnce(streamed());vi.stubGlobal('fetch',fetch);

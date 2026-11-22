@@ -1,60 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
-import { TENDER_RISK_AREAS, validateTenderRiskReview } from '@/lib/tender-risk-checklist';
-
-const document = { id: '00000000-0000-4000-8000-000000000001', file_name: 'AF.pdf', file_type: 'pdf', page_count: 3 };
-function reviewed() {
-  return {
-    key_data: TENDER_KEY_FIELDS.map(field => ({ field, value: NOT_SPECIFIED, source: null })),
-    risks: [] as { title: string; description: string; source: { document_id: string; page: number; af_code: string; evidence: string }; deviation: null; consequence: 'Pengar'; severity: 'Hög'; suggestion: 'Prissätt' }[],
-    questions: [],
-    risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Ingen belagd risk', reason: 'Inget ogynnsamt villkor har belagts.', risk_indexes: [] as number[] })),
-  };
-}
-
-describe('Mandatory tender risk review', () => {
-  it.each(TENDER_RISK_AREAS)('requires review of %s on every tender', area => {
-    const output = reviewed();
-    output.risk_checklist = output.risk_checklist.filter(row => row.area !== area);
-    expect(() => validateTenderRiskReview(output, [document])).toThrow();
+import { TENDER_RISK_AREAS, isCompleteEmptyRiskReview, linkTenderRiskChecklist, resolveTenderRiskSources, validateTenderRiskReview } from '@/lib/tender-risk-checklist';
+const document = { id: '00000000-0000-4000-8000-000000000001', file_name: 'AF.pdf', file_type: 'pdf', page_count: 3, text: 'Fysisk sida: 2\nAFC.13 Gränsdragning\nElentreprenören utför all håltagning, brandtätning och rivning.\nAFC.61 Ersättning\nFast pris utan indexreglering.\nAFC.65 ÄTA\nPåslag 5 %.' };
+const reviewed = () => ({ key_data: [], risks: [] as { title: string; description: string; af_code?: string; severity?: 'Hög' }[], risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Normalt', af_code: 'AFC.13' })) });
+describe('Flat tender risk review', () => {
+  it.each(TENDER_RISK_AREAS)('flags a missing review of %s instead of failing the analysis', area => {
+    const output = reviewed(); output.risk_checklist = output.risk_checklist.filter(r => r.area !== area);
+    const result = validateTenderRiskReview(output, [document], TENDER_RISK_AREAS, true);
+    expect(result.risks.find(r => r.title === area)?.source.flag).toBe('Källa saknas – kontrollera');
+    expect(isCompleteEmptyRiskReview(output, [document], TENDER_RISK_AREAS)).toBe(false);
   });
-  it('rejects duplicate areas instead of silently skipping one', () => {
-    const output = reviewed();
-    const first = output.risk_checklist[0];
-    if (!first) throw new Error('Fixture missing');
-    output.risk_checklist[1] = { ...first };
-    expect(() => validateTenderRiskReview(output, [document])).toThrow('fullständig riskchecklista');
+  it('flags duplicate areas without dropping other risks', () => {
+    const output = reviewed(); const first = output.risk_checklist[0]; if (!first) throw Error('Fixture missing'); output.risk_checklist[1] = {...first};
+    expect(linkTenderRiskChecklist(output, [document]).filter(r => r.flagged)).toHaveLength(2);
   });
-  it('cannot accept an unfavourable area without a reported risk', () => {
-    const output = reviewed();
-    const boundary = output.risk_checklist[0];
-    if (!boundary) throw new Error('Fixture missing');
-    boundary.assessment = 'Risk';
-    expect(() => validateTenderRiskReview(output, [document])).toThrow('saknar motsvarande risk');
-    boundary.risk_indexes = [0];
-    expect(() => validateTenderRiskReview(output, [document])).toThrow('risk som saknas');
+  it('links boundary responsibilities through AFC.13 and reconstructs their physical source', () => {
+    const output = reviewed(); output.risks.push({title:'Utökat gränsdragningsansvar',description:'Elentreprenören utför håltagning, brandtätning och rivning.',af_code:'AFC.13',severity:'Hög'});
+    const boundary = output.risk_checklist[0]; if (!boundary) throw Error('Fixture missing'); boundary.assessment = 'Risk';
+    expect(linkTenderRiskChecklist(output, [document])[0]?.risk_indexes).toEqual([0]);
+    const risk = validateTenderRiskReview(output, [document], TENDER_RISK_AREAS, true).risks[0];
+    expect(risk?.source.af_code).toBe('AFC.13'); expect(risk?.source.page).toBe(2); expect(risk?.source.evidence).toContain('all håltagning'); expect(risk?.severity).toBe('Hög');
   });
-  it('covers AFC.13 hole-making, fire sealing and demolition without requiring an AB deviation', () => {
-    const output = reviewed();
-    const boundary = output.risk_checklist[0];
-    if (!boundary) throw new Error('Fixture missing');
-    output.risks.push({ title: 'Utökat gränsdragningsansvar', description: 'Elentreprenören ansvarar för all håltagning, brandtätning och rivning.', source: { document_id: document.id, page: 2, af_code: 'AFC.13', evidence: 'Elentreprenören utför all håltagning, brandtätning och rivning.' }, deviation: null, consequence: 'Pengar', severity: 'Hög', suggestion: 'Prissätt' });
-    boundary.assessment = 'Risk'; boundary.risk_indexes = [0];
-    const result = validateTenderRiskReview(output, [document]);
-    expect(result.risks[0]?.source.af_code).toBe('AFC.13');
-    expect(result.risks[0]?.deviation).toBeNull();
-    expect(result).not.toHaveProperty('risk_checklist');
+  it('links a combination risk to both economic areas and preserves both sources', () => {
+    const output = reviewed(); output.risks.push({title:'Fast pris och lågt ÄTA-påslag',description:'Fast pris utan index och påslag 5 %.',af_code:'AFC.61/AFC.65'});
+    for (const [index, code] of [[8,'AFC.61'],[9,'AFC.65']] as const) { const row = output.risk_checklist[index]; if (!row) throw Error('Fixture missing'); row.assessment='Risk'; row.af_code=code; }
+    const links = linkTenderRiskChecklist(output, [document]); expect(links[8]?.risk_indexes).toEqual([0]); expect(links[9]?.risk_indexes).toEqual([0]);
+    expect(validateTenderRiskReview(output, [document], TENDER_RISK_AREAS, true).risks[0]?.sources?.map(s=>s.af_code)).toEqual(['AFC.61','AFC.65']);
   });
-  it('allows a combined fixed-price/no-index and 5 percent ÄTA risk to cover both economic areas', () => {
-    const output = reviewed();
-    output.risks.push({ title: 'Fast pris utan index och lågt ÄTA-påslag', description: 'Fast pris utan indexreglering kombineras med endast 5 % påslag på ÄTA.', source: { document_id: document.id, page: 2, af_code: 'AFC.61/AFC.65', evidence: 'Fast pris. Ingen indexreglering tillämpas. Påslag 5 %.' }, deviation: null, consequence: 'Pengar', severity: 'Hög', suggestion: 'Prissätt' });
-    for (const index of [8, 9]) {
-      const row = output.risk_checklist[index];
-      if (!row) throw new Error('Fixture missing');
-      row.assessment = 'Risk'; row.risk_indexes = [0];
-    }
-    expect(validateTenderRiskReview(output, [document]).risks[0]?.source.af_code).toBe('AFC.61/AFC.65');
-    output.risk_checklist.forEach(row => { row.assessment = 'Ingen belagd risk'; row.risk_indexes = []; });
-    expect(() => validateTenderRiskReview(output, [document])).toThrow('inte kontrollerats');
+  it('retains a risk with only display fields and flags its missing source', () => {
+    const output = reviewed(); output.risks.push({title:'Kontrollera ansvar',description:'Ansvarsgränsen behöver klarläggas.'});
+    const result=validateTenderRiskReview(output,[document],TENDER_RISK_AREAS,true); expect(result.risks).toHaveLength(1); expect(result.risks[0]?.severity).toBe('Låg'); expect(result.risks[0]?.source.flag).toBe('Källa saknas – kontrollera');
+  });
+  it('accepts empty risks only with one sourced Normalt row per area', () => {
+    const output=reviewed(); expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(true);
+    const row=output.risk_checklist[0]; if(!row)throw Error('Fixture missing'); row.assessment='Ej nämnt'; expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(false);
+    row.assessment='Normalt'; row.af_code='AFC.999'; expect(isCompleteEmptyRiskReview(output,[document],TENDER_RISK_AREAS)).toBe(false);
+  });
+  it('never attributes an ambiguous AF code to an arbitrary document',()=>{
+    const sources=resolveTenderRiskSources('AFC.13',2,[document,{...document,id:'00000000-0000-4000-8000-000000000002'}]); expect(sources[0]?.flag).toBe('Källa saknas – kontrollera');
   });
 });
