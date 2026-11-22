@@ -1,6 +1,6 @@
 import { roomsFromArea, exampleRoomRecipes, type RoomRecipes } from './tender-room-recipes';
 // Resolve model-selected spreadsheet ranges against the original extracted cells.
-export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: 'Vardagsrum'|'Sovrum'|'Hall'|'Kök'|null|undefined; room_count_range?: string | null | undefined };
+export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Unika trapphusplan' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: 'Vardagsrum'|'Sovrum'|'Hall'|'Kök'|null|undefined; room_count_range?: string | null | undefined; address_range?: string | null | undefined };
 function decode(value: string) { return value.replace(/&#(x[0-9a-f]+|\d+);/gi, (_, n: string) => String.fromCodePoint(n.startsWith('x') ? parseInt(n.slice(1),16) : Number(n))).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"); }
 export function objectSelectionEvidence(text: string, selection: ObjectSelection): string {
   const range = selection.range.match(/^([A-Z]+)(\d+):[A-Z]+(\d+)$/);
@@ -48,6 +48,12 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
       if(!Number.isFinite(area)||area<=0||!divisor||!Number.isFinite(divisor)||divisor<=0) throw Error('Ogiltig radvis mängdregel.');
       const units=BigInt(Math.round(area*1_000_000)), d=BigInt(Math.round(divisor*1_000_000));
       result += ((units+d-1n)/d)*1_000_000n;
+    }
+    else if (selection.operation === 'Unika trapphusplan') {
+      const address=selection.address_range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      if(!address||address[1]!==address[3]||Number(address[2])!==start||Number(address[4])!==end)throw Error('Adresskolumnen matchar inte våningsplanen.');
+      const group=cells.get(`${address[1]}${row}`);if(!group)throw Error('Trapphusets adress saknas.');
+      unique.add(`${group.toLocaleLowerCase('sv').replace(/\s+/g,' ').trim()}|${value}`);result=BigInt(unique.size)*1_000_000n;
     }
     else if (selection.operation === 'Unika') { unique.add(value); result = BigInt(unique.size) * 1_000_000n; }
     else if (selection.operation === 'Antal') result += 1_000_000n;

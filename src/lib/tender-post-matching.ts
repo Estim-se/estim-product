@@ -34,5 +34,5 @@ export function closestTenderPostType(post:string, settings:CalculationSettings)
   const candidates=kind ? settings.post_types.filter(t=>meaning(t.name)===kind) : [];
   // Prefer the same noun when duplicate semantic catalog types exist (Gruppcentral/Lägenhetscentral).
   const noun=normalize(post).split(' ')[0];
-  return candidates.find(t=>normalize(t.name).split(' ')[0]===noun)?.id ?? candidates[0]?.id ?? null;
+  return candidates.find(t=>normalize(t.name).split(' ')[0]===noun)?.id ?? candidates.at(-1)?.id ?? null;
 }

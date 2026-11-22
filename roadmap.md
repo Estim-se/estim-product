@@ -1,6 +1,6 @@
 # Prototype rebuild
 
-- [ ] Baggen: fix panel quantity gating, missing-data kitchen recipe fallback, apartment/local demolition, four example catalog types and source-backed common-area estimates; rerun quantities/calculation, report saved totals without publishing.
+- [x] Baggen: panel estimate gating, kitchen recipe fallback, apartment/local demolition, four example catalog types, distinct address/floor estimates and missing-post coverage check. Recalculated and saved Analyserat: 34 rows, 31 priced, 3406 h, provisional subtotal 3349896.39 kr excl. VAT. Earlier analysis unchanged; 383 tests and build pass; saved-data desktop/phone estimate editing verified. Authenticated button flow unavailable on external Supabase; no publication.
 
 - [x] Fixed Baggen semantic matching, preserved merged assumption rows, added 14 company example types and editable room recipes, per-apartment rounding and targeted two-step background rerun. Baggen saved as Analyserat: 28 rows, 24 priced, 1887.4 h, subtotal 1826988.02 kr excl. VAT. Original classifications/insights unchanged. 363 tests and automatic compilation passed; desktop/phone saved-result controls verified. Full calculation report delivered; no publication.
 - [ ] Verify authenticated Baggen-page targeted rerun and real recipe saving; blocked by unavailable permitted external-Supabase preview session.
