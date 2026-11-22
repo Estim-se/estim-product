@@ -29,10 +29,10 @@ async function openAndAnalyze() {
   fireEvent.click(screen.getByRole('button',{name:'Analysera'}));
 }
 it('runs quantities only after classification and insights, using the same tender run', async () => {
-  await openAndAnalyze(); await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','quantities','matching']));
+  await openAndAnalyze(); await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','insights','insights','quantities','matching']));
   await waitFor(() => expect(screen.getByRole('button',{name:'Analysera'})).not.toBeDisabled());
 });
 it('records a quantity-stage failure through the existing run abort path', async () => {
   fixture.fail=true; await openAndAnalyze();
-  await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','quantities','abort']));
+  await waitFor(() => expect(fixture.stages).toEqual(['start','classification','insights','insights','insights','quantities','abort']));
 });

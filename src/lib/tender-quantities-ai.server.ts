@@ -18,6 +18,5 @@ export async function extractTenderQuantities(documents: TenderInsightInput[], k
     if (d.text !== null) content.push({ type: 'text', text: `<dokument>\n${d.text}\n</dokument>` });
     else content.push(tenderDocumentBlock(d.bytes));
   }
-  const raw = await streamTenderTool({ key, model, system: TENDER_QUANTITY_PROMPT, content, tool: 'mangdregler', description: 'Källbelagda grundtal och regler; kod räknar mängderna.', schema: tenderQuantityWireSchema, label: 'Mängdanalysen', httpError: status => `Mängdanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade inga fullständiga mängdregler');
-  return calculateTenderQuantities(raw, documents);
+  return streamTenderTool({ key, model, system: TENDER_QUANTITY_PROMPT, content, tool: 'mangdregler', description: 'Källbelagda grundtal och regler; kod räknar mängderna.', schema: tenderQuantityWireSchema, label: 'Mängdanalysen', httpError: status => `Mängdanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade inga fullständiga mängdregler', raw => calculateTenderQuantities(raw, documents));
 }

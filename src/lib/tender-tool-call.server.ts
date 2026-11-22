@@ -17,7 +17,7 @@ async function attempt(c: ToolCall): Promise<unknown> {
   if (last >= 0) content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
   const response = await fetch('https://ai.gateway.lovable.dev/v1/messages', {
     method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json', 'X-Lovable-AIG-SDK': 'fetch' },
-    body: JSON.stringify({ model: c.model, max_tokens: TENDER_MAX_OUTPUT_TOKENS, stream: true, system: c.system, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'auto' } }),
+    body: JSON.stringify({ model: c.model, max_tokens: TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: c.system, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'auto' } }),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { message?: string; error?: { message?: string } } | null;
@@ -54,12 +54,18 @@ async function attempt(c: ToolCall): Promise<unknown> {
   try { return JSON.parse(json[0]); } catch { throw new TenderIncompleteOutput('ogiltig JSON'); }
 }
 
-export async function streamTenderTool(c: ToolCall, incomplete: string): Promise<unknown> {
-  try { return await attempt(c); }
-  catch (e) {
-    if (!(e instanceof TenderIncompleteOutput)) throw e;
-    // Exactly one retry, and only for incomplete/invalid JSON; HTTP errors and refusals are terminal.
-    try { return await attempt(c); }
-    catch (again) { if (again instanceof TenderIncompleteOutput) throw new Error(`${incomplete} (${again.message}).`); throw again; }
+const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError';
+
+// Exactly one retry, only for incomplete/invalid JSON or output that breaks the schema; HTTP errors, refusals and source checks are terminal.
+export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
+  let reason = '';
+  for (let i = 0; i < 2; i++) {
+    try { return validate(await attempt(c)); }
+    catch (e) {
+      if (e instanceof TenderIncompleteOutput) reason = e.message;
+      else if (isSchemaError(e)) reason = 'svaret följde inte det strukturerade formatet';
+      else throw e;
+    }
   }
+  throw new Error(`${incomplete} (${reason}).`);
 }

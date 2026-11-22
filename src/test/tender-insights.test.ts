@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, validateTenderInsights, type TenderInsights } from '@/lib/tender-insights';
-import { extractTenderInsights } from '@/lib/tender-insights-ai.server';
+import { extractTenderInsightStep } from '@/lib/tender-insights-ai.server';
 import { TENDER_RISK_AREAS } from '@/lib/tender-risk-checklist';
 
 const id = '00000000-0000-4000-8000-000000000001';
@@ -54,22 +54,40 @@ describe('Tender-wide extraction rules', () => {
     const result = empty(); result.risks = [{ title: 'Vite', description: 'Obegränsat vite.', source: { ...source, evidence: 'Med ändring av AB 04 kap. 5 § 3 gäller vite.' }, deviation: 'AB 04 normally limits to 10 percent', consequence: 'Pengar', severity: 'Hög', suggestion: 'Reservera' }];
     expect(validateTenderInsights(result, [doc]).risks[0]?.deviation).toBe('Underlaget anger ändring av AB 04 kap. 5 § 3.');
   });
-  it('makes one streamed whole-tender call with original documents and parses split SSE', async () => {
-    const reviewed = { ...empty(), risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Ingen belagd risk', reason: 'Inga belagda ogynnsamma villkor i testunderlaget.', risk_indexes: [] })) };
-    const events = [{ type: 'ping' }, { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'analysera_anbud' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(reviewed) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];
+  const stream = (tool: string, payload: unknown, stop = 'tool_use') => {
+    const events = [{ type: 'ping' }, { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: tool } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(payload) } }, { type: 'message_delta', delta: { stop_reason: stop } }, { type: 'message_stop' }];
     const wire = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
-    const call = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({ start(c) { for (let i=0;i<wire.length;i+=7) c.enqueue(new TextEncoder().encode(wire.slice(i,i+7))); c.close(); } })));
+    return new Response(new ReadableStream({ start(c) { for (let i=0;i<wire.length;i+=7) c.enqueue(new TextEncoder().encode(wire.slice(i,i+7))); c.close(); } }));
+  };
+  it('runs key data, risks and questions as separate AF-first calls with a raised output limit', async () => {
+    const e = empty();
+    const call = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const tool = JSON.parse(init?.body as string).tools[0].name;
+      return tool === 'nyckeldata' ? stream(tool, { key_data: e.key_data }) : tool === 'risker' ? stream(tool, { risks: [], risk_checklist: TENDER_RISK_AREAS.map(area => ({ area, assessment: 'Ingen belagd risk', reason: 'Inget.', risk_indexes: [] })) }) : stream(tool, { questions: [] });
+    });
     vi.stubGlobal('fetch', call);
-    expect((await extractTenderInsights([doc, { ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Övrigt', text: 'Kontext' }], 'test-key', 'anthropic/claude-sonnet-5')).key_data).toHaveLength(17);
-    expect(call).toHaveBeenCalledTimes(1);
+    const docs = [doc, { ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Övrigt', text: 'Kontext' }];
+    const key_data = await extractTenderInsightStep('key_data', docs, 'test-key', 'anthropic/claude-sonnet-5') as ReturnType<typeof empty>['key_data'];
+    expect(key_data).toHaveLength(17);
+    expect(await extractTenderInsightStep('risks', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data })).toEqual([]);
+    expect(await extractTenderInsightStep('questions', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data, risks: [] })).toEqual([]);
+    expect(call).toHaveBeenCalledTimes(3);
     const body = JSON.parse(call.mock.calls[0]?.[1]?.body as string);
-    expect(body.stream).toBe(true); expect(body.model).toBe('anthropic/claude-sonnet-5');
+    expect(body.stream).toBe(true); expect(body.max_tokens).toBe(64000);
     expect(body.messages[0].content[0].text).toContain('HUVUDKÄLLA'); expect(body.messages[0].content[1].type).toBe('document');
-    expect(body.messages[0].content[3].text).toContain('Kontext');
+  });
+  it('retries exactly once when the output is cut off at the token limit', async () => {
+    const call = vi.fn(async () => stream('nyckeldata', { key_data: [] }, 'max_tokens')); vi.stubGlobal('fetch', call);
+    await expect(extractTenderInsightStep('key_data', [doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('maxgränsen');
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+  it('refuses risks without saved key data', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => stream('risker', { risks: [], risk_checklist: [] })));
+    await expect(extractTenderInsightStep('risks', [doc], 'k', 'm')).rejects.toThrow('Nyckeldata saknas');
   });
   it('never retries a provider denial and preserves the safe reason', async () => {
     const call = vi.fn(async () => new Response(JSON.stringify({ message: 'Åtkomst nekad.' }), { status: 403 })); vi.stubGlobal('fetch', call);
-    await expect(extractTenderInsights([doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('Åtkomst nekad.');
+    await expect(extractTenderInsightStep('key_data', [doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('Åtkomst nekad.');
     expect(call).toHaveBeenCalledTimes(1);
   });
 });

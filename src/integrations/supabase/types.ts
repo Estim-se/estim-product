@@ -1144,6 +1144,7 @@ export type Database = {
           error: string | null
           result: Json | null
           status: string
+          steps: Json
           tender_id: string
           updated_at: string
         }
@@ -1154,6 +1155,7 @@ export type Database = {
           error?: string | null
           result?: Json | null
           status: string
+          steps?: Json
           tender_id: string
           updated_at?: string
         }
@@ -1164,6 +1166,7 @@ export type Database = {
           error?: string | null
           result?: Json | null
           status?: string
+          steps?: Json
           tender_id?: string
           updated_at?: string
         }
@@ -1479,6 +1482,10 @@ export type Database = {
           recipient: string
         }
         Returns: string
+      }
+      estim_save_tender_insight_step: {
+        Args: { p_step: string; p_value: Json; rid: string; tid: string }
+        Returns: undefined
       }
       estim_session_valid: { Args: never; Returns: boolean }
       my_company: { Args: never; Returns: string }

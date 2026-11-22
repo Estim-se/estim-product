@@ -71,9 +71,9 @@ describe('Tender quantity rules and arithmetic', () => {
     expect(result.items[0]?.quantity).toBe('540'); expect(call).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(call.mock.calls[0]?.[1]?.body)); expect(body.messages[0].content[0].text).toContain('Objekt.xlsx'); expect(body.messages[0].content[2].text).toContain('Teknik.pdf'); expect(body.messages[0].content[4].text).toContain('Ritning.pdf');
   });
-  it('rejects incomplete streamed results and provider errors without retrying', async () => {
+  it('rejects incomplete streamed results and provider errors with exactly one retry', async () => {
     const call = vi.fn(async () => new Response('data: {"type":"message_stop"}\n\n')); vi.stubGlobal('fetch',call);
-    await expect(extractTenderQuantities([doc],'test-key','test')).rejects.toThrow('fullständiga'); expect(call).toHaveBeenCalledTimes(1);
+    await expect(extractTenderQuantities([doc],'test-key','test')).rejects.toThrow('fullständiga'); expect(call).toHaveBeenCalledTimes(2);
     vi.stubGlobal('fetch',vi.fn(async () => new Response('private data',{status:403}))); await expect(extractTenderQuantities([doc],'test-key','test')).rejects.toThrow('fel 403');
   });
 });

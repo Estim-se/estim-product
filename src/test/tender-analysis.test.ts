@@ -54,3 +54,15 @@ describe('Tender document analysis rules', () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 });
+import { tenderExportBlock, tenderStepProgress } from '@/lib/tender-analysis';
+describe('tender step progress and export lock', () => {
+  it('describes finished and running steps', () => {
+    expect(tenderStepProgress({ key_data: 'done', risks: 'running' })).toBe('Nyckeldata klar, risker pågår…');
+  });
+  it('blocks export while running, after failure and until both analyses are done', () => {
+    expect(tenderExportBlock({ analyzing: true, tenderStatus: 'analysed', insightsStatus: 'analysed', quantitiesStatus: 'analysed' })).toContain('pågår');
+    expect(tenderExportBlock({ analyzing: false, tenderStatus: 'error', insightsStatus: 'error', quantitiesStatus: undefined })).toContain('misslyckades');
+    expect(tenderExportBlock({ analyzing: false, tenderStatus: 'analysed', insightsStatus: 'analysed', quantitiesStatus: undefined })).not.toBeNull();
+    expect(tenderExportBlock({ analyzing: false, tenderStatus: 'analysed', insightsStatus: 'analysed', quantitiesStatus: 'analysed' })).toBeNull();
+  });
+});

@@ -29,11 +29,13 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   const tail: unknown[] = [{ type: 'text', text: CONTRACT }];
   if (step === 'risks') tail.push({ type: 'text', text: TENDER_RISK_CHECKLIST_PROMPT });
   if (step === 'questions') tail.push({ type: 'text', text: `Redan sparade risker (kontext, upprepa inte som risker): ${JSON.stringify((previous.risks ?? []).map(r => ({ title: r.title, suggestion: r.suggestion })))}` });
-  const raw = await streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`);
-  const obj = (raw ?? {}) as Record<string, unknown>;
   const keyData = previous.key_data ?? [];
-  if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
-  if (keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
-  if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents).risks;
-  return validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
+  if (step !== 'key_data' && keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
+  const validate = (raw: unknown) => {
+    const obj = (raw ?? {}) as Record<string, unknown>;
+    if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents).key_data;
+    if (step === 'risks') return validateTenderRiskReview({ ...obj, key_data: keyData, questions: [] }, documents).risks;
+    return validateTenderInsights({ key_data: keyData, risks: [], questions: obj['questions'] }, documents).questions;
+  };
+  return streamTenderTool({ key, model, system: `${BASE}\n${s.prompt}`, content: [...content, ...tail], tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
 }
