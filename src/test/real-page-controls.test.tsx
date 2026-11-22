@@ -15,6 +15,7 @@ vi.mock('@/lib/email-client', () => ({ getEmailConnection: fixture.readEmail, st
 vi.mock('@/lib/channel.functions', () => ({ saveWhatsAppChannel: fixture.saveWhatsApp }));
 vi.mock('@tanstack/react-start', () => ({ useServerFn: (fn: unknown) => fn }));
 vi.mock('@/components/estim/top-header', () => ({ TopHeader: () => null }));
+vi.mock('@/components/estim/company-logo', () => ({ CompanyLogo: () => null }));
 vi.mock('@/components/estim/workspace-provider', () => ({ useWorkspace: () => ({
   data: { company: { id: 'company-a', name: 'farax', signature: 'farax', reply_to_email: 'office@example.test', hourly_rate_ex_vat: 680, travel_fee: 450, settings: [true, true, false, true, true, true, false] }, profile: { display_name: 'Abdikarim' }, moments: [], channels: fixture.channels, role: fixture.role, whatsAppSendingConnected: fixture.sendingConnected },
   mutate: fixture.mutate, refresh: fixture.refresh,

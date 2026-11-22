@@ -95,8 +95,12 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
       const initials = branding.companyName.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0] ?? '').join('').toLocaleUpperCase('sv');
       const text = clean(initials); page.drawText(text,{x:M+14.5-bold.widthOfTextAtSize(text,8.5)/2,y:H-45.5,size:8.5,font:bold,color:paper});
     }
-    draw(branding.companyName,M+36,29,9.5,true);
-    draw(`Anbudsbas · ${input.name}`,M+36,43,7.5,false,muted);
+    const headerWidth = 255;
+    const companySize = Math.min(9.5, headerWidth / Math.max(1, bold.widthOfTextAtSize(clean(branding.companyName), 1)));
+    const subtitle = `Anbudsbas · ${input.name}`;
+    const subtitleSize = Math.min(7.5, headerWidth / Math.max(1, font.widthOfTextAtSize(clean(subtitle), 1)));
+    draw(branding.companyName,M+36,29,companySize,true);
+    draw(subtitle,M+36,43,subtitleSize,false,muted);
     draw('KONFIDENTIELLT · INTERNT UNDERLAG',W-M,31,7,true,dangerInk,true);
     draw(`Version 1 · ${date}`,W-M,43,7.5,false,muted,true);
     rule(62);
@@ -115,7 +119,7 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
     rect(x+r,y,width-h,h,fill); page.drawCircle({x:x+r,y:H-y-r,size:r,color:fill}); page.drawCircle({x:x+width-r,y:H-y-r,size:r,color:fill});
     draw(value,x+(width-bold.widthOfTextAtSize(clean(value),7))/2,y+2,7,true,textColor);
   }
-  const source = (s: {document_id:string;page:number|null;af_code?:string|null} | null) => s ? [labels.get(s.document_id) ?? 'Dokument',s.page ? `s. ${s.page}` : null,s.af_code].filter(Boolean).join(' · ') : '';
+  const source = (s: {document_id:string;page:number|null;af_code?:string|null} | null) => s ? [`${labels.get(s.document_id) ?? 'Dokument'}${s.page ? ` s. ${s.page}` : ''}`,s.af_code].filter(Boolean).join(' · ') : '';
   const quantitySource = (sources: TenderExportInput['quantities']['items'][number]['sources']) => quantityReferences(input.quantities,sources).map(s=>`${labels.get(s.document_id) ?? 'Dokument'}${s.location === 'Textkälla' ? '' : ` · ${s.location}`}`).join('; ');
   const key = (field: string) => input.insights?.key_data.find(k=>k.field === field)?.value ?? 'Ej angivet i underlaget';
   function table(headers: string[], widths: number[], rows: string[][], boldFirst = false) {

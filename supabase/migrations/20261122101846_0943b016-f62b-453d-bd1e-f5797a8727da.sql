@@ -1,0 +1,6 @@
+CREATE TABLE public.company_branding (company_id uuid PRIMARY KEY REFERENCES public.companies(id) ON DELETE CASCADE, logo_path text NOT NULL CHECK(logo_path LIKE company_id::text || '/%'), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.company_branding TO authenticated; GRANT ALL ON public.company_branding TO service_role;
+ALTER TABLE public.company_branding ENABLE ROW LEVEL SECURITY;
+CREATE POLICY company_branding_own ON public.company_branding FOR ALL TO authenticated USING(company_id=public.my_company()) WITH CHECK(company_id=public.my_company());
+CREATE TRIGGER touch_branding BEFORE UPDATE ON public.company_branding FOR EACH ROW EXECUTE FUNCTION public.estim_touch();
+CREATE POLICY company_logo_own ON storage.objects FOR ALL TO authenticated USING(bucket_id='company-logos' AND (storage.foldername(name))[1]=public.my_company()::text) WITH CHECK(bucket_id='company-logos' AND (storage.foldername(name))[1]=public.my_company()::text);

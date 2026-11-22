@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({ stages: [] as string[], fail: false }));
 vi.mock('@tanstack/react-start', () => ({ useServerFn: (f: unknown) => f }));
 vi.mock('@/components/estim/workspace-context', () => ({ useWorkspace: () => ({ mode: 'real', data: { company: { id: 'test-company' } } }) }));
 vi.mock('@/components/estim/top-header', () => ({ TopHeader: () => null }));
+vi.mock('@/lib/company-logo.functions', () => ({ getCompanyBranding: async () => ({ companyName: 'Testföretag', logoUrl: null }) }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 vi.mock('@/lib/tenders.functions', () => ({
   listTenders: async () => [{ id:'tender',name:'Testanbud',status:'ready',created_at:'2026-11-21' }],

@@ -7,6 +7,7 @@ import { settings } from '@/data/prototype-pages';
 import { CompanyAutoReply } from './company-auto-reply';
 import { parseMutation } from '@/lib/real.schemas';
 import { assertBoundedInput } from '@/lib/input-limits';
+import { CompanyLogo } from './company-logo';
 
 export function CompanyForm({onboarding=false,activeSection,onSectionChange,saveTarget}:{onboarding?:boolean;saveTarget?:HTMLElement|null;activeSection?:'AI'|'Priser'|'Företag'|'Dokument'|'Händelser';onSectionChange?:(section:'AI'|'Priser'|'Företag'|'Dokument'|'Händelser')=>void}){
  const formId = useId();
@@ -35,7 +36,7 @@ export function CompanyForm({onboarding=false,activeSection,onSectionChange,save
  {onboarding?<div className="grid2">{identityFields}{priceFields}</div>:<div className="settings-grid col settings-column">
  <div hidden={activeSection !== undefined && activeSection !== 'AI'} role="tabpanel" id="settings-panel-AI" aria-labelledby="settings-tab-AI"><div className="card"><h3>Det här får AI:n göra själv</h3><div className="mt8"><CompanyAutoReply embedded />{settings.map((setting,i)=><label className="kop cursor-pointer" key={setting.label}><span className="grow"><b>{setting.label}</b></span><span className="relative"><input className="peer sr-only" type="checkbox" checked={values.settings[i]??false} onChange={e=>setValues({...values,settings:values.settings.map((v,index)=>index===i?e.target.checked:v)})}/><span aria-hidden="true" className={`toggle block peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-ring ${values.settings[i]?'on':''}`}/></span></label>)}</div></div></div>
  <div hidden={activeSection !== undefined && activeSection !== 'Priser'} role="tabpanel" id="settings-panel-Priser" aria-labelledby="settings-tab-Priser" onInvalidCapture={()=>onSectionChange?.('Priser')}><div className="col settings-column settings-single-column"><div className="card"><h3>Priser AI:n räknar med</h3><div className="col settings-column mt12">{priceFields}</div></div>{momentsCard}</div></div>
- <div hidden={activeSection !== undefined && activeSection !== 'Företag'} role="tabpanel" id="settings-panel-Företag" aria-labelledby="settings-tab-Företag" onInvalidCapture={()=>onSectionChange?.('Företag')}><div className="card"><div className="col settings-column">{identityFields}</div></div></div>
+ <div hidden={activeSection !== undefined && activeSection !== 'Företag'} role="tabpanel" id="settings-panel-Företag" aria-labelledby="settings-tab-Företag" onInvalidCapture={()=>onSectionChange?.('Företag')}><div className="card"><div className="col settings-column">{identityFields}{company?.id && <CompanyLogo companyId={company.id}/>}</div></div></div>
  </div>}
  {onboarding&&momentsCard}
  {saveTarget ? createPortal(saveBar, saveTarget) : saveBar}</form>;
