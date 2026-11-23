@@ -33,13 +33,13 @@ export const storedObjectModelSchema = z.object({
     basis: z.enum(['type code', 'default', 'area rule']), code: text(40) }).strict()).max(5000),
 }).strict();
 export type StoredObjectModel = z.infer<typeof storedObjectModelSchema>;
-export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined; count_basis?: CountBasis | undefined };
+export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined; count_basis?: CountBasis | undefined; count_unit?: string | undefined; option?: boolean | undefined };
 // Results saved before levels existed: Hög = Bekräftad, Medel = Räknad, a Låg estimate = Antagen, other Låg = Saknar mängd.
 export function quantityLevel(item: Pick<QuantityItem, 'certainty' | 'estimated_quantity' | 'level'>): QuantityLevel {
   return item.level ?? (item.certainty === 'Hög' ? 'Bekräftad' : item.certainty === 'Medel' ? 'Räknad' : item.estimated_quantity ? 'Antagen' : 'Saknar mängd');
 }
 export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[]; object_model?: StoredObjectModel | undefined };
-const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional(), count_basis: countBasisSchema.optional() }).strict();
+const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional(), count_basis: countBasisSchema.optional(), count_unit: z.string().max(40).optional(), option: z.boolean().optional() }).strict();
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()), object_model: storedObjectModelSchema.optional() }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';

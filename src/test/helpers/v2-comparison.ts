@@ -31,7 +31,8 @@ export function compareWithV2(snapshot: V2Snapshot): V2Comparison {
   const all = [...snapshot.quantities.items, ...snapshot.quantities.assumptions.flatMap(assumptionItems)]
     .filter((r, i, rows) => rows.findIndex(x => x.post === r.post && x.unit === r.unit) === i);
   const assigned = new Map<V2Post, QuantityItem[]>(), extras: QuantityItem[] = [];
-  for (const row of all) { const p = v2PostFor(row.post); if (p) assigned.set(p, [...assigned.get(p) ?? [], row]); else extras.push(row); }
+  // Options are their own rows (Saknar pris), never part of a v2 post's quantity.
+  for (const row of all) { const p = row.option || /\boption\b|\btillval\b/i.test(row.post) ? null : v2PostFor(row.post); if (p) assigned.set(p, [...assigned.get(p) ?? [], row]); else extras.push(row); }
   const costRows = snapshot.cost ? [...snapshot.cost.rows, ...snapshot.cost.proposals] : null;
   const lines = V2_POSTS.map((p): V2Line => {
     const rows = assigned.get(p) ?? [];

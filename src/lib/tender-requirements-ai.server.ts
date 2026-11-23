@@ -15,8 +15,10 @@ För varje post: post (kort, tydligt namn), room_type, section (1 Lägenheter: r
 - Rumsförteckning med rumstyper (skola, förskola, kontor, lokaler): krav per rumstyp ("per lekrum: 4 dubbla vägguttag") anges med unit_of_count rumstyp, room_type = rumstypen exakt som i rumsförteckningen och per_unit = antal per rum. En post per rumstyp och utrustning, med rumstypen i postnamnet ("Dubbla vägguttag, lekrum"). room_type är null för alla andra enheter.
 - Uttag som anges per bänklängd eller arbetsbänk ("1 uttag per 1000 mm bänk", "hörnbox per arbetsbänk"): ett krav "Bänkuttag kök" med unit_of_count bänklängd; koden använder företagets typrecept per kök eftersom bänklängderna sällan framgår.
 - "Lokal rivning", "lokalt" och "lokal demontering" betyder punktvis arbete, inte lokaler. Provning av enskilda installationer (t.ex. funktionsprovning brandvarnare) ingår i provningsposterna i section 9, ingen egen post.
-- per_area med area_divisor för regler per yta, t.ex. brandvarnare "en per påbörjade 60 m²" per lägenhet: area_divisor 60, per_unit 1.
-- fast_antal med fixed_quantity när underlaget anger ett totalt antal ("8 laddplatser", "en central i garage").
+- unit_of_count per_area med area_divisor för regler per yta, t.ex. brandvarnare "en per påbörjade 60 m²" per lägenhet: unit_of_count per_area, area_divisor 60, per_unit 1.
+- unit_of_count fast_antal med fixed_quantity när underlaget anger ett totalt antal ("8 laddplatser", "en central i garage"); ett angivet fast antal används alltid.
+- En post per utrustning och enhet: lista inte samma sak två gånger med olika ord (t.ex. "Strömförsörjning spis/ugn" och "Perilexuttag för spishäll", "Mätartavla" och "Debiteringsmätare", "Projektering" och "Bygghandlingar", "Isolationsmätning" och "Funktionsprovning").
+- Option, tillval eller à-pris: en egen post med "Option" i postnamnet; den prissätts separat och ingår aldrig i huvudposten.
 - post för engångsarbeten (projektering, bygghandlingar, kvalitetsplan, provning av allmänna delar, märkning, relationshandlingar, drift- och underhållspärm, utbildning, dimensionering och anmälan till nätägaren, samordning) med per_unit 1.
 - Saknas antal helt (t.ex. källarplan saknas): per_unit null och fixed_quantity null — posten blir "Saknar mängd". Gissa aldrig ett antal utan att sätta assumed=true och beskriva antagandet i note.
 - assumed=true när antalet är din bedömning (t.ex. en fastighetscentral per huskropp, en hiss per trapphus). Rumsuttag utan angivet antal ska INTE listas: företagets typrecept används.
