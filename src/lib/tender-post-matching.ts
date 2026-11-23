@@ -8,7 +8,13 @@ function meaning(name:string) {
   if (/diskmaskin/.test(n)) return 'diskmaskin';
   if (/kyl|frys/.test(n)) return 'kylfrys';
   if (/perilex/.test(n)) return 'perilex';
-  if (/huvudledning/.test(n)) return /lagenhet/.test(n)?'huvudledning-lgh':/lokal/.test(n)?'huvudledning-lokal':null;
+  if (/projektering|projektor/.test(n)) return 'projektering';
+  if (/provning|egenkontroll|relationshandling|dokumentation/.test(n)) return 'provning';
+  if (/narvaro|rorelsevakt|rorelsedetektor/.test(n)) return 'narvarogivare';
+  if (/nodbelysning|nodljus|nodarmatur|nodutrymning|vagledande markering/.test(n)) return 'nodbelysning';
+  if (/potentialutjamning|skyddsutjamning|jordning/.test(n)) return 'jordning';
+  if (/tomror/.test(n)&&/sol/.test(n)) return 'tomror-sol';
+  if (/huvudledning/.test(n)) return /lagenhet/.test(n)?'huvudledning-lgh':/lokal/.test(n)?'huvudledning-lokal':/fastighet|huvudcentral/.test(n)?'huvudledning-fastighet':null;
   if (/central/.test(n)) return /lagenhet/.test(n)?'central-lgh':/lokal/.test(n)?'central-lokal':/fastighets|huvud/.test(n)?'central-fastighet':null;
   if (/brandvarnare/.test(n)) return 'brandvarnare';
   if (/matare|matning/.test(n)) return 'elmatare';
