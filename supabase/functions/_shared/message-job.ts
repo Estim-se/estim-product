@@ -3,6 +3,9 @@ import { json } from './cors.ts';
 import { autoSend } from './auto-send.ts';
 import { incomingAiSteps } from './reply-policy.ts';
 
+// Supabase Edge runtime global; declared for the type checker.
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
+
 // The existing interpreter doubles as a secret-authenticated background dispatcher.
 export async function startMessageJob(req: Request): Promise<Response | null> {
   const input = await req.clone().json().catch(() => null);
