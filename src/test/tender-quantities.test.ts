@@ -65,8 +65,10 @@ describe('Tender quantity rules and arithmetic', () => {
     const result = calculateTenderQuantities(r,[{ ...doc, file_type:'xlsx', text:'Blad: Lägenheter\nA5: A101\nA6: A102\nA7: A103' },{ ...doc,id:pdfId }]);
     expect(result.items[0]?.quantity).toBe('90'); expect(result.rules.operands[0]?.value).toBe('3');
     expect(result.rules.operands[0]?.source?.evidence).toBe('A5: A101');
+    // A spreadsheet has no print page: a model-supplied page is dropped, the sheet/row-verified count stays a list count.
     o.source.page = 1;
-    expect(calculateTenderQuantities(r,[{ ...doc, file_type:'xlsx', text:'Blad: Lägenheter\nA5: A101\nA6: A102\nA7: A103' },{ ...doc,id:pdfId }]).assumptions.length).toBeGreaterThan(0);
+    const paged = calculateTenderQuantities(r,[{ ...doc, file_type:'xlsx', text:'Blad: Lägenheter\nA5: A101\nA6: A102\nA7: A103' },{ ...doc,id:pdfId }]);
+    expect(paged.assumptions).toHaveLength(0); expect(paged.items[0]?.quantity).toBe('90'); expect(paged.rules.operands[0]?.source?.page).toBeNull();
   });
   it('sends object lists first, technical documents next and drawings last in one streamed call', async () => {
     const events = [{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', name: 'mangdregler' } }, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(rules()) } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' } }, { type: 'message_stop' }];

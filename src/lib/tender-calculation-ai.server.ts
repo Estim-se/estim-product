@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { assumptionItems } from './tender-quantity-display';
 import { streamTenderTool, tenderDocumentBlock } from './tender-tool-call.server';
 import { closestTenderPostType } from './tender-post-matching';
+import { verifyTenderSource } from './tender-source-verification';
 const source = { type: 'object', additionalProperties: false, properties: { document_id: { type: 'string' }, page: { type: ['integer','null'] }, evidence: { type: 'string' } }, required: ['document_id','page','evidence'] };
 const wire = { type: 'object', additionalProperties: false, properties: { matches: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { post: {type:'string'}, type_id: {type:['string','null']} }, required:['post','type_id'] } }, demolition: { anyOf: [{ type:'null' }, { type:'object',additionalProperties:false,properties:{ source, apartment_operand_id:{type:'string'},type_id:{type:['string','null']} },required:['source','apartment_operand_id','type_id'] }] } }, required:['matches','demolition'] };
 const rawSchema = z.object({ matches:z.array(z.object({post:z.string(),type_id:z.string().uuid().nullable()}).strict()).max(200),demolition:z.object({source:z.object({document_id:z.string().uuid(),page:z.number().int().positive().nullable(),evidence:z.string().min(1).max(1500)}).strict(),apartment_operand_id:z.string(),type_id:z.string().uuid().nullable()}).strict().nullable() }).strict();
@@ -23,7 +24,7 @@ export async function matchTenderCost(quantities: TenderQuantities, settings: Ca
   });
   // Flag, don't fail: an unverifiable demolition source keeps the post as Låg certainty for manual checking.
   let flag: 'Källa saknas – kontrollera'|undefined;
-  if(raw.demolition){const s=raw.demolition.source,d=documents.find(d=>d.id===s.document_id);if(!d||(d.file_type==='pdf'?(s.page===null||d.page_count===null||s.page>d.page_count):s.page!==null)||!/rivning|riv[as]|demonter/i.test(s.evidence)||(d.text&&!d.text.replace(/\s+/g,' ').includes(s.evidence.replace(/\s+/g,' '))))flag='Källa saknas – kontrollera';}
+  if(raw.demolition){const s=raw.demolition.source,checked=verifyTenderSource(documents,s);if(!checked||!/rivning|riv[as]|demonter/i.test(s.evidence))flag='Källa saknas – kontrollera';else s.page=checked.page;}
   const apartments=(id:string)=>{const o=quantities.rules.operands.find(o=>o.id===id);return !!o&&o.basis==='Lista'&&/lägenhet/i.test(o.label)&&o.list_selection?.operation==='Antal'&&o.list_selection.equals===null;};
   let demolition=raw.demolition;
   if(demolition&&!apartments(demolition.apartment_operand_id)){const alt=quantities.rules.operands.find(o=>apartments(o.id));demolition=alt?{...demolition,apartment_operand_id:alt.id}:null;if(alt)flag='Källa saknas – kontrollera';}

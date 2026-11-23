@@ -49,7 +49,9 @@ async function run(tid:string){
   const fasit=/testlärkan/i.test(t.name)?checkTenderFasit('Testlärkan',snapshot):/prov/i.test(t.name)?checkTenderFasit('Provbänken',snapshot):[];
   writeFileSync(`/tmp/anbud-verification/${tid}-run${n}.json`,JSON.stringify(snapshot,null,2));
   const rows=JSON.stringify(cost.rows);
-  report.push({tender:t.name,run:n,status:'Analyserat',rows:cost.rows.length,total:cost.total,identical:n===1?null:rows===priorRows&&cost.total===priorTotal,errors:ds.filter((d:any)=>d.error).length,fasit});
+  // Post names and certainty only: shows which rows are left out of the total and why, without tender text.
+  const excluded=[...cost.rows,...cost.proposals].filter((r:any)=>r.total===null).map((r:any)=>({post:r.post,quantity:r.quantity,certainty:r.certainty,reason:!r.type_id?'Ingen katalogtyp':r.awaiting_confirmation?'Låg säkerhet – väntar på bekräftad mängd':'Saknar tid eller pris',unsourced:/Källa saknas/.test(r.rule)}));
+  report.push({tender:t.name,run:n,status:'Analyserat',rows:cost.rows.length,total:cost.total,excluded,identical:n===1?null:rows===priorRows&&cost.total===priorTotal,errors:ds.filter((d:any)=>d.error).length,fasit});
   if(n===1){priorRows=rows;priorTotal=cost.total;}
   writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(t.name,n,'DONE',cost.rows.length,cost.total,'fasit',JSON.stringify(fasit));
   if(fasit.length||n>1&&rows!==priorRows){console.log(t.name,'stopped at failed fasit or repeatability check');return;}

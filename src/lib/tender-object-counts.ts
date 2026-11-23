@@ -1,17 +1,17 @@
 import { roomsFromArea, exampleRoomRecipes, type RoomRecipes } from './tender-room-recipes';
 // Resolve model-selected spreadsheet ranges against the original extracted cells.
 export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Unika trapphusplan' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: 'Vardagsrum'|'Sovrum'|'Hall'|'Kök'|null|undefined; room_count_range?: string | null | undefined; address_range?: string | null | undefined };
-function decode(value: string) { return value.replace(/&#(x[0-9a-f]+|\d+);/gi, (_, n: string) => String.fromCodePoint(n.startsWith('x') ? parseInt(n.slice(1),16) : Number(n))).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"); }
+export function decodeCellText(value: string) { return value.replace(/&#(x[0-9a-f]+|\d+);/gi, (_, n: string) => String.fromCodePoint(n.startsWith('x') ? parseInt(n.slice(1),16) : Number(n))).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"); }
 export function objectSelectionEvidence(text: string, selection: ObjectSelection): string {
   const range = selection.range.match(/^([A-Z]+)(\d+):[A-Z]+(\d+)$/);
   if (!range) throw new Error('Objektlistans cellområde är ogiltigt.');
   let active = false;
   for (const line of text.split('\n')) {
-    if (line.startsWith('Blad: ')) { active = decode(line.slice(6)).trim() === selection.sheet.trim(); continue; }
+    if (line.startsWith('Blad: ')) { active = decodeCellText(line.slice(6)).trim() === selection.sheet.trim(); continue; }
     if (!active) continue;
     for (const cell of line.split('\t')) {
       const m = cell.match(/^([A-Z]+)(\d+): (.*)$/);
-      if (m && m[1] === range[1] && Number(m[2]) >= Number(range[2]) && Number(m[2]) <= Number(range[3]) && (selection.equals === null || decode(m[3] ?? '').trim() === selection.equals.trim())) return cell.slice(0,1500);
+      if (m && m[1] === range[1] && Number(m[2]) >= Number(range[2]) && Number(m[2]) <= Number(range[3]) && (selection.equals === null || decodeCellText(m[3] ?? '').trim() === selection.equals.trim())) return cell.slice(0,1500);
     }
   }
   throw new Error('Objektlistans urval saknar källceller.');
@@ -23,9 +23,9 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
   if (end < start || end - start > 10000) throw new Error('Objektlistans cellområde är för stort.');
   const cells = new Map<string,string>(); let active = false, found = false;
   for (const line of text.split('\n')) {
-    if (line.startsWith('Blad: ')) { active = decode(line.slice(6)).trim() === selection.sheet.trim(); found ||= active; continue; }
+    if (line.startsWith('Blad: ')) { active = decodeCellText(line.slice(6)).trim() === selection.sheet.trim(); found ||= active; continue; }
     if (!active) continue;
-    for (const cell of line.split('\t')) { const m = cell.match(/^([A-Z]+\d+): (.*)$/); if (m?.[1] && m[2] !== undefined) cells.set(m[1], decode(m[2]).replace(/ \(formel:.*\)$/, '').trim()); }
+    for (const cell of line.split('\t')) { const m = cell.match(/^([A-Z]+\d+): (.*)$/); if (m?.[1] && m[2] !== undefined) cells.set(m[1], decodeCellText(m[2]).replace(/ \(formel:.*\)$/, '').trim()); }
   }
   if (!found) throw new Error('Objektlistans blad saknas.');
   // An apartment ID is not a stairwell address. Repair only when explicit column headers prove the boundary.

@@ -2,6 +2,7 @@
 import type { TenderInsights } from '@/lib/tender-insights';
 import type { TenderQuantities } from '@/lib/tender-quantities';
 import { assumptionItems } from '@/lib/tender-quantity-display';
+import { withoutNegatedTerms } from '@/lib/tender-negation';
 export type FasitSnapshot = { insights: TenderInsights; quantities: TenderQuantities; documents: {id:string;file_name:string;doc_type:string|null}[] };
 type QuantityExpectation = { name:string; pattern:RegExp; exclude?:RegExp; value:number };
 export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken',QuantityExpectation[]> = {
@@ -51,7 +52,9 @@ const additionalKeys:Record<string,Record<string,RegExp[]>>={
 export function checkTenderFasit(name:'Testlärkan'|'Provbänken',snapshot:FasitSnapshot):string[]{
  const issues:string[]=[];
  const items=[...snapshot.quantities.items,...snapshot.quantities.assumptions.flatMap(assumptionItems)].filter((r,i,all)=>all.findIndex(x=>x.post===r.post&&x.unit===r.unit)===i);
- for(const e of tenderQuantityExpectations[name]){const found=items.filter(i=>e.pattern.test(i.post)&&!e.exclude?.test(i.post));const value=found.reduce((sum,i)=>sum+Number(i.quantity),0);if(value!==e.value)issues.push(`${e.name}: ${value}, förväntat ${e.value}`);}
+ // Match on what a post includes: negated phrases ("exkl. diskmaskin", "ej lägenhetsunderlag") describe exclusions.
+ const included=(post:string)=>withoutNegatedTerms(post);
+ for(const e of tenderQuantityExpectations[name]){const found=items.filter(i=>e.pattern.test(included(i.post))&&!e.exclude?.test(included(i.post)));const value=found.reduce((sum,i)=>sum+Number(i.quantity),0);if(value!==e.value)issues.push(`${e.name}: ${value}, förväntat ${e.value}`);}
  for(const [field,pattern] of Object.entries(commonKeys[name]??{})){const k=snapshot.insights.key_data.find(k=>k.field===field);if(!k||!pattern.test(k.value)||k.source?.flag||!k.source)issues.push(`${field}: saknas, fel värde eller overifierad källa`);}
  for(const [field,patterns] of Object.entries(additionalKeys[name]??{})){const k=snapshot.insights.key_data.find(k=>k.field===field);if(!k||!patterns.every(p=>p.test(k.value))||!k.source||k.source.flag)issues.push(`${field}: ofullständig fasituppgift; producerat ${k?.value??'saknas'}`);}
  const texts=snapshot.insights.risks.map(r=>`${r.title} ${r.description}`);
@@ -61,7 +64,7 @@ export function checkTenderFasit(name:'Testlärkan'|'Provbänken',snapshot:Fasit
   if(texts.some(t=>/vite/i.test(t)&&/utan tak|obegräns/i.test(t)))issues.push('Vitet har tak 20 %, får inte påstås vara utan tak');
   if(snapshot.insights.risks.some(r=>/EM.?index|indexreglering/i.test(r.title)))issues.push('Gynnsam EM-indexreglering får inte bli risk');
   if(snapshot.insights.risks.some(r=>/begränsad.*arbetstid|arbetstid.*begräns/i.test(`${r.title} ${r.description}`)))issues.push('Gynnsamma arbetstider 07–18 och lördag får inte bli en begränsningsrisk utan särskilt källstöd');
-  if(items.some(i=>/rivning.*lägenhet|rivning.*lgh/i.test(i.post)))issues.push('Rivning gäller byggnaden, inte lägenheter');
+  if(items.some(i=>/rivning.*lägenhet|rivning.*lgh/i.test(included(i.post))))issues.push('Rivning gäller byggnaden, inte lägenheter');
  }
  return issues;
 }
