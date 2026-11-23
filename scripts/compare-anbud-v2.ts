@@ -4,6 +4,8 @@
 //       A saved run from verify-anbud-pipeline.ts (quantities, matches and cost).
 //   bun scripts/compare-anbud-v2.ts --documents <folder with the tender files>
 //       Runs only the code part of the quantity engine on local files (no model answer): shows what code builds alone.
+//   bun scripts/compare-anbud-v2.ts --catalog example
+//       Catalog coverage of the built-in example catalog (seed with refreshed example values + additional types).
 //   Add --json <file> to also write the comparison as JSON.
 //
 // Tender files and saved runs may contain customer data: keep them outside the repository.
@@ -11,11 +13,17 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { calculateTenderQuantities } from '../src/lib/tender-quantities';
 import { readTenderDocument } from '../src/lib/tender-reading';
 import { extractTenderPdfPageText } from '../src/lib/tender-pdf-text.server';
-import { compareWithV2, formatV2Comparison, type V2Snapshot } from '../src/test/helpers/v2-comparison';
+import { catalogCoverage, compareWithV2, formatCatalogCoverage, formatV2Comparison, type V2Snapshot } from '../src/test/helpers/v2-comparison';
+import { ADDITIONAL_EXAMPLE_POST_TYPES, EXAMPLE_VALUE_UPDATES, SEEDED_EXAMPLE_POST_TYPES } from '../src/lib/tender-example-catalog';
 
 const args = process.argv.slice(2), arg = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
-const snapshotPath = arg('--snapshot'), folder = arg('--documents'), jsonPath = arg('--json');
-if (!snapshotPath === !folder) throw Error('Use exactly one of --snapshot <file> or --documents <folder>.');
+const snapshotPath = arg('--snapshot'), folder = arg('--documents'), jsonPath = arg('--json'), catalog = arg('--catalog');
+if (catalog === 'example') {
+  const seeded = SEEDED_EXAMPLE_POST_TYPES.map(t => { const u = EXAMPLE_VALUE_UPDATES.find(x => x.id === t.id); return u ? { ...t, ...u.to } : t; });
+  console.log(formatCatalogCoverage(catalogCoverage([...seeded, ...ADDITIONAL_EXAMPLE_POST_TYPES])));
+  process.exit(0);
+}
+if (!snapshotPath === !folder) throw Error('Use exactly one of --snapshot <file>, --documents <folder> or --catalog example.');
 
 async function codeOnly(dir: string): Promise<V2Snapshot> {
   const documents = [];

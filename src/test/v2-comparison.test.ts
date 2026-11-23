@@ -59,3 +59,31 @@ describe('comparison', () => {
     expect(c.lines.find(l => l.v2.nr === '3.3')?.in_total).toBe('utanför');
   });
 });
+
+describe('example catalog against v2', () => {
+  it('every v2 post finds a catalog type with the v2 time and price through the deterministic matching', async () => {
+    const { catalogCoverage } = await import('./helpers/v2-comparison');
+    const { ADDITIONAL_EXAMPLE_POST_TYPES, EXAMPLE_VALUE_UPDATES, SEEDED_EXAMPLE_POST_TYPES, withExamplePostTypes } = await import('@/lib/tender-example-catalog');
+    // A company that still has the untouched seed gets the refreshed values and the additional types from the button.
+    const { emptyCalculationSettings } = await import('@/lib/tender-calculation');
+    const updated = withExamplePostTypes({ ...emptyCalculationSettings, post_types: SEEDED_EXAMPLE_POST_TYPES.map(t => ({ ...t })) });
+    const c = catalogCoverage(updated.post_types);
+    expect(c.counts).toEqual({ 'riktig': 70, 'avvikande pris': 0, 'ingen typ': 0 });
+    expect(updated.post_types).toHaveLength(SEEDED_EXAMPLE_POST_TYPES.length + ADDITIONAL_EXAMPLE_POST_TYPES.length);
+    expect(EXAMPLE_VALUE_UPDATES.every(u => updated.post_types.find(t => t.id === u.id)?.hours === u.to.hours)).toBe(true);
+  });
+  it('never overwrites values a company has changed', async () => {
+    const { SEEDED_EXAMPLE_POST_TYPES, withExamplePostTypes } = await import('@/lib/tender-example-catalog');
+    const { emptyCalculationSettings } = await import('@/lib/tender-calculation');
+    const own = SEEDED_EXAMPLE_POST_TYPES.map(t => t.name === 'Anslutning golvvärme' ? { ...t, hours: 1.5, list_price: 2500 } : { ...t });
+    expect(withExamplePostTypes({ ...emptyCalculationSettings, post_types: own }).post_types.find(t => t.name === 'Anslutning golvvärme')).toMatchObject({ hours: 1.5, list_price: 2500 });
+  });
+  it.each([
+    ['Märkning: graverade skyltar och gruppförteckningar', 'Märkning och gruppförteckningar'], ['Matning hiss, funktionssäker kabel', 'Matning med funktionssäker kabel'],
+    ['Trapphusbelysning L4 med närvarosensor', 'LED-armatur trapphus'], ['Kvalitetsplan och egenkontrollistor', 'Kvalitetsplan och egenkontroll'],
+    ['Matning kombimaskin, uttag eller IP44-dosa', 'Dubbelt uttag IP44'], ['Syn och protokoll före rivning', 'Syn och protokoll före rivning'],
+  ])('matches "%s" to "%s", not to a look-alike', async (post, expected) => {
+    const { postMeaning } = await import('@/lib/tender-post-matching');
+    expect(postMeaning(post)).toBe(postMeaning(expected));
+  });
+});
