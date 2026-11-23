@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { tenderExportData, type TenderExportInput } from './tender-export';
 import { sectionOfPost, TENDER_SECTIONS } from './tender-example-catalog';
 import { postMeaning } from './tender-post-matching';
+import { addApartmentSheet, apartmentQuantityFormula, areaDivisors, sheetQuantity } from './tender-apartment-sheet';
 
 const colors = { input: 'FFFF00', ink: '000000', inputInk: '0000FF', link: '008000', heading: 'E7EEF0', assumed: 'FFE0B2', missing: 'FFCDD2' };
 const numberFormat = '#,##0.00;(#,##0.00);"-"';
@@ -30,6 +31,10 @@ export async function createTenderWorkbook(input: TenderExportInput) {
   settings.getCell('B4').dataValidation = { type: 'decimal', operator: 'between', formulae: [0,1], showErrorMessage: true, error: 'Rabatten måste vara mellan 0 % och 100 %.' };
   if (input.settings.example_values) settings.addRow(['Exempelvärden']);
   const calc = sheet('Kalkyl', ['Post', 'Mängd', 'Enhet', 'Säkerhet', 'Tid/enhet (h)', 'Listpris/enhet (kr)', 'Källa', 'Timmar', 'Arbete (kr)', 'Material (kr)', 'Summa (kr)', 'Status', 'Bekräfta mängd (0/1)', 'Avsnitt'], [48,14,10,12,16,20,65,16,20,20,22,40,24,40]);
+  // Per-apartment sheet right after the calculation; quantities counted from the object list refer to its column sums.
+  const model = input.quantities.object_model;
+  const apartmentSheet = model ? addApartmentSheet(book, model, areaDivisors(data.rows.map(r => r.count_basis)), { heading: colors.heading, input: yellow }) : null;
+  const linkedQuantity = (r: typeof data.rows[number]) => model && apartmentSheet && r.count_basis && !r.needs_quantity && sheetQuantity(model, r.count_basis) === Number(r.quantity) ? apartmentQuantityFormula(apartmentSheet, r.count_basis) : null;
   // Rows are grouped by calculation section (stable order within a section).
   const sectionOf = (r: typeof data.rows[number]) => sectionOfPost(r.post, r.section, input.settings.post_types.find(t => t.id === r.type_id)?.section, postMeaning);
   const ordered = data.rows.map((r, i) => ({ r, i, s: sectionOf(r) })).sort((a, b) => a.s - b.s || a.i - b.i);
@@ -43,6 +48,8 @@ export async function createTenderWorkbook(input: TenderExportInput) {
     yellow(row.getCell(6), `Source: Företagets posttyp eller manuellt angivet listpris, ${r.post}`);
     row.getCell(2).note = `Source: ${r.source || 'Anbudsanalys'}. Beräkning: ${r.calculation}${r.needs_quantity ? '. Antagen mängd – bekräfta eller ändra innan prissättning.' : ''}`;
     if (r.needs_quantity) yellow(row.getCell(2), String(row.getCell(2).note));
+    const linked = linkedQuantity(r);
+    if (linked) { row.getCell(2).value = { formula: linked, result: Number(r.quantity) }; row.getCell(2).note = `${row.getCell(2).note}. Räknas från fliken Lägenheter – ändra där.`; }
     if (r.total === null) row.getCell(1).note = 'Saknar mängd eller pris. Exkluderad från totalsummor tills mängd, tid och listpris är ifyllda.';
     row.getCell(8).value = { formula: r.needs_quantity ? `IF(OR(M${n}=0,COUNT(B${n},E${n},F${n})<3),"",ROUND(B${n}*E${n},6))` : `IF(COUNT(B${n},E${n},F${n})<3,"",ROUND(B${n}*E${n},6))`, result: r.hours ?? '' };
     row.getCell(9).value = { formula: `IF(H${n}="","",ROUND(H${n}*'Inställningar'!$B$2,2))`, result: r.labor ?? '' };
@@ -131,7 +138,7 @@ export async function createTenderWorkbook(input: TenderExportInput) {
     row.eachCell(c => {
       c.alignment = { vertical: 'top', wrapText: true };
       if (!c.font?.name) c.font = { name: 'Arial', color: { argb: colors.ink } };
-      if (c.type === ExcelJS.ValueType.Formula) c.font = { name: 'Arial', color: { argb: c.formula.includes("'Kalkyl'!") ? colors.link : colors.ink } };
+      if (c.type === ExcelJS.ValueType.Formula) c.font = { name: 'Arial', color: { argb: /'(Kalkyl|Lägenheter)'!/.test(c.formula) ? colors.link : colors.ink } };
       lines = Math.max(lines, Math.ceil(c.text.length / Math.max(10,(ws.getColumn(c.col).width ?? 30)-2)));
     });
     row.height = Math.min(300, Math.max(28, lines * 15));
