@@ -3,7 +3,7 @@ import { roomRecipeSchema, exampleRoomRecipes, type RoomRecipes } from './tender
 import type { InsightDocument } from './tender-insights';
 import { objectSelectionEvidence, resolveObjectCount } from './tender-object-counts';
 import { uniqueQuantityAssumptions } from './tender-quantity-display';
-import { normalizeRoomTotalFactors } from './tender-quantity-scope';
+import { isQuantityHelperPost, normalizeRoomTotalFactors } from './tender-quantity-scope';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
 
@@ -45,8 +45,19 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     if (o.list_selection) {
       if (o.basis !== 'Lista' || doc?.file_type !== 'xlsx' || !doc.text || !o.source) { flag(o); continue; }
       try { o.value = resolveObjectCount(doc.text, o.list_selection, recipes); o.source.evidence = objectSelectionEvidence(doc.text, o.list_selection); }
-      catch { flag(o); continue; }
-    } else if (o.basis !== 'Antagande' && doc?.file_type === 'xlsx') { flag(o); continue; }
+      catch {
+        // Summing a type column ("4 rum och kök") for a bedroom total is a per-row bedroom count, not a numeric sum.
+        const s = o.list_selection;
+        const bedrooms = s.operation === 'Summa' && /sovrum/i.test(o.label) ? { ...s, operation: 'Rum per rad' as const, room: 'Sovrum' as const, room_count_range: s.range } : null;
+        try { if (!bedrooms) throw Error('Ogiltigt urval.'); o.value = resolveObjectCount(doc.text, bedrooms, recipes); o.list_selection = bedrooms; o.source.evidence = objectSelectionEvidence(doc.text, bedrooms); }
+        catch { flag(o); continue; }
+      }
+    } else if (o.basis !== 'Antagande' && doc?.file_type === 'xlsx') {
+      // A figure stated in a spreadsheet cell may be cited like text when the sheet/row quote contains that exact number;
+      // counting rows still requires list_selection so a model-counted value never passes as a stated figure.
+      const stated = !!o.source && verified(o.source) && new RegExp(`(?<![\\d.,])${o.value.replace('.', '[.,]')}(?![\\d.,]*\\d)`).test(o.source.evidence.replace(/\b[A-Z]{1,3}\d+:\s*/g, ' '));
+      if (!stated) { flag(o); continue; }
+    }
     if (o.source && !verified(o.source)) { if (o.basis === 'Antagande') o.source = null; else flag(o); }
   }
   // A dimension-based kitchen rule cannot be evaluated without bench lengths. Substitute the company's
@@ -91,6 +102,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => ({ description: a.description, sources: a.source && verified(a.source) ? [a.source] : [], item: null })) };
   const posts = new Set<string>();
   for (const i of rules.items) {
+    // Object and room counts stay operands of other posts; they are never priced or listed as rows.
+    if (isQuantityHelperPost(i.post)) continue;
     if (posts.has(`${i.post.toLowerCase()}|${i.unit}`)) continue;
     posts.add(`${i.post.toLowerCase()}|${i.unit}`);
     const used: z.infer<typeof operandSchema>[] = [];

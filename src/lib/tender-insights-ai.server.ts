@@ -1,5 +1,5 @@
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, tenderInsightsWireSchema, validateTenderInsights, type InsightDocument, type TenderInsights } from './tender-insights';
-import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, validateTenderRiskReview, tenderRiskReviewProblem, tenderAfRetryText, type TenderRiskArea } from './tender-risk-checklist';
+import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, tenderRiskReviewWireSchemaFor, tenderChecklistRows, validateTenderRiskReview, tenderRiskReviewProblem, tenderAfRetryText, type TenderRiskArea } from './tender-risk-checklist';
 import { streamTenderTool, tenderDocumentBlock, TenderGatewayError, TenderIncompleteOutput } from './tender-tool-call.server';
 import { z } from 'zod';
 import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, mergeTenderRisks, needsRiskQuestion } from './tender-risk-merging';
@@ -37,7 +37,7 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
   const keyData = previous.key_data ?? [];
   if (step !== 'key_data' && keyData.length !== TENDER_KEY_FIELDS.length) throw new Error('Nyckeldata saknas. Analysera igen.');
   const validate = (raw: unknown) => {
-    const obj = (raw ?? {}) as Record<string, unknown>;
+    const obj = (step === 'risks' ? tenderChecklistRows(raw ?? {}) : raw ?? {}) as Record<string, unknown>;
     const stepRows=obj[step];
     if (!Array.isArray(stepRows)) throw new TenderIncompleteOutput('saknar användbart stegresultat');
     if (step === 'key_data') return validateTenderInsights({ key_data: obj['key_data'], risks: [], questions: [] }, documents, true).key_data;
@@ -54,7 +54,7 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
     const text = d.text ? tenderAfRetryText(d.text) : '';
     return text ? [{ type: 'text', text: `Dokument-id: ${d.id}. Endast AFC/AFD-avsnitt från AF:\n${text}` }] : [];
   }) : [];
-  return streamTenderTool({ key, model, system: `${step === 'risks' ? RISK_BASE : BASE}\n${s.prompt}`, content: [...content, ...tail], ...(retryContent.length ? { retryContent: [...retryContent, { type: 'text', text: tenderRiskChecklistPrompt(areas) }] } : {}), tool: s.tool, description: s.description, schema: s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
+  return streamTenderTool({ key, model, system: `${step === 'risks' ? RISK_BASE : BASE}\n${s.prompt}`, content: [...content, ...tail], ...(retryContent.length ? { retryContent: [...retryContent, { type: 'text', text: tenderRiskChecklistPrompt(areas) }] } : {}), tool: s.tool, description: s.description, schema: step === 'risks' ? tenderRiskReviewWireSchemaFor(areas) : s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
 }
 
 export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){

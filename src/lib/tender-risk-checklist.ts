@@ -31,22 +31,31 @@ ${subset ? 'Övriga checklisteområden granskas i separata anrop: rapportera hä
 Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagning, brandtätning, rivning eller samordning även mot andra entreprenörer. Återge ansvar och kostnads-/tidsföljd som en egen risk med AF-kod (t.ex. AFC.13 när den koden finns).
 Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens af_code (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden.
 Ett tydligt formulerat villkor kan ändå vara ofördelaktigt: bedöm följden, inte bara om villkoret är oklart eller ändrar AB. Kontrollera exempelvis säkerheters kapitalbindning/kostnad under en lång garantitid även om procentsatserna är tydliga. Beskriv fem års materialansvar och 45 dagars likviditetspåverkan direkt utan påståenden om vad standardavtalet annars skulle ha gett.
-Returnera två platta listor: risks (title, severity, description, suggestion, af_code, page) och risk_checklist (area, assessment, af_code). Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. Ange exakt en checklistrad per område ovan, med områdets namn exakt som det står, och assessment Risk, Normalt eller Ej nämnt. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
+Returnera risks som platt lista (title, severity, description, suggestion, af_code, page) och risk_checklist som ett objekt med EXAKT en egenskap per område ovan (${areas.length} st), där nyckeln är områdets namn exakt som det står och värdet har assessment och af_code. Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. assessment är Risk, Normalt eller Ej nämnt; en tom risk_checklist är aldrig giltig. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
 }
 export const TENDER_RISK_CHECKLIST_PROMPT = tenderRiskChecklistPrompt();
 
-// Flat wire lists keep the provider grammar small; citations and links are rebuilt in code.
-export const tenderRiskReviewWireSchema = {
-  type: 'object', additionalProperties: false,
-  properties: {
-    risks: { type: 'array', items: { type: 'object', additionalProperties: false,
-      properties: { title: { type: 'string' }, description: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
-      required: ['title', 'description'] } },
-    risk_checklist: { type: 'array', items: { type: 'object', additionalProperties: false,
-      properties: { area: { type: 'string' }, assessment: { type: 'string', enum: ['Risk', 'Normalt', 'Ej nämnt'] }, af_code: { type: ['string', 'null'] } },
-      required: ['area', 'assessment'] } },
-  }, required: ['risks', 'risk_checklist'],
-};
+// Flat risk list keeps the provider grammar small; citations and links are rebuilt in code. The checklist is an
+// object with one REQUIRED property per area of this call, so strict decoding cannot return an empty checklist.
+export function tenderRiskReviewWireSchemaFor(areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS) {
+  const status = { type: 'object', additionalProperties: false, properties: { assessment: { type: 'string', enum: ['Risk', 'Normalt', 'Ej nämnt'] }, af_code: { type: ['string', 'null'] } }, required: ['assessment', 'af_code'] };
+  return {
+    type: 'object', additionalProperties: false,
+    properties: {
+      risks: { type: 'array', items: { type: 'object', additionalProperties: false,
+        properties: { title: { type: 'string' }, description: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
+        required: ['title', 'description'] } },
+      risk_checklist: { type: 'object', additionalProperties: false, properties: Object.fromEntries(areas.map(area => [area, status])), required: [...areas] },
+    }, required: ['risks', 'risk_checklist'],
+  };
+}
+export const tenderRiskReviewWireSchema = tenderRiskReviewWireSchemaFor();
+// The wire checklist is keyed by area; validation works on rows. Older array output is passed through unchanged.
+export function tenderChecklistRows(raw: unknown): unknown {
+  const obj = record(raw), list = obj?.['risk_checklist'], keyed = record(list);
+  if (!obj || !keyed) return raw;
+  return { ...obj, risk_checklist: Object.entries(keyed).map(([area, value]) => ({ area, ...(record(value) ?? {}) })) };
+}
 
 type FlatRisk = { title: string; description: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
 type Assessment = 'Risk' | 'Normalt' | 'Ej nämnt';
