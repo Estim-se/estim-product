@@ -10,7 +10,7 @@ type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'no-silent-recipe-v9', calculation: 'no-silent-recipe-v9' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'no-silent-recipe-v9', calculation: 'catalog-v2-v10' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');

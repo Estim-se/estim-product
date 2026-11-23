@@ -4,7 +4,8 @@ import { roomRecipeSchema } from './tender-room-recipes';
 import { tenderQuantitiesSchema, type TenderQuantities } from './tender-quantities';
 
 const amount = z.number().finite().nonnegative().max(100000000).multipleOf(0.000001);
-export const postTypeSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240), hours: amount.max(10000), list_price: amount }).strict();
+// section: optional calculation section (1-9) used to group the calculation; types without one are grouped by meaning.
+export const postTypeSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240), hours: amount.max(10000), list_price: amount, section: z.number().int().min(1).max(20).optional() }).strict();
 export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(100000), material_markup: amount.max(1000), list_discount: amount.max(100), establishment: amount.max(99.999999), contingency: amount.max(99.999999), post_types: z.array(postTypeSchema).max(200), example_values: z.boolean(), room_recipes: roomRecipeSchema.nullable().optional() }).strict().superRefine((s, ctx) => {
   if (s.establishment + s.contingency >= 100) ctx.addIssue({ code: 'custom', message: 'Etablering och oförutsett måste tillsammans vara mindre än 100 %.' });
   if (new Set(s.post_types.map(t => t.id)).size !== s.post_types.length) ctx.addIssue({ code: 'custom', message: 'Dubbla posttyper.' });

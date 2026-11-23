@@ -50,7 +50,9 @@ it('adds the Servisledning example type and matches a new service line to it', (
   expect(missingExamplePostTypes({ post_types: [] }).map(t => t.name)).toContain('Servisledning');
   const catalog = withExamplePostTypes({ ...emptyCalculationSettings, post_types: [] });
   const type = catalog.post_types.find(t => t.name === 'Servisledning');
-  expect(type).toMatchObject({ id: '00000000-0000-4000-8000-000000000040', hours: 12, list_price: 0 });
+  // The grid owner's fee is unpriced (v2 "Saknar pris"); the 12 h of dimensioning and notification are their own type.
+  expect(type).toMatchObject({ id: '00000000-0000-4000-8000-000000000040', hours: 0, list_price: 0 });
+  expect(catalog.post_types.find(t => /dimensionering/i.test(t.name))).toMatchObject({ hours: 12, list_price: 0 });
   expect(closestTenderPostType('Ny servisledning', catalog)).toBe(type?.id);
   expect(closestTenderPostType('Ny serviscentral', catalog)).not.toBe(type?.id);
 });

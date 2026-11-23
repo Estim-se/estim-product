@@ -67,3 +67,25 @@ export function formatV2Comparison(c: V2Comparison) {
   if (c.catalog_total !== null) out.push(`Total med företagets katalog: ${kr(c.catalog_total)}`);
   return out.join('\n');
 }
+
+// Catalog coverage: does each v2 post find a catalog type through the deterministic matching, with v2's time and price?
+import { closestTenderPostType } from '@/lib/tender-post-matching';
+import type { CalculationSettings } from '@/lib/tender-calculation';
+export type V2CatalogStatus = 'riktig' | 'avvikande pris' | 'ingen typ';
+export function catalogCoverage(postTypes: CalculationSettings['post_types']) {
+  const settings = { hourly_rate: 0, material_markup: 0, list_discount: 0, establishment: 0, contingency: 0, example_values: true, post_types: postTypes } as CalculationSettings;
+  const lines = V2_POSTS.map(p => {
+    const type = postTypes.find(t => t.id === closestTenderPostType(p.post, settings)) ?? null;
+    const status: V2CatalogStatus = !type ? 'ingen typ' : type.hours === p.hours && (p.list_price === null || type.list_price === p.list_price) ? 'riktig' : 'avvikande pris';
+    return { v2: p, type, status };
+  });
+  const counts = { 'riktig': 0, 'avvikande pris': 0, 'ingen typ': 0 } as Record<V2CatalogStatus, number>;
+  for (const l of lines) counts[l.status]++;
+  const covered = lines.filter(l => l.status !== 'ingen typ').reduce((n, l) => n + (l.v2.quantity ?? 0) * unitCost(l.v2), 0);
+  return { lines, counts, covered_total: round(withAdditions(covered)) };
+}
+export function formatCatalogCoverage(c: ReturnType<typeof catalogCoverage>) {
+  const out = c.lines.filter(l => l.status !== 'riktig').map(l => `  ${l.v2.nr.padEnd(5)} ${l.status.padEnd(15)} ${l.v2.post}${l.type ? ` → ${l.type.name} (${l.type.hours} h, ${l.type.list_price} kr; v2 ${l.v2.hours} h, ${l.v2.list_price ?? '–'} kr)` : ''}`);
+  out.push(`Katalogtäckning: riktig ${c.counts['riktig']} · avvikande pris ${c.counts['avvikande pris']} · ingen typ ${c.counts['ingen typ']} av ${c.lines.length} · v2-värde med katalogtyp ${Math.round(c.covered_total).toLocaleString('sv-SE')} kr av ${Math.round(V2_TOTAL.total).toLocaleString('sv-SE')} kr`);
+  return out.join('\n');
+}
