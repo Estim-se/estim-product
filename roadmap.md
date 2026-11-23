@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [ ] Database-only receipt migration: restore the empty-email guard, remove fixture tests, keep cleanup unchanged, apply one migration and verify with read-only queries; no app changes or publication.
+
 - [x] Simplified Anbud risk extraction into flat risk and Risk/Normalt/Ej nämnt checklist lists, requiring only display fields on risks. Code resolves AF citations, links checklist areas and flags missing sources; incomplete-output retries narrow to AFC/AFD. No special-case tender data added. 437 tests pass; automatic build OK.
 - [ ] Nine-run/fasit verification stopped on 2026-11-22: Testlärkan and Provbänken run 1 reached risks:3 but exhausted three attempts with empty/incomplete risk output without a completely sourced Normalt checklist. Format accepted (HTTP 200); the previous grammar-complexity error is gone. Baggen run 1 stopped during risks:3; runs 2–3 of all tenders not started. Document classification, key data and risk calls 1–2 remain saved. No valid fresh totals or fasit result; nothing published. Further analysis attempts wait for user instruction under the three-identical-failures stop rule.
 - [ ] Authenticated page end-to-end proof remains unavailable for external Supabase; private real-job verification is not a signed-in browser check.
