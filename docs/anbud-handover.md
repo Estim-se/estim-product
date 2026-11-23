@@ -45,6 +45,10 @@ Risk merge and fact review run inside the final risk step. Development schedules
 
 **Tables:** `tenders`, `tender_documents`, `tender_insights`, `tender_quantities`, `tender_calculation_settings`, `tender_calculation_matches`, `tender_jobs`, `tender_job_secrets`, `tender_file_cache`, `tender_result_cache`. Company RLS and atomic job functions are defined in `supabase/migrations/`; search for `estim_start_tender_job`, `estim_claim_tender_job`, `estim_kick_tender_job`, `estim_recalculate_tender_job`, `estim_rerun_tender_risks`, `estim_reread_tender_job`.
 
+### Requirements engine (feature flag, off by default)
+
+`ANBUD_REQUIREMENTS_ENGINE=1` on the server replaces the operand engine in the quantity step. The model returns only requirements (post, section 1–9, unit of count, count per unit, fixed quantity, area divisor, assumed, note, source) and object figures stated in text (huskroppar, fastigheter, trapphus, etapper, entréer). Code builds an object model from the object list (apartments, premises, rooms per type, stairwells and floors) and the drawing type codes (L/K/B/W/T: kitchens, bathrooms, WC per apartment, matched by apartment number or area; WC from living area per company recipe), multiplies, applies room recipes where no requirement covers a room, and sets the reference-calculation levels. Drawing reading transcribes type codes with apartment number and area (reading version `pdf-text-v2`). Measured with a hand-written requirement list on the real Baggen files: 70/70 v2 posts found, 66 right, 3 correctly Saknar mängd, total at v2 prices 99,8 %; the real model answer is measured in the paid verification.
+
 ### Domain rules encoded in code
 
 - **Rooms:** "N rok" is N rooms and a kitchen. Bedrooms are `max(whole(N) − 1, 0)`; a half room ("3.5 rum") is a separate *Halvrum* (3.5 rum = vardagsrum + 2 sovrum + 1 halvrum). A column headed *sovrum* is read directly. Type labels such as "4 rum o kök", "3 RoK" or "trea" are parsed. Without a stated count, the area bands in the room recipes are used.

@@ -20,13 +20,13 @@ type Source = z.infer<typeof sourceSchema>;
 // in the total and marked), Saknar mängd (cannot be calculated — shown, outside the total until filled in).
 export const QUANTITY_LEVELS = ['Bekräftad', 'Räknad', 'Antagen', 'Saknar mängd'] as const;
 export type QuantityLevel = typeof QUANTITY_LEVELS[number];
-export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined };
+export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined };
 // Results saved before levels existed: Hög = Bekräftad, Medel = Räknad, a Låg estimate = Antagen, other Låg = Saknar mängd.
 export function quantityLevel(item: Pick<QuantityItem, 'certainty' | 'estimated_quantity' | 'level'>): QuantityLevel {
   return item.level ?? (item.certainty === 'Hög' ? 'Bekräftad' : item.certainty === 'Medel' ? 'Räknad' : item.estimated_quantity ? 'Antagen' : 'Saknar mängd');
 }
 export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[] };
-const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional() }).strict();
+const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional() }).strict();
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()) }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';
