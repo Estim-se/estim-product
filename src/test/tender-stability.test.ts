@@ -61,5 +61,8 @@ describe('the catalog binding and calculation do not depend on wording', () => {
     const row = cost.rows.find(r => r.post === 'Brandavskiljande kabelgenomföringar')!;
     expect(row.quantity).toBe('0'); expect(row.rule).toMatch(/Ingår i Håltagning och brandtätning per lägenhet/);
     expect(cost.rows.filter(r => (r.total ?? 0) > 0)).toHaveLength(1);
+    // The requirement coverage follows the calculation: never "Kalkylerad" on a row at 0.
+    const withCoverage = calculateTenderCost({ ...q, coverage: [{ requirement_id: 'k1', post: 'Brandavskiljande kabelgenomföringar', status: 'Saknar mängd', row: 'Brandavskiljande kabelgenomföringar', reason: null, validation: [] }] }, settings, { bindings, demolition: null });
+    expect(withCoverage.requirement_coverage[0]).toMatchObject({ status: 'Ingår i annan post', reason: expect.stringContaining('Håltagning och brandtätning per lägenhet') });
   });
 });

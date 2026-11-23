@@ -71,7 +71,10 @@ const equipment = (post: string) => { const t = withoutNegatedTerms(post).toLoca
 // Sockets stated per counter length or per worktop ("1 uttag per 1000 mm bänk", "hörnbox per arbetsbänk") cannot be
 // counted without kitchen elevations: the company's kitchen recipe gives the counter sockets per kitchen instead.
 const COUNTER_LENGTH = /per\s*(?:påbörjad[e]?\s*)?\d[\d\s]*mm|per\s+(?:arbets)?bänk|bänklängd|längd\s+överstiger/i;
-const perCounterLength = (r: Requirement) => r.unit_of_count === 'bänklängd' || /bänk|hörnbox/i.test(r.post) && COUNTER_LENGTH.test(`${r.post} ${r.note ?? ''} ${r.source?.evidence ?? ''}`);
+// Only sockets: other work at the worktop (a luminaire above it) is not a counter socket and is counted per kitchen.
+const counterSocket = (r: Requirement) => { const m = postMeaning(r.post); return m === 'bankuttag' || m === 'vagguttag' || equipment(r.post) === 'sockets'; };
+const counterRelated = (r: Requirement) => r.unit_of_count === 'bänklängd' || /bänk|hörnbox/i.test(r.post) && COUNTER_LENGTH.test(`${r.post} ${r.note ?? ''} ${r.source?.evidence ?? ''}`);
+const perCounterLength = (r: Requirement) => counterRelated(r) && counterSocket(r);
 // A kitchen post (section 2) or bathroom post (section 3) stated per apartment is counted per kitchen or bathroom: the
 // drawing type codes give apartments with two kitchens or bathrooms. Only when the post itself names that room.
 const KITCHEN = /kök|spis|perilex|\bugn|diskmaskin|mikro|\bkyl|\bfrys|köksfläkt|överskåp|arbetsbänk|matplats/;
@@ -233,7 +236,11 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     if (!type || !coversSeveral(type)) return type;
     return m && !GENERIC_MEANINGS.has(m) ? canonical.types.find(t => postMeaning(t.name) === m)?.id ?? type : type;
   };
-  for (const raw of input.requirements) {
+  for (const stated of input.requirements) {
+    // Work at the worktop stated per counter length that is not a socket (a luminaire above the worktop): one worktop
+    // per kitchen, Antagen with the reason, before the identity is formed.
+    const raw = stated.unit_of_count === 'bänklängd' && !counterSocket(stated)
+      ? { ...stated, unit_of_count: 'kök' as const, per_unit: stated.per_unit ?? 1, assumed: true, note: [stated.note, 'Antaget en arbetsbänk per kök.'].filter(Boolean).join(' ') } : stated;
     const source = raw.source ? verifyTenderSource(documents, { ...raw.source }) : null;
     const sources = [...(source ? [source] : [])];
     const type = ownType(typeOf(raw.type_id), raw.post), countUnit = model ? roomUnit(raw) : raw.unit_of_count, scope = requirementScope({ ...raw, unit_of_count: countUnit });

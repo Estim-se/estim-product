@@ -95,12 +95,15 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   // A one-off post that would be counted per apartment from its catalog type, while the same type already has its own
   // per-apartment row, is that delivery again: it stays visible at 0 instead of being counted a second time.
   const apartmentRowOf = (item: { post: string }) => { const t = typeOf(item.post); return t ? items.find(x => x !== item && typeOf(x.post)?.id === t.id && !x.option && UNIT_FAMILY[x.count_unit ?? ''] === 'lägenhet')?.post : undefined; };
+  const included = new Map<string, string>();
   const rows = items.map(item => {
     const b = bindingOf(item.post), t = typeOf(item.post);
     const packaged = packageKey(item), carrier = packaged ? carrierOf.get(packaged) : undefined;
     const apartmentRow = perApartmentOf(item) ? apartmentRowOf(item) : undefined;
     const perApartment = perApartmentOf(item) && !apartmentRow;
     const covered = item.count_unit === 'lägenhet_och_lokal' && !!t && splitTypes.has(t.id);
+    const includedIn = carrier && carrier !== item.post ? carrier : covered ? 'postens egna rader för lägenheter och lokaler' : apartmentRow;
+    if (includedIn) included.set(item.post, includedIn);
     const i = carrier && carrier !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${carrier} (samma katalogtyp och enhet).` }
       : covered ? { ...item, quantity: '0', rule: `${item.rule} Ingår i postens egna rader för lägenheter och lokaler (samma katalogtyp).` }
       : apartmentRow ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${apartmentRow} (samma katalogtyp, räknad per lägenhet).` }
@@ -133,5 +136,9 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   const establishment = rounded(base * fixed(s.establishment), 100n * S);
   const contingency = rounded(base * fixed(s.contingency), 100n * S);
   const total = base + establishment + contingency;
-  return { rows: catalogRows, proposals, complete, total_hours: rows.reduce((n, r) => n + Math.round((r.hours ?? 0) * 1000000), 0) / 1000000, labor: Number(labor) / 100, material: Number(material) / 100, establishment: Number(establishment) / 100, contingency: Number(contingency) / 100, total: Number(total) / 100 };
+  // The requirement coverage follows the calculation: a requirement whose row is priced inside another row is
+  // "Ingår i annan post" with that row, never "Kalkylerad" on a row at 0.
+  const requirement_coverage = (q.coverage ?? []).map(c => c.row && included.has(c.row) && c.status !== 'Kräver avklaring'
+    ? { ...c, status: 'Ingår i annan post' as const, reason: `Prissätts i ${included.get(c.row)} (samma katalogtyp).` } : c);
+  return { rows: catalogRows, proposals, complete, requirement_coverage, total_hours: rows.reduce((n, r) => n + Math.round((r.hours ?? 0) * 1000000), 0) / 1000000, labor: Number(labor) / 100, material: Number(material) / 100, establishment: Number(establishment) / 100, contingency: Number(contingency) / 100, total: Number(total) / 100 };
 }
