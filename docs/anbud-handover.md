@@ -52,7 +52,8 @@ Risk merge and fact review run inside the final risk step. Development schedules
 - **Standard posts in code:** one post per recipe room type and equipment from the object-list room count; smoke detectors from a documented "per påbörjade N m²" rule, rounded up per apartment; documented "N st X per lägenhet" rules. The model overrides a room only with a documented, sourced count for that room. A rule lacking data (e.g. per metre of bench) falls back to the recipe as an assumption. Missing scope is noted, never dropped silently.
 - **Aggregates:** a whole-list total (per-row room count or a column sum) is never multiplied by the apartment count again.
 - **Premises:** premises rows (lokal, förråd, kontor …) get no apartment rooms. A selection filtered on premises counts those rows; a filter with no exact match accepts the same word with an addition or plural.
-- **Sanity bounds:** 0–6 bedrooms per apartment; at most 20 pieces per apartment for recipe/per-apartment posts. Violations are flagged Låg outside the total, never summed.
+- **Sanity bounds:** 0–6 bedrooms per apartment; at most 20 pieces per apartment for recipe/per-apartment posts; a room in every apartment (vardagsrum, hall, kök) never below the apartment count. Violations are flagged Låg outside the total, never summed.
+- **No silent fallback to 1:** the object list is the room selection or detected type column covering the most rows (never a single cell). A recipe term without a verified room count is flagged Låg outside the total.
 - **Certainty:** documented figures (list, text, drawing/specification) times verified object-list counts are *Hög*; a descriptive model note becomes an assumption, a note expressing doubt keeps the post *Låg*. An estimate requires an explicit assumption operand.
 - **One Låg rule:** every Låg row, estimates included, stays outside the total until its quantity is confirmed (exports follow the same flag).
 - **Helper counts:** object and room counts (Antal lägenheter, Sovrum totalt …) are operands only, never cost rows.
@@ -73,8 +74,8 @@ Current step versions are in `src/lib/tender-job.server.ts`:
 |---|---|
 | Risk steps, risk merge/facts, questions | `flat-risk-v5` |
 | `key_data` | `sheet-row-source-v4` |
-| `quantities`, `calculation` | `premises-documented-v8` |
-| `quantity_version` | `complete-source-audit-v11` |
+| `quantities`, `calculation` | `no-silent-recipe-v9` |
+| `quantity_version` | `complete-source-audit-v12` |
 
 Bump the relevant entry whenever a step's output can change.
 
@@ -101,10 +102,13 @@ PR #5 is this handover document.
 - **Regression tests for PR #2–#11:** `tender-risk-call`, `tender-risk-subset`, `tender-fasit-failures`, `tender-verification-round-3`, `tender-baggen-bedrooms`, `tender-room-aggregate`, `tender-standard-posts`, `tender-verification-round-5`, `tender-verification-round-6`, plus the other `src/test/tender-*.test.ts` files. Baggen is covered by synthetic object lists with the same structure; the real files are not in the repository.
 - **Fasit originals:** `FASIT_Testlarkan.md` and `FASIT_Provbanken.md` are Lovable uploads, not repository files. Never upload them as tender documents.
 - **Real pipeline verifier:** `scripts/verify-anbud-pipeline.ts`.
-  - It starts all three tenders concurrently, runs each up to three times, and stops a tender on failure or fasit mismatch.
+  - **Same runs:** three analyses of each existing test tender. Runs 2–3 reuse cached step results (the fingerprint includes the document ids), so they prove pipeline repeatability, not fresh model answers.
+  - **Fresh runs:** three brand-new tenders per test tender, created from the same files through the app's upload flow as a signed-in test-company user (`VERIFY_EMAIL`, `VERIFY_PASSWORD`, `SUPABASE_PUBLISHABLE_KEY`). Each gets fresh model answers, like a new tender on app.estim.se. Fasit must pass; the deviation from the same-run total is reported. `--no-fresh` skips them. Fresh tenders are kept, named "… – verifiering".
+  - Cost: each fresh run is one full uncached analysis (about ten model calls with the full documents: key data, three risk calls, risk merge, fact review, questions, two to three quantity calls, matching), comparable to analysing a new tender in the app. File reading is reused when the reading version matches.
+  - It starts all three tenders concurrently, runs each up to three times per kind, and stops a tender on failure or fasit mismatch.
   - It compares saved rows/totals and reports `excluded` rows with their reason.
   - It overwrites test-tender analysis state and writes reports under `/tmp/anbud-verification/`, which are not committed.
-  - It applies fasit to Testlärkan and Provbänken; Baggen has repeatability checks only.
+  - It applies fasit to all three tenders (Baggen: reference calculation v2 and the verified result after PR #11).
 
 Commands:
 
@@ -136,6 +140,8 @@ Local test baseline at `3e8bedf`: **488 passed**.
 | Testlärkan | 3/3 | 1 520 482,38 kr | Fasit passed in all three runs |
 | Provbänken | 3/3 | 228 681,20 kr | Fasit passed in all three runs |
 | Baggen | 3/3 | 3 558 579,47 kr | Three identical runs |
+
+A fresh tender "Baggen demo" on app.estim.se then gave 2 525 329 kr: recipe posts had the quantity per room (4, 3, 3, 3, 1). The passing reruns had reused one cached model answer; the fresh answer used a single-cell room count. Fixed by PR #12 (no silent fallback, lower bound, fresh-tender verification).
 
 Baggen key quantities: 142 sovrum + 27 halvrum, 507 dubbla vägguttag and 169 lamputtag (sovrum + halvrum), 246 bänkuttag, 150 brandvarnare, 82 golvvärme, 82 armatur L2, 9 centraler i lokaler, 9 rivning per lokal.
 
