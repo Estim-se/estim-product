@@ -2,7 +2,7 @@ import { withoutNegatedTerms } from './tender-negation';
 import type { CalculationSettings } from './tender-calculation';
 
 const normalize=(s:string)=>s.toLocaleLowerCase('sv').normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9]+/g,' ').trim();
-function meaning(name:string) {
+export function postMeaning(name:string) {
   // Excluded items in a post name ("exkl. diskmaskin") must not decide its meaning.
   const n=normalize(withoutNegatedTerms(name));
   if (/diskmaskin/.test(n)) return 'diskmaskin';
@@ -38,8 +38,8 @@ function meaning(name:string) {
 export function closestTenderPostType(post:string, settings:CalculationSettings) {
   const exact=settings.post_types.find(t=>normalize(t.name)===normalize(post));
   if (exact) return exact.id;
-  const kind=meaning(post);
-  const candidates=kind ? settings.post_types.filter(t=>meaning(t.name)===kind) : [];
+  const kind=postMeaning(post);
+  const candidates=kind ? settings.post_types.filter(t=>postMeaning(t.name)===kind) : [];
   // Prefer the same noun when duplicate semantic catalog types exist (Gruppcentral/Lägenhetscentral).
   const noun=normalize(post).split(' ')[0];
   return candidates.find(t=>normalize(t.name).split(' ')[0]===noun)?.id ?? candidates.at(-1)?.id ?? null;

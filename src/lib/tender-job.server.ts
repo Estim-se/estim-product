@@ -10,7 +10,7 @@ type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v2', quantities: 'room-aggregate-v5', calculation: 'room-aggregate-v5' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v2', quantities: 'standard-posts-v6', calculation: 'standard-posts-v6' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -157,7 +157,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const inputs = await loadInputs(db, job, false);
     const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v8' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v9' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

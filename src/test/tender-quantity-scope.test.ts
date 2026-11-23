@@ -16,7 +16,8 @@ it('82 apartment rows with one living room each and four sockets produce 328, no
  const text='Blad: Lista\n'+Array.from({length:82},(_,i)=>`A${i+5}: L${i+1}\tB${i+5}: 81\tC${i+5}: 3 rok`).join('\n');
  const source={document_id:id,page:null,evidence:'A5: L1'};
  const result=calculateTenderQuantities({operands:[{id:'apartments',label:'Lägenheter',value:'82',basis:'Lista',source,list_selection:{sheet:'Lista',range:'A5:A86',operation:'Antal',equals:null}},{id:'rooms',label:'Vardagsrum per rad',value:'1',basis:'Lista',source,list_selection:{sheet:'Lista',range:'B5:B86',operation:'Rum per rad',room:'Vardagsrum',room_count_range:'C5:C86',equals:null}},{id:'sockets',label:'Uttag',value:'4',basis:'Antagande',source:null,recipe:{room:'Vardagsrum',equipment:'sockets'}}],items:[{post:'Uttag vardagsrum',unit:'st',rule:'Per rum',terms:[{factors:['apartments','rooms','sockets']}],assumption:null}],assumptions:[]},[{id,file_name:'Lista.xlsx',file_type:'xlsx',page_count:null,text}],undefined,true);
- expect(result.items[0]?.quantity).toBe('328');expect(result.rules.items[0]?.terms[0]?.factors).toEqual(['rooms','sockets']);
+ // The model's recipe item is replaced by the code-built standard post: 82 living rooms x 4 sockets, never 82 x 82 x 4.
+ const living=result.items.find(i=>i.post==='Dubbla vägguttag vardagsrum enligt typrecept');expect(living?.quantity).toBe('328');expect(result.items.some(i=>i.quantity==='26896')).toBe(false);
 });
 it('does not remove an independent count from another document',()=>{
  const source={document_id:'00000000-0000-4000-8000-000000000001',page:null,evidence:'A5: 1'};

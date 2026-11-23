@@ -32,7 +32,7 @@ describe('bedrooms from the object list', () => {
   it('a bedroom total requested as Summa over a type column is counted per row, not flagged as zero', () => {
     const r = calculateTenderQuantities({ operands: [{ id: 'bed', label: 'Sovrum totalt enligt rok/lägenhetstyp', value: '0', basis: 'Lista', source: { document_id: xlsx, page: null, evidence: 'C5: 1 rok' }, list_selection: { sheet: 'Lägenheter', range: 'C5:C58', operation: 'Summa', equals: null } }, { id: 'rec', label: 'Sovrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Sovrum', equipment: 'sockets' } }], items: [{ post: 'Dubbla vägguttag sovrum enligt typrecept', unit: 'st', rule: 'Per sovrum', terms: [{ factors: ['bed', 'rec'] }], assumption: null }], assumptions: [] }, documents, undefined, true);
     expect(r.rules.operands.find(o => o.id === 'bed')?.value).toBe('54');
-    expect(r.items[0]?.quantity).toBe('162');
+    expect(r.items.find(i => i.post === 'Dubbla vägguttag sovrum enligt typrecept')?.quantity).toBe('162');
   });
   it('documented room quantities give 540 sockets and 216 ceiling outlets', () => {
     const room = (id: string, extra: object) => ({ id, label: id, value: '0', basis: 'Lista' as const, source: { document_id: xlsx, page: null, evidence: 'B5: 50' }, list_selection: sel(extra) });
@@ -81,7 +81,9 @@ describe('object and room counts are not cost rows', () => {
   it.each(['Rivning per lägenhet', 'Gruppcentral lägenhet', 'Dubbla vägguttag sovrum', 'Huvudledning till lägenhet', 'Brandvarnare per lägenhet', 'LED-armatur trapphus', 'Takuttag kök'])('%s stays a row', post => expect(isQuantityHelperPost(post)).toBe(false));
   it('drops helper items but keeps the posts that use them', () => {
     const r = calculateTenderQuantities({ operands: [{ id: 'n', label: 'Lägenheter', value: '0', basis: 'Lista', source: { document_id: xlsx, page: null, evidence: 'A5: L1' }, list_selection: { sheet: 'Lägenheter', range: 'A5:A58', operation: 'Antal', equals: null } }], items: [{ post: 'Antal lägenheter', unit: 'st', rule: 'Lista', terms: [{ factors: ['n'] }], assumption: null }, { post: 'Lägenhetscentral', unit: 'st', rule: 'En per lägenhet', terms: [{ factors: ['n'] }], assumption: null }], assumptions: [] }, documents, undefined, true);
-    expect([...r.items, ...r.assumptions.flatMap(a => a.item ? [a.item] : [])].map(i => i.post)).toEqual(['Lägenhetscentral']);
+    const posts = [...r.items, ...r.assumptions.flatMap(a => a.item ? [a.item] : [])].map(i => i.post);
+    expect(posts).toContain('Lägenhetscentral'); expect(posts).not.toContain('Antal lägenheter');
+    expect(posts.filter(p => !/enligt typrecept$/.test(p))).toEqual(['Lägenhetscentral']);
   });
 });
 

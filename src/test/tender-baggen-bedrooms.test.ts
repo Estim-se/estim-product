@@ -38,20 +38,24 @@ describe('bedrooms from type texts', () => {
     const rules: TenderQuantityRules = { operands: [listOperand('half', 'Halvrum per rad', { range: range('C'), operation: 'Rum per rad', room: 'Halvrum', room_count_range: range('B') }), { id: 'rec', label: 'Halvrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Halvrum', equipment: 'sockets' } }, { id: 'lamp', label: 'Halvrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Halvrum', equipment: 'lamps' } }],
       items: [{ post: 'Dubbla vägguttag halvrum', unit: 'st', rule: 'Per halvrum', terms: [{ factors: ['half', 'rec'] }], assumption: null }, { post: 'Lamputtag halvrum', unit: 'st', rule: 'Per halvrum', terms: [{ factors: ['half', 'lamp'] }], assumption: null }], assumptions: [] };
     const q = calculateTenderQuantities(rules, documents, undefined, true);
-    expect(q.items.find(i => i.post === 'Dubbla vägguttag halvrum')).toMatchObject({ quantity: '30', certainty: 'Medel' });
-    expect(q.items.find(i => i.post === 'Lamputtag halvrum')).toMatchObject({ quantity: '10' });
-    expect(q.items.every(i => i.rule.startsWith('Enligt typrecept.'))).toBe(true);
+    // The model's recipe items are replaced by the code-built standard posts for the same room.
+    expect(q.items.find(i => i.post === 'Dubbla vägguttag halvrum enligt typrecept')).toMatchObject({ quantity: '30', certainty: 'Medel' });
+    expect(q.items.find(i => i.post === 'Lamputtag halvrum enligt typrecept')).toMatchObject({ quantity: '10' });
+    expect(q.items.some(i => i.post === 'Dubbla vägguttag halvrum')).toBe(false);
+    expect(q.items.filter(i => /halvrum/.test(i.post)).every(i => i.rule.startsWith('Enligt typrecept.'))).toBe(true);
   });
   it('rejects the object-number column as a room count instead of summing it', () => {
     expect(() => resolveObjectCount(list, { sheet: 'Objektlista', range: range('C'), operation: 'Rum per rad', equals: null, room: 'Sovrum', room_count_range: range('A') })).toThrow(ImplausibleObjectCount);
   });
-  it('a bedroom total summed from a wrong column is flagged, kept at 0 and outside the total, never 17 302', () => {
+  it('a bedroom total summed from a wrong column is never used: the code counts 159 bedrooms and notes the replacement', () => {
     const rules: TenderQuantityRules = { operands: [listOperand('bed', 'Sovrum totalt enligt rok/lägenhetstyp', { range: 'A2:A33', operation: 'Summa' }), { id: 'rec', label: 'Sovrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Sovrum', equipment: 'sockets' } }],
       items: [{ post: 'Vägguttag sovrum enligt typrecept', unit: 'st', rule: 'Per sovrum', terms: [{ factors: ['bed', 'rec'] }], assumption: null }], assumptions: [] };
     const q = calculateTenderQuantities(rules, documents, undefined, true);
-    const row = q.assumptions.flatMap(a => a.item ? [a.item] : []).find(i => i.post === 'Vägguttag sovrum enligt typrecept');
-    expect(row).toMatchObject({ quantity: '0', certainty: 'Låg' }); expect(row?.rule).toMatch(/Orimligt värde i objektlistan/);
-    expect(q.items).toHaveLength(0);
+    const all = [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])];
+    expect(all.some(i => i.post === 'Vägguttag sovrum enligt typrecept')).toBe(false);
+    expect(q.items.find(i => i.post === 'Dubbla vägguttag sovrum enligt typrecept')).toMatchObject({ quantity: '477', certainty: 'Medel' });
+    expect(q.assumptions.some(a => /ersattes av typreceptet/.test(a.description) && /Orimligt värde i objektlistan/.test(a.description))).toBe(true);
+    expect(all.some(i => Number(i.quantity) > 2000)).toBe(false);
   });
 });
 
