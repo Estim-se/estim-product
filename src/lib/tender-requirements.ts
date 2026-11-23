@@ -4,7 +4,7 @@ import type { InsightDocument } from './tender-insights';
 import type { RoomRecipes } from './tender-room-recipes';
 import { perApartmentArea, type ObjectModel } from './tender-object-model';
 import { roomsOfType, type RoomList } from './tender-room-list';
-import { postMeaning } from './tender-post-matching';
+import { GENERIC_MEANINGS, postMeaning } from './tender-post-matching';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
 
@@ -93,11 +93,12 @@ function localWorkNotPremises(r: Requirement) {
 }
 
 // Options ("Option timer på handdukstork", "tillval") are their own rows, never priced as the main post.
+const CONTRACTOR_DUTY = /\bbas-?[pu]\b|byggarbetsmiljö|arbetsmiljösamordn|arbetsplatsorganisation|samordning av arbetarskydd/i;
+const ROOM_WIDE = /övriga rum|samtliga rum|alla rum|varje rum|resterande rum/i;
 const OPTION = /\boption(?:er|en)?\b|\btillval\b/i;
 // Overlapping requirements for the same equipment in the same unit ("Strömförsörjning spis/ugn" and "Perilexuttag för
 // spishäll", "Mätartavla" and "Mätare för debiteringsmätning") are one post. Generic meanings that cover different
 // equipment (wall sockets, feeds to technical equipment, central parts …) are never merged on meaning alone.
-const GENERIC_MEANINGS = new Set(['vagguttag', 'lamputtag', 'uttag-ip44', 'matning-teknik', 'matning-fs', 'dorrautomatik', 'serviscentral', 'demontering', 'jordning', 'tvattstuga', 'wc', 'utomhusuttag', 'fasadstyrning']);
 const unitFamily = (unit: string | undefined) => unit === 'kök' || unit === 'badrum' || unit === 'lägenhet' ? 'lägenhet' : unit ?? '';
 const unitRank = (unit: string | undefined) => unit === 'kök' || unit === 'badrum' ? 0 : unit === 'lägenhet' ? 1 : 2;
 
@@ -141,11 +142,19 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     operands.push({ id, label: `${post}: ${calculation}`, value: String(quantity ?? 0), basis: level === 'Antagen' || level === 'Saknar mängd' ? 'Antagande' : 'Text', source: sources[0] ?? null });
     ruleItems.push({ post, unit, rule, terms: [{ factors: [id] }], assumption: level === 'Antagen' || level === 'Saknar mängd' ? (note ?? rule) : null });
   };
-  const covered = new Set<string>(), counterLength: { r: Requirement; sources: Source[] }[] = [];
+  const covered = new Set<string>(), counterLength: { r: Requirement; sources: Source[] }[] = [], contractorDuties: string[] = [];
+  const roomWideSources: Record<'sockets' | 'lamps', Source[]> = { sockets: [], lamps: [] }, roomWidePosts: Record<'sockets' | 'lamps', string[]> = { sockets: [], lamps: [] };
   for (const raw of input.requirements) {
     const source = raw.source ? verifyTenderSource(documents, { ...raw.source }) : null;
     const sources = [...(source ? [source] : [])];
     if (perCounterLength(raw)) { counterLength.push({ r: raw, sources }); continue; }
+    // The general contractor's own duties (site safety coordination BAS-P/BAS-U, work environment, site organisation)
+    // are not electrical posts for the electrical contractor; they are noted, not priced.
+    if (CONTRACTOR_DUTY.test(`${raw.post} ${raw.note ?? ''}`)) { contractorDuties.push(raw.post); continue; }
+    // Room equipment stated for "övriga rum"/"samtliga rum" is what the room recipes count room by room: the requirement
+    // confirms the recipe posts (its source is added to them) instead of becoming a post of its own.
+    const roomWide = equipment(raw.post);
+    if (roomWide && model && ROOM_WIDE.test(`${raw.post} ${raw.note ?? ''}`) && !['kök', 'badrum', 'wc'].includes(raw.unit_of_count)) { roomWideSources[roomWide].push(...sources); roomWidePosts[roomWide].push(raw.post); continue; }
     if (localWorkNotPremises(raw)) {
       add(raw.post, raw.section, raw.unit, null, '–', 'Underlaget anger lokal (punktvis) rivning eller demontering, inte arbete i lokaler – kontrollera om lokalerna omfattas och fyll i mängd.', 'Saknar mängd', sources, raw.note);
       continue;
@@ -196,7 +205,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       const roomCount = model.counts[(ROOM_UNITS[unitKey] ?? 'apartments') as keyof ObjectModel['counts']];
       if (!roomCount) continue;
       const post = eq === 'lamps' ? `Lamputtag ${unitKey} enligt typrecept` : recipe.room === 'Kök' ? 'Bänkuttag kök enligt typrecept' : `Dubbla vägguttag ${unitKey} enligt typrecept`;
-      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.`, 'Antagen', listSource ? [listSource] : [], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`, { unit: unitKey as CountBasis['unit'], per_unit: recipe[eq], area_divisor: null }, { count_unit: unitKey });
+      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.${recipe.room !== 'Kök' && roomWidePosts[eq].length ? ` Underlaget anger ${roomWidePosts[eq].join(', ')}.` : ''}`, 'Antagen', [...(recipe.room !== 'Kök' ? roomWideSources[eq] : []), ...(listSource ? [listSource] : [])], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`, { unit: unitKey as CountBasis['unit'], per_unit: recipe[eq], area_divisor: null }, { count_unit: unitKey });
     }
   }
   // How kitchens and bathrooms were counted, so a missing or unmatched drawing reading is visible in the result.
@@ -208,6 +217,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       + (model.ambiguous_codes.length ? ` Ej kopplade eftersom typkoderna för samma rumsantal skiljer sig: ${model.ambiguous_codes.join('; ')}.` : '')
       + (!linked && model.unmatched_codes.length ? ` Ej kopplade: ${model.unmatched_codes.join('; ')}.` : ''), sources: listSource ? [listSource] : [], item: null });
   }
+  if (contractorDuties.length) assumptions.push({ description: `Ingår inte i elentreprenaden (totalentreprenörens eget ansvar): ${contractorDuties.join(', ')}.`, sources: [], item: null });
   mergeOverlaps(items, assumptions, ruleItems);
   if (!model && !roomList) assumptions.push({ description: 'Kontroll av omfattning: ingen objektlista med lägenhetstyper eller rumsförteckning hittades. Poster per lägenhet, kök, badrum och rum kan inte räknas – fyll i mängderna.', sources: [], item: null });
   return { rules: { operands, items: ruleItems, assumptions: [] }, items, assumptions, ...(model ? { object_model: storedObjectModel(model) } : {}) };

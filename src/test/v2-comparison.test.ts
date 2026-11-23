@@ -83,7 +83,9 @@ describe('example catalog against v2', () => {
     ['Trapphusbelysning L4 med närvarosensor', 'LED-armatur trapphus'], ['Kvalitetsplan och egenkontrollistor', 'Kvalitetsplan och egenkontroll'],
     ['Matning kombimaskin, uttag eller IP44-dosa', 'Dubbelt uttag IP44'], ['Syn och protokoll före rivning', 'Syn och protokoll före rivning'],
   ])('matches "%s" to "%s", not to a look-alike', async (post, expected) => {
-    const { postMeaning } = await import('@/lib/tender-post-matching');
-    expect(postMeaning(post)).toBe(postMeaning(expected));
+    // Categories without a catalog type of their own (a lift feed, a washing-machine supply) are priced with the type
+    // of the related meaning.
+    const { pricedMeaning } = await import('@/lib/tender-post-matching');
+    expect(pricedMeaning(post)).toBe(pricedMeaning(expected));
   });
 });

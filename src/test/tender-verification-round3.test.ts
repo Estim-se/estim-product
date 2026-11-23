@@ -64,7 +64,7 @@ describe('complete-package catalog types', () => {
     const rows = calculateTenderCost(q, settings, { bindings: items.map(i => ({ post: i.post, type_id: /tvätt|timer/i.test(i.post) ? types.tvatt : types.matning, manual_hours: null, manual_list_price: null })), demolition: null }).rows;
     const qty = (p: string) => rows.find(r => r.post === p)?.quantity;
     expect([qty('Belysning tvättstuga'), qty('Strömförsörjning tvättmaskiner'), qty('Timeruttag tvättstuga')]).toEqual(['2', '0', '0']);
-    expect(rows.find(r => r.post === 'Timeruttag tvättstuga')?.rule).toMatch(/Ingår i Belysning tvättstuga \(samma katalogtyp, komplett per enhet\)/);
+    expect(rows.find(r => r.post === 'Timeruttag tvättstuga')?.rule).toMatch(/Ingår i Belysning tvättstuga \(samma katalogtyp och enhet\)/);
     expect([qty('Matning fjärrvärmecentral'), qty('Matning styrskåp markvärme')]).toEqual(['2', '2']);
   });
 });

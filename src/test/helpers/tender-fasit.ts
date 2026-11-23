@@ -18,7 +18,7 @@ export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken'|'Bag
   {name:'Anslutning golvvärme',pattern:/golvvärme/i,value:54},
   {name:'Datauttag',pattern:/datauttag/i,value:108},
   {name:'Trapphusarmaturer',pattern:/trapphus.*(?:armatur|belysning)|armatur.*trapphus/i,value:36},
-  {name:'Källararmaturer',pattern:/källar.*armatur|armatur.*källar/i,value:12},
+  {name:'Källararmaturer',pattern:/källar.*(?:armatur|belysning)|(?:armatur|belysning).*källar/i,value:12},
   {name:'Stigarledningar',pattern:/stigarledning/i,value:3},
   {name:'Fastighetscentral',pattern:/fastighetscentral/i,value:1},
  ],
