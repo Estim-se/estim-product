@@ -5,7 +5,8 @@ import { StatusCard } from './status-card';
 import { useEstim } from './store-provider';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { nearConversationBottom } from '@/lib/inbox-layout';
+import { nearConversationBottom, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
+import { ScrollJump } from './scroll-jump';
 
 export function Conversation({ thread, contained = false, header }: { thread: Thread; contained?: boolean; header?: ReactNode }) {
   const { state } = useEstim();
@@ -13,6 +14,7 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
   const nearBottom = useRef(true);
   const opened = useRef('');
   const [unseen, setUnseen] = useState(false);
+  const [farFromBottom, setFarFromBottom] = useState(false);
   const draft = state.drafts[thread.id];
   const pending = Boolean(draft && ['svar', 'oppnad'].includes(thread.status));
   const content = JSON.stringify(thread.msgs);
@@ -22,6 +24,7 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
     if (el) el.scrollTop = el.scrollHeight;
     nearBottom.current = true;
     setUnseen(false);
+    setFarFromBottom(false);
   }
   useEffect(() => {
     if (!contained) return;
@@ -45,7 +48,9 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
       if (!el) return;
       nearBottom.current = nearConversationBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
       if (nearBottom.current) setUnseen(false);
+      setFarFromBottom(el.scrollHeight - el.scrollTop - el.clientHeight > SCROLL_JUMP_THRESHOLD);
     }}>{header}{messages}<div className="reply-dock">{pending && <div className="pending-label small b">Svarsutkast väntar</div>}{reply}</div></div>
     {unseen && <Button variant="prototype" className="btn btn-ghost btn-sm new-message" aria-label="Nytt meddelande, gå till senaste meddelandet" onClick={goBottom}>Nytt meddelande ↓</Button>}
+    {!unseen && farFromBottom && <ScrollJump direction="down" label="Till slutet av konversationen" onClick={() => scrollToEdge(scroll.current, 'bottom')} />}
   </div>;
 }
