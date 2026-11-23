@@ -14,6 +14,7 @@ export function postMeaning(name:string) {
   if (/nodbelysning|nodljus|nodarmatur|nodutrymning|vagledande markering/.test(n)) return 'nodbelysning';
   if (/potentialutjamning|skyddsutjamning|jordning/.test(n)) return 'jordning';
   if (/tomror/.test(n)&&/sol/.test(n)) return 'tomror-sol';
+  if (/servisledning|serviskabel|servisanslutning|anslutningsavgift/.test(n)) return 'servisledning';
   if (/huvudledning/.test(n)) return /lagenhet/.test(n)?'huvudledning-lgh':/lokal/.test(n)?'huvudledning-lokal':/fastighet|huvudcentral/.test(n)?'huvudledning-fastighet':null;
   if (/central/.test(n)) return /lagenhet/.test(n)?'central-lgh':/lokal/.test(n)?'central-lokal':/fastighets|huvud/.test(n)?'central-fastighet':null;
   if (/brandvarnare/.test(n)) return 'brandvarnare';
