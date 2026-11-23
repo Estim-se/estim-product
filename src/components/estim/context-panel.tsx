@@ -13,6 +13,10 @@ export function qStatus(t: Thread) {
   if (t.opened) return ['Öppnad', 'chip-sage'];
   return ['Skickad', 'chip-line'];
 }
+// Customer-level details only; safe to show when no single conversation is open.
+export function CustomerCard({ thread: t }: { thread: Thread }) {
+  return <div className="card"><h3>Kund</h3><div className="kv"><div><span>Telefon</span><span>{t.phone}</span></div><div><span>E-post</span><span>{t.email}</span></div><div><span>Adress</span><span>{t.addr}</span></div><div><span>Kanaler</span><span className="row wrap customer-channels">{t.chs.map(ch => <span className="chip chip-line" key={ch}><Icon name={channelIcon(ch)} />{demo.channels[ch as keyof typeof demo.channels]?.[0]}</span>)}</span></div></div></div>;
+}
 export function ContextPanel({ thread: t }: { thread: Thread }) {
   const { actions } = useEstim();
   const real=useWorkspace().mode==='real';
@@ -24,7 +28,7 @@ export function ContextPanel({ thread: t }: { thread: Thread }) {
     {c && t.q && <div className="card mini-q"><div className="row between"><h3>Offert #{t.q.nr}</h3><span className={`chip ${status[1]}`}>{status[0]}</span></div><div className="mt8"><div className="r"><span>Totalt inkl. moms</span><span>{kr(c.inkl)}</span></div><div className="r av"><span>ROT-avdrag</span><span>−{kr(c.av)}</span></div><div className="r tot"><span>Kunden betalar</span><span>{kr(c.betala)}</span></div></div>
       {a && <div className="flag ok"><Icon name="plus" /><span>Tillval: {a.name?.replace('Tillval: ', '').replace(', material', '')} · +{kr(a.betala)} efter ROT{t.q.addOn ? ' · valt' : ''}</span></div>}
       <div className="row mt12 quote-actions"><Button variant="prototype" className="btn btn-ghost btn-xs" onClick={() => actions.openDrawer(t.id)}><Icon name="edit" />Redigera</Button>{!real&&<Button variant="prototype" className="btn btn-ghost btn-xs" onClick={() => actions.openCustomer(t.id, t.status === 'svar')}><Icon name="eye" />Se som kund</Button>}</div></div>}
-    <div className="card"><h3>Kund</h3><div className="kv"><div><span>Telefon</span><span>{t.phone}</span></div><div><span>E-post</span><span>{t.email}</span></div><div><span>Adress</span><span>{t.addr}</span></div><div><span>Kanaler</span><span className="row wrap customer-channels">{t.chs.map(ch => <span className="chip chip-line" key={ch}><Icon name={channelIcon(ch)} />{demo.channels[ch as keyof typeof demo.channels]?.[0]}</span>)}</span></div></div></div>
+    <CustomerCard thread={t} />
     <div className="card"><h3>Händelser</h3><div className="tline">{t.events.map((e, i) => <div className="tli done" key={i}><i /><span className="t">{e[0]}</span><span>{e[1]}</span></div>)}</div></div>
   </div>;
 }
