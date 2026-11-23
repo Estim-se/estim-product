@@ -54,7 +54,15 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
     const text = d.text ? tenderAfRetryText(d.text) : '';
     return text ? [{ type: 'text', text: `Dokument-id: ${d.id}. Endast AFC/AFD-avsnitt från AF:\n${text}` }] : [];
   }) : [];
-  return streamTenderTool({ key, model, system: `${step === 'risks' ? RISK_BASE : BASE}\n${s.prompt}`, content: [...content, ...tail], ...(retryContent.length ? { retryContent: [...retryContent, { type: 'text', text: tenderRiskChecklistPrompt(areas) }] } : {}), tool: s.tool, description: s.description, schema: step === 'risks' ? tenderRiskReviewWireSchemaFor(areas) : s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
+  const run = () => streamTenderTool({ key, model, system: `${step === 'risks' ? RISK_BASE : BASE}\n${s.prompt}`, content: [...content, ...tail], ...(retryContent.length ? { retryContent: [...retryContent, { type: 'text', text: tenderRiskChecklistPrompt(areas) }] } : {}), tool: s.tool, description: s.description, schema: step === 'risks' ? tenderRiskReviewWireSchemaFor(areas) : s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
+  if (step !== 'risks') return run();
+  // A risk answer that assesses areas as risks but gives only unsourced placeholders (an empty risk list) is asked once
+  // more; the answer with the most source-backed risks is kept, so documented values are not lost to a short answer.
+  const sourced = (r: Awaited<ReturnType<typeof run>>) => r.filter(x => 'source' in x && x.source && !('flag' in x.source && x.source.flag)).length;
+  const first = await run();
+  if (sourced(first) || !first.length) return first;
+  const second = await run().catch(() => first);
+  return sourced(second) > sourced(first) ? second : first;
 }
 
 export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){

@@ -32,15 +32,19 @@ describe('verification round 2', () => {
     expect(quantity(q, 'Brandvarnare')).toBe(String(2 * [38, 62, 81, 95, 97, 116].reduce((s, a) => s + Math.ceil(a / 60), 0)));
     expect(quantity(q, 'Laddplatser i garage')).toBe('8');
   });
-  it('merges overlapping requirements for the same equipment and unit, never generic feeds', () => {
-    const q = build([req('Strömförsörjning spis/ugn i lägenhet', 'lägenhet', 1, { section: 1 }), req('Perilexuttag för spishäll', 'kök', 1, { section: 2 }), req('Projektering el', 'post', 1, { section: 9 }), req('Upprättande av bygghandlingar', 'post', 1, { section: 9 }),
-      req('Matning till fjärrvärmecentral', 'fastighet', 1, { section: 7 }), req('Ny matning till styrskåp för markvärme', 'fastighet', 1, { section: 7 })]);
+  it('keeps one row per catalog type and unit family, whatever the wording; different types stay apart', () => {
+    const T = { perilex: '00000000-0000-4000-8000-000000000101', proj: '00000000-0000-4000-8000-000000000102', fjarr: '00000000-0000-4000-8000-000000000103', mark: '00000000-0000-4000-8000-000000000104' };
+    const catalog = [{ id: T.perilex, name: 'Perilexuttag' }, { id: T.proj, name: 'Projektering el/tele' }, { id: T.fjarr, name: 'Matning fjärrvärme' }, { id: T.mark, name: 'Matning markvärme' }];
+    const q = buildRequirementQuantities(decodeRequirements({ counts: [], requirements: [req('Strömförsörjning spis/ugn i lägenhet', 'lägenhet', 1, { section: 1, type_id: T.perilex }), req('Perilexuttag för spishäll', 'kök', 1, { section: 2, type_id: T.perilex }),
+      req('Projektering el', 'post', 1, { section: 9, type_id: T.proj }), req('Upprättande av bygghandlingar', 'post', 1, { section: 9, type_id: T.proj }),
+      req('Matning till fjärrvärmecentral', 'fastighet', 1, { section: 7, type_id: T.fjarr }), req('Ny matning till styrskåp för markvärme', 'fastighet', 1, { section: 7, type_id: T.mark })] }), model, documents, exampleRoomRecipes, null, catalog);
     const posts = all(q).map(i => i.post);
     expect(posts).toContain('Perilexuttag för spishäll'); expect(posts).not.toContain('Strömförsörjning spis/ugn i lägenhet');
     expect(quantity(q, 'Perilexuttag för spishäll')).toBe('14');
     expect(posts).toContain('Projektering el'); expect(posts).not.toContain('Upprättande av bygghandlingar');
     expect(posts).toEqual(expect.arrayContaining(['Matning till fjärrvärmecentral', 'Ny matning till styrskåp för markvärme']));
     expect(q.assumptions.map(a => a.description)).toContainEqual(expect.stringContaining('Strömförsörjning spis/ugn i lägenhet ingår i Perilexuttag för spishäll'));
+    expect(all(q).every(i => i.type_id !== undefined)).toBe(true);
   });
   it('a washing-machine supply is per apartment, even when stated per bathroom', () => {
     expect(quantity(build([req('Strömförsörjning kombimaskin i badrum', 'badrum', 1)]), 'Strömförsörjning kombimaskin i badrum')).toBe('12');
@@ -64,7 +68,7 @@ describe('verification round 2', () => {
     const rows = calculateTenderCost(q, settings, { bindings, demolition: null }).rows;
     expect(rows.find(r => r.post === 'Relationshandlingar el')?.quantity).toBe('1');
     expect(rows.find(r => r.post === 'Relationsritningar el')).toMatchObject({ quantity: '0', total: 0, rule: expect.stringContaining('Ingår i Relationshandlingar el') });
-    expect(rows.find(r => r.post === 'Håltagning och tätning')).toMatchObject({ quantity: '12', level: 'Räknad' });
+    expect(rows.find(r => r.post === 'Håltagning och tätning')).toMatchObject({ quantity: '12', level: 'Antagen' });
   });
   it('insulation measurement is the test per apartment (reference 9.3), never merged into the common-parts test', () => {
     expect(postMeaning('Isolationsmätning, jordning och jordfelsbrytartest')).toBe('provning-lgh');

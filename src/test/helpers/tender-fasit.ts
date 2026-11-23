@@ -18,9 +18,9 @@ export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken'|'Bag
   {name:'Anslutning golvvärme',pattern:/golvvärme/i,value:54},
   {name:'Datauttag',pattern:/datauttag/i,value:108},
   {name:'Trapphusarmaturer',pattern:/trapphus.*(?:armatur|belysning)|armatur.*trapphus/i,value:36},
-  {name:'Källararmaturer',pattern:/källar.*armatur|armatur.*källar/i,value:12},
-  {name:'Stigarledningar',pattern:/stigarledning/i,value:3},
-  {name:'Fastighetscentral',pattern:/fastighetscentral/i,value:1},
+  {name:'Källararmaturer',pattern:/källar.*(?:armatur|belysning)|(?:armatur|belysning).*källar/i,value:12},
+  {name:'Stigarledningar',pattern:/stigar(?:ledning|e\b)|huvudledning\b.*\btrapphus/i,value:3},
+  {name:'Fastighetscentral',pattern:/fastighetscentral/i,exclude:/stigar|ledning/i,value:1},
  ],
  'Provbänken':[
   {name:'Dubbla vägguttag',pattern:/vägguttag|dubb(?:la|elt).*uttag/i,exclude:/ip44|wc|skötrum/i,value:57},
@@ -58,7 +58,7 @@ const requiredRisks:Record<string,RegExp[][]>={
  'Provbänken':[[/garanti/i,/10|tio/i],[/dolda fel|befintlig/i],[/ÄTA/i,/50\s*000|50000/i],[/säkerhet/i,/20\s*%|tjugo procent/i],[/öppning|semester|fast.*datum/i],[/samordning/i],[/projektering/i],[/betalning/i,/60/i],[/försäkring/i,/20|tjugo/i]],
 };
 const additionalKeys:Record<string,Record<string,RegExp[]>>={
- 'Testlärkan':{'Objekt':[/54/,/1962/,/källar/i,/tre|3/i,/sex|6/i],'Entreprenadform':[/utförande/i,/sidoentreprenad/i],'Etapper':[/tre|3/i,/trapphus/i,/6|sex/i],'Vite':[/1\s*%/,/arbetsdag/i,/(?:inte|ej) begränsat|utan tak|obegräns/i],'Säkerhet':[/10\s*%/,/5\s*%/],'ÄTA-regler':[/skrift/i,/5\s*%/],'Försäkring':[/5\s*000\s*000|5\s*MSEK/i]},
+ 'Testlärkan':{'Objekt':[/54/,/1962/,/källar/i,/tre|3/i,/sex|6/i],'Entreprenadform':[/utförande/i,/sidoentreprenad/i],'Etapper':[/tre|3/i,/trapphus/i,/6|sex/i],'Vite':[/1\s*%/,/arbetsdag/i,/(?:inte|ej) begränsat|utan (?:tak|begränsning)|obegräns/i],'Säkerhet':[/10\s*%/,/5\s*%/],'ÄTA-regler':[/skrift/i,/5\s*%/],'Försäkring':[/5\s*000\s*000|5\s*MSEK/i]},
  'Provbänken':{'Objekt':[/1988/,/900/,/två|2/i,/förskola/i,/sex|6/i],'Entreprenadform':[/totalentreprenad/i,/delad/i],'Etapper':[/plan\s*1/i,/plan\s*2/i,/överlapp/i],'Vite':[/10\s*000/,/kalenderdag/i,/20\s*%/],'Säkerhet':[/20\s*%/,/garantitid/i],'ÄTA-regler':[/50\s*000/,/inte|ej/i,/inget påslag|0\s*%/i],'Försäkring':[/20\s*000\s*000|20\s*MSEK/i,/entreprenadförsäkring/i]},
 };
 export function checkTenderFasit(name:'Testlärkan'|'Provbänken'|'Baggen',snapshot:FasitSnapshot):string[]{

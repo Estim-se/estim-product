@@ -7,7 +7,6 @@ import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
 import { tenderQuantitiesSchema } from '@/lib/tender-quantities';
 import { sheetQuantity } from '@/lib/tender-apartment-sheet';
 import { createTenderWorkbook } from '@/lib/tender-export-xlsx';
-import { withExamplePostTypes } from '@/lib/tender-example-catalog';
 import { emptyCalculationSettings } from '@/lib/tender-calculation';
 
 // Synthetic object list (no customer data): 12 apartments over 2 addresses, 2 premises; drawing codes for two areas.
@@ -38,8 +37,9 @@ describe('apartment sheet', () => {
   });
   it('exports one editable row per apartment and links calculation quantities to its column sums', async () => {
     const bedroomSockets = all.find(i => i.post.startsWith('Dubbla vägguttag sovrum'))!.post;
-    const settings = withExamplePostTypes({ ...emptyCalculationSettings, hourly_rate: 650 });
-    const type = settings.post_types[0]!.id;
+    // One neutral catalog type (no specific meaning) for every post, so the test is about the sheet, not the matching.
+    const type = '00000000-0000-4000-8000-0000000000aa';
+    const settings = { ...emptyCalculationSettings, hourly_rate: 650, post_types: [{ id: type, name: 'Arbete enligt mängd', hours: 1, list_price: 100 }] };
     const bindings = all.map(i => ({ post: i.post, type_id: type, manual_hours: null, manual_list_price: null, ...(i.post === bedroomSockets ? { manual_quantity: 99 } : {}) }));
     const book = await createTenderWorkbook({ name: 'Syntetiskt', settings, matches: { bindings, demolition: null }, quantities, insights: null, documents });
     const names = book.worksheets.map(w => w.name);

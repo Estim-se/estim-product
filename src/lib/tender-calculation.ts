@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { assumptionItems } from './tender-quantity-display';
 import { roomRecipeSchema } from './tender-room-recipes';
 import { quantityLevel, tenderQuantitiesSchema, type QuantityLevel, type TenderQuantities } from './tender-quantities';
+import { GENERIC_MEANINGS, PACKAGE_MEANINGS, postMeaning } from './tender-post-matching';
 export type RowLevel = QuantityLevel | 'Saknar pris';
 
 const amount = z.number().finite().nonnegative().max(100000000).multipleOf(0.000001);
@@ -52,20 +53,58 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');
     items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: m.demolition.flag ? `Rivning per lägenhet. ${m.demolition.flag}.` : 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: m.demolition.flag ? 'Låg' : 'Hög' });
   }
-  // One-off posts bound to the same catalog type are one post (e.g. "Projektering" and "Bygghandlingar"): the first
-  // carries the quantity, the others are kept visible at quantity 0 with a note.
   const bindingOf = (post: string) => m.bindings.find(b => b.post === post);
-  const firstOneOff = new Map<string, string>();
-  for (const i of items) { const type = bindingOf(i.post)?.type_id; if (type && i.count_unit === 'post' && !i.option && !firstOneOff.has(type)) firstOneOff.set(type, i.post); }
+  const typeOf = (post: string) => s.post_types.find(t => t.id === bindingOf(post)?.type_id);
   const apartments = q.object_model?.apartments.length ?? 0;
+  // A one-off post bound to a catalog type priced per apartment ("Håltagning och brandtätning per lägenhet") is counted
+  // per apartment of the object list: an assumption from the catalog type, not a documented count. Not when the post
+  // names another area (common parts, premises, stairwells …): that is one post, not per apartment.
+  const perApartmentOf = (item: { post: string; count_unit?: string | undefined; quantity: string }) => {
+    const t = typeOf(item.post);
+    const oneOff = item.count_unit === 'post' || item.count_unit === 'fast_antal' && Number(item.quantity) <= 1;
+    const otherArea = /allmänn|lokal|trapphus|källar|garage|fastighet|tvättstuga|tekni|förråd|vind|entré|fasad|utomhus|gård/i.test(item.post);
+    // The catalog type decides: "… per lägenhet", or a type for work done in each apartment (testing, apartment central).
+    return !!t && oneOff && !otherArea && apartments > 0 && (/\bper\s+(?:lägenhet|lgh)\b/i.test(t.name) || /-lgh$/.test(postMeaning(t.name) ?? ''));
+  };
+  // One post per catalog type and unit family, priced once with the largest quantity: one-off posts on the same type
+  // ("Projektering" and "Bygghandlingar"), a complete-package type ("Tvättstuga komplett elinstallation"), and any
+  // specific type listed twice in other words or other units ("Håltagning och tätning" per apartment and "Håltagning i
+  // tätskikt" per bathroom; "Fastighetscentral" per property and per building). Generic types (wall sockets, feeds to
+  // technical equipment …) cover different equipment and are never merged. The others stay visible at 0 with a note.
+  const UNIT_FAMILY: Record<string, string> = { 'lägenhet': 'lägenhet', 'kök': 'lägenhet', 'badrum': 'lägenhet', 'post': 'fastighet', 'fast_antal': 'fastighet', 'fastighet': 'fastighet', 'huskropp': 'fastighet' };
+  const effective = (item: { post: string; count_unit?: string | undefined; quantity: string }) => perApartmentOf(item) ? { unit: 'lägenhet', quantity: apartments } : { unit: item.count_unit, quantity: Number(item.quantity) };
+  const packageKey = (i: { post: string; count_unit?: string | undefined; quantity: string; option?: boolean | undefined }) => {
+    const t = typeOf(i.post);
+    // Rows of the requirements engine are already one row per requirement identity (tender-requirements.ts).
+    if (!t || i.option || !i.count_unit || 'type_id' in i && i.type_id) return null;
+    const unit = effective(i).unit!, family = UNIT_FAMILY[unit] ?? unit;
+    if (i.count_unit === 'post') return `${t.id}|${family}`;
+    const meaning = postMeaning(t.name);
+    return /\bkomplett\b/i.test(t.name) || meaning && (!GENERIC_MEANINGS.has(meaning) || PACKAGE_MEANINGS.has(meaning)) ? `${t.id}|${family}` : null;
+  };
+  const carrierOf = new Map<string, string>();
+  for (const i of items) {
+    const k = packageKey(i); if (!k) continue;
+    const current = carrierOf.get(k), other = current ? items.find(x => x.post === current) : undefined;
+    if (!other || effective(i).quantity > effective(other).quantity) carrierOf.set(k, i.post);
+  }
+  // A post for apartments and premises together is already covered when the same type has its own apartment or
+  // premises posts ("Mätartavla" per apartment and per premises, and "Mätartavla, mätarblock" for both).
+  const specific = (t: { name: string } | undefined) => { const m = t ? postMeaning(t.name) : null; return !!m && !GENERIC_MEANINGS.has(m); };
+  const splitTypes = new Set(items.filter(i => i.count_unit && i.count_unit !== 'lägenhet_och_lokal' && (UNIT_FAMILY[effective(i).unit!] === 'lägenhet' || i.count_unit === 'lokal') && specific(typeOf(i.post))).map(i => typeOf(i.post)?.id).filter(Boolean));
+  // A one-off post that would be counted per apartment from its catalog type, while the same type already has its own
+  // per-apartment row, is that delivery again: it stays visible at 0 instead of being counted a second time.
+  const apartmentRowOf = (item: { post: string }) => { const t = typeOf(item.post); return t ? items.find(x => x !== item && typeOf(x.post)?.id === t.id && !x.option && UNIT_FAMILY[x.count_unit ?? ''] === 'lägenhet')?.post : undefined; };
   const rows = items.map(item => {
-    const b = bindingOf(item.post), t = s.post_types.find(t => t.id === b?.type_id);
-    const mergedInto = t && item.count_unit === 'post' && !item.option ? firstOneOff.get(t.id) : undefined;
-    // A one-off post bound to a catalog type priced per apartment ("Håltagning och brandtätning per lägenhet") is counted
-    // per apartment of the object list.
-    const perApartment = t && item.count_unit === 'post' && apartments > 0 && /\bper\s+(?:lägenhet|lgh)\b/i.test(t.name);
-    const i = mergedInto && mergedInto !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${mergedInto} (samma katalogtyp).` }
-      : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Katalogtypen gäller per lägenhet: ${apartments} lägenheter i objektlistan.`, level: 'Räknad' as const, certainty: 'Medel' as const }
+    const b = bindingOf(item.post), t = typeOf(item.post);
+    const packaged = packageKey(item), carrier = packaged ? carrierOf.get(packaged) : undefined;
+    const apartmentRow = perApartmentOf(item) ? apartmentRowOf(item) : undefined;
+    const perApartment = perApartmentOf(item) && !apartmentRow;
+    const covered = item.count_unit === 'lägenhet_och_lokal' && !!t && splitTypes.has(t.id);
+    const i = carrier && carrier !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${carrier} (samma katalogtyp och enhet).` }
+      : covered ? { ...item, quantity: '0', rule: `${item.rule} Ingår i postens egna rader för lägenheter och lokaler (samma katalogtyp).` }
+      : apartmentRow ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${apartmentRow} (samma katalogtyp, räknad per lägenhet).` }
+      : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Antaget: katalogtypen gäller per lägenhet, ${apartments} lägenheter i objektlistan.`, level: 'Antagen' as const, certainty: 'Låg' as const }
       : item;
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
     // Levels as in the reference calculation: Bekräftad, Räknad and Antagen are in the total (Antagen is marked for

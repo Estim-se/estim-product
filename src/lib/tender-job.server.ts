@@ -11,11 +11,15 @@ type Job = { tender_id: string; company_id: string; analysis_run: string; status
 import { cacheDocumentKey, fromCacheForm, toCacheForm } from './tender-cache-keys';
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'merge-options-v14', calculation: 'levels-v11' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'requirement-identity-v25', calculation: 'levels-v11' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
   return supabaseAdmin as unknown as Db;
+}
+// The company's catalog types (id, name, section) the requirements analysis chooses from.
+function catalogOf(types: unknown) {
+  return Array.isArray(types) ? types.flatMap(t => t && typeof t === 'object' && 'id' in t && 'name' in t && typeof t.id === 'string' && typeof t.name === 'string' ? [{ id: t.id, name: t.name.slice(0, 160), section: 'section' in t && typeof t.section === 'number' ? t.section : undefined }] : []).slice(0, 200) : [];
 }
 function aiConfig() {
   const key = process.env['LOVABLE_API_KEY'];
@@ -66,7 +70,7 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const { tenderHash } = await import('./tender-source-parts');
   // Keyed by file content and document type, not document ids: the same files give the same result in a new tender.
   // ANBUD_CACHE_SALT (server env) forces fresh model answers, e.g. to verify robustness.
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v6` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v7` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);
@@ -158,12 +162,12 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
   if (step === 'quantities') {
     const { extractTenderQuantities } = await import('./tender-quantities-ai.server');
     const inputs = await loadInputs(db, job, false);
-    const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
+    const settings = await db.from('tender_calculation_settings').select('room_recipes,post_types').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
     // Feature flag: the requirements engine (model lists requirements, code counts) replaces the operand engine when on.
     const requirementsEngine = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1';
     const { extractRequirementQuantities } = await import('./tender-requirements-ai.server');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v13', engine: requirementsEngine ? 'requirements-v1' : 'operands' }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v13', engine: requirementsEngine ? 'requirements-catalog-v4' : 'operands', catalog: requirementsEngine ? catalogOf(settings.data?.post_types) : null }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null, catalogOf(settings.data?.post_types)) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

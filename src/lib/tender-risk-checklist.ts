@@ -251,6 +251,13 @@ export function validateTenderRiskReview(raw: unknown, documents: InsightDocumen
   // A flagged checklist row becomes a visible review warning, never a failed analysis.
   for (const row of links) {
     if (!row.flag || addInsurance && /försäkring/i.test(row.area) && row.flag === 'unlinked_risk') continue;
+    // An area assessed as a risk without a written risk, but with an AF code found in the AF, becomes a risk built from
+    // that AF section verbatim (the documented terms), not an empty placeholder.
+    if (row.flag === 'unlinked_risk' && row.source && !row.source.flag) {
+      const terms = row.source.evidence.replace(/\s+/g, ' ').trim().slice(0, 600);
+      expanded.push({ title: row.area, description: `${row.area} enligt ${row.source.af_code ?? 'AF'}: "${terms}". Kontrollera villkoret mot företagets standardvillkor och prissätt eller ställ en fråga vid avvikelse.`.slice(0, 2000), severity: 'Medel' as const, suggestion: 'Fråga beställaren' as const, source: row.source, sources: [row.source], consequence: 'Tid och pengar' as const, deviation: null });
+      continue;
+    }
     expanded.push({ title: row.area, description: `${SOURCE_WARNING}. ${FLAG_TEXT[row.flag]}`, source: { document_id: UNKNOWN_SOURCE_ID, page: null, af_code: null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }, sources: [], consequence: 'Tid och pengar', deviation: null });
   }
   return validateTenderInsights({ key_data: obj['key_data'], risks: expanded, questions: obj['questions'] ?? [] }, documents, true);

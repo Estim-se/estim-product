@@ -47,8 +47,9 @@ describe('requirements builder', () => {
   const all = (q: ReturnType<typeof build>) => [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])];
   it('multiplies the stated count per unit by the code-counted units, with sources and levels', () => {
     const q = build([req('Elektrisk golvvärme', 'badrum', 1, { source: { document_id: pdf, page: 1, evidence: 'Elektrisk golvvärme installeras i samtliga badrum.' } }), req('Perilexuttag', 'kök', 1, { section: 2, source: { document_id: pdf, page: 1, evidence: 'Inom kök monteras perilexuttag för spishäll.' } })]);
-    expect(all(q).find(i => i.post === 'Elektrisk golvvärme')).toMatchObject({ quantity: '14', level: 'Räknad', section: 3 });
-    expect(all(q).find(i => i.post === 'Perilexuttag')).toMatchObject({ quantity: '14', level: 'Räknad', section: 2 });
+    // Two of the 14 bathrooms come from drawing type codes: the count is an assumption, with the reason in the rule.
+    expect(all(q).find(i => i.post === 'Elektrisk golvvärme')).toMatchObject({ quantity: '14', level: 'Antagen', section: 3, rule: expect.stringContaining('typkoder') });
+    expect(all(q).find(i => i.post === 'Perilexuttag')).toMatchObject({ quantity: '14', level: 'Antagen', section: 2 });
   });
   it('an unsourced requirement is Antagen; a missing count per unit is Saknar mängd and outside the total', () => {
     const q = build([req('Takbelysning badrum', 'badrum', 1), req('Belysning källare', 'fast_antal', null), req('Byggström per etapp', 'etapp', 1)]);
@@ -121,7 +122,7 @@ describe('verification round: drawings, room schedules, counter sockets and prem
     expect(all(q).find(i => i.post === 'Ny central i lokal')?.quantity).toBe('2');
   });
   it('states how kitchens and bathrooms were counted, so missing drawing codes are visible', () => {
-    expect(build([]).assumptions.map(a => a.description)).toContainEqual(expect.stringMatching(/typkoder från ritningarna kopplade till \d+ av 12 lägenheter/));
+    expect(build([]).assumptions.map(a => a.description)).toContainEqual(expect.stringMatching(/typkoder lästa från ritningarna .*lägenheter kopplade via nummer eller yta/));
     const plain = buildRequirementQuantities(decodeRequirements({ requirements: [], counts: [] }), buildObjectModel(documents), documents, exampleRoomRecipes);
     expect(plain.assumptions.map(a => a.description)).toContainEqual(expect.stringMatching(/inga typkoder lästes från ritningarna.*kontrollera/));
   });
