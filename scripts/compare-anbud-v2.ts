@@ -17,6 +17,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { calculateTenderQuantities } from '../src/lib/tender-quantities';
 import { readTenderDocument } from '../src/lib/tender-reading';
 import { buildObjectModel } from '../src/lib/tender-object-model';
+import { buildRoomList } from '../src/lib/tender-room-list';
 import { typeCodesInText } from '../src/lib/tender-type-codes';
 import { buildRequirementQuantities, decodeRequirements } from '../src/lib/tender-requirements';
 import { exampleRoomRecipes } from '../src/lib/tender-room-recipes';
@@ -49,8 +50,9 @@ async function codeOnly(dir: string): Promise<V2Snapshot> {
   if (requirementsPath) {
     const codes = [...documents.flatMap(d => typeCodesInText(d.text)), ...(drawingPath ? typeCodesInText(readFileSync(drawingPath, 'utf8')) : [])];
     const model = buildObjectModel(documents, codes, exampleRoomRecipes.separate_wc_min_area ?? null);
-    console.log(`Objektmodell: ${JSON.stringify(model?.counts ?? null)}, typkoder ${codes.length}, matchade ${model?.code_matches ?? 0}`);
-    return { quantities: buildRequirementQuantities(decodeRequirements(JSON.parse(readFileSync(requirementsPath, 'utf8'))), model, documents, exampleRoomRecipes), cost: null };
+    const rooms = buildRoomList(documents);
+    console.log(`Objektmodell: ${JSON.stringify(model?.counts ?? null)}, typkoder ${codes.length}, matchade ${model?.code_matches ?? 0}; rumsförteckning: ${rooms ? rooms.types.map(t => `${t.name} ${t.count}`).join(', ') : 'ingen'}`);
+    return { quantities: buildRequirementQuantities(decodeRequirements(JSON.parse(readFileSync(requirementsPath, 'utf8'))), model, documents, exampleRoomRecipes, rooms), cost: null };
   }
   return { quantities: calculateTenderQuantities({ operands: [], items: [], assumptions: [] }, documents, null, true), cost: null };
 }

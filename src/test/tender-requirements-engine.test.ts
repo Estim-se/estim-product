@@ -3,6 +3,7 @@ import { parseTypeCode, typeCodesInText } from '@/lib/tender-type-codes';
 import { buildObjectModel } from '@/lib/tender-object-model';
 import { buildRequirementQuantities, decodeRequirements, type Requirement } from '@/lib/tender-requirements';
 import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
+import { buildRoomList, roomsOfType } from '@/lib/tender-room-list';
 import { calculateTenderCost, emptyCalculationSettings } from '@/lib/tender-calculation';
 
 // Synthetic object list: header row, 12 apartments over 2 addresses and 3 floors, 2 premises.
@@ -71,5 +72,57 @@ describe('requirements builder', () => {
   });
   it('decodes tolerantly: invalid rows are dropped, not the whole answer', () => {
     expect(decodeRequirements({ requirements: [{ post: 'x' }, req('Dimmer', 'lägenhet', 1)], counts: [{ name: 'okänd', value: 1 }] })).toEqual({ requirements: [req('Dimmer', 'lägenhet', 1)], counts: [] });
+  });
+});
+
+describe('verification round: drawings, room schedules, counter sockets and premises', () => {
+  const req = (post: string, unit_of_count: Requirement['unit_of_count'], per_unit: number | null, extra: Partial<Requirement> = {}): Requirement => ({ post, section: 3, unit_of_count, per_unit, fixed_quantity: null, area_divisor: null, unit: 'st', assumed: false, note: null, source: null, ...extra });
+  const all = (q: ReturnType<typeof buildRequirementQuantities>) => [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])];
+  it('reads type codes however the transcription writes them, without taking a neighbour\'s number', () => {
+    const text = 'Lgh 1501 97 m² L4–K2–B4–W1\nlgh 1502, 66,0 m2: l2 - k6 - b7\nL3 1/2+U-K2-B4-B5-T1\nL4 + U – K14 – B12 – W2 – K16 – B13\nLgh 1702 BOA 172';
+    expect(typeCodesInText(text).map(c => [c.code, c.kitchens, c.bathrooms, c.apartment, c.area])).toEqual([
+      ['L4-K2-B4-W1', 1, 1, '1501', 97], ['L2-K6-B7', 1, 1, '1502', 66], ['L3½+U-K2-B4-B5-T1', 1, 2, null, null], ['L4+U-K14-B12-W2-K16-B13', 2, 2, '1702', 172],
+    ]);
+    expect(typeCodesInText('Ritning E-60-1-501 rev B, skala 1:100')).toEqual([]);
+  });
+  const roomXlsx = '00000000-0000-4000-8000-000000000003', tb = '00000000-0000-4000-8000-000000000004';
+  const roomLines = ['Blad: Rum', 'A1: Rumsförteckning', 'A3: Rumsnr\tB3: Plan\tC3: Rumsnamn\tD3: Rumstyp\tE3: Area (m²)'];
+  [['Lekrum', 3], ['Vilrum', 2], ['WC/skötrum', 3], ['Kontor', 2], ['Förråd', 1]].reduce((row, [type, n]) => { for (let i = 1; i <= Number(n); i++, row++) roomLines.push(`A${row}: ${100 + row}\tB${row}: 1\tC${row}: ${type} ${i}\tD${row}: ${type}\tE${row}: 20`); return row; }, 4);
+  roomLines.push('A20: Antal rum\tB20: 11');
+  const roomDocs = [{ id: roomXlsx, file_name: 'Rumsforteckning.xlsx', file_type: 'xlsx', page_count: null, text: roomLines.join('\n') }, { id: tb, file_name: 'TB.pdf', file_type: 'pdf', page_count: 1, text: 'Fysisk sida: 1\n2.1 Lekrum\n4 st dubbla vägguttag, 1 st närvarogivare.' }];
+  it('counts rooms per room type from a room schedule, and multiplies requirements per room type', () => {
+    const list = buildRoomList(roomDocs)!;
+    expect(list.types.map(t => [t.name, t.count])).toEqual([['Lekrum', 3], ['Vilrum', 2], ['WC/skötrum', 3], ['Kontor', 2], ['Förråd', 1]]);
+    expect(roomsOfType(list, 'WC')).toEqual({ count: 3, names: ['WC/skötrum'] });
+    expect(roomsOfType(list, 'rum')).toBeNull();
+    const source = { document_id: tb, page: 1, evidence: '4 st dubbla vägguttag, 1 st närvarogivare.' };
+    const q = buildRequirementQuantities(decodeRequirements({ counts: [], requirements: [req('Dubbla vägguttag, lekrum', 'rumstyp', 4, { room_type: 'Lekrum', section: 4, source }), req('Närvarogivare, matsal', 'rumstyp', 1, { room_type: 'Matsal', section: 4 })] }), null, roomDocs, exampleRoomRecipes, list);
+    expect(all(q).find(i => i.post === 'Dubbla vägguttag, lekrum')).toMatchObject({ quantity: '12', level: 'Räknad' });
+    expect(all(q).find(i => i.post === 'Närvarogivare, matsal')).toMatchObject({ level: 'Saknar mängd', rule: expect.stringContaining('Rumstypen Matsal finns inte') });
+    expect(q.assumptions.some(a => /ingen objektlista/i.test(a.description))).toBe(false);
+  });
+  it('an apartment list is not a room schedule', () => expect(buildRoomList(documents)).toBeNull());
+  const model = buildObjectModel(documents, typeCodesInText(drawing), 90);
+  const build = (requirements: Requirement[]) => buildRequirementQuantities(decodeRequirements({ requirements, counts: [] }), model, documents, exampleRoomRecipes);
+  it('counter sockets per length or worktop use the kitchen recipe per kitchen, as one assumed post', () => {
+    const q = build([req('Hörnbox per arbetsbänk', 'kök', 1, { section: 2, note: '1 hörnbox per arbetsbänk vars längd överstiger 400 mm' }), req('Bänkuttag per 1000 mm bänk', 'kök', null, { section: 2 })]);
+    expect(all(q).filter(i => /hörnbox|bänk/i.test(i.post)).map(i => [i.post, i.quantity, i.level])).toEqual([['Bänkuttag kök enligt typrecept', String(14 * 3), 'Antagen']]);
+    const stated = build([req('Dubbla vägguttag ovan bänk, kök', 'kök', 4, { section: 2 })]);
+    expect(all(stated).find(i => i.post === 'Dubbla vägguttag ovan bänk, kök')?.quantity).toBe('56');
+  });
+  it('kitchen and bathroom posts stated per apartment are counted per kitchen and bathroom from the type codes', () => {
+    const q = build([req('Elektrisk golvvärme', 'lägenhet', 1), req('Armatur L2 under överskåp', 'lägenhet', 1, { section: 2 }), req('Matning kombimaskin', 'lägenhet', 1), req('Demontering av diskmaskin', 'lägenhet', 1, { section: 1 })]);
+    expect(Object.fromEntries(all(q).map(i => [i.post, i.quantity]))).toMatchObject({ 'Elektrisk golvvärme': '14', 'Armatur L2 under överskåp': '14', 'Matning kombimaskin': '12', 'Demontering av diskmaskin': '12' });
+  });
+  it('"lokal rivning" (spot demolition) never counts premises; demolition stated for premises does', () => {
+    const local = { document_id: pdf, page: 1, evidence: 'Lokal rivning/demontering för att komma åt konstruktioner skall ingå.' };
+    const q = build([req('Rivning el i lokaler', 'lokal', 1, { section: 1, source: local }), req('Ny central i lokal', 'lokal', 1, { section: 5 })]);
+    expect(all(q).find(i => i.post === 'Rivning el i lokaler')).toMatchObject({ quantity: '0', level: 'Saknar mängd' });
+    expect(all(q).find(i => i.post === 'Ny central i lokal')?.quantity).toBe('2');
+  });
+  it('states how kitchens and bathrooms were counted, so missing drawing codes are visible', () => {
+    expect(build([]).assumptions.map(a => a.description)).toContainEqual(expect.stringMatching(/typkoder från ritningarna kopplade till \d+ av 12 lägenheter/));
+    const plain = buildRequirementQuantities(decodeRequirements({ requirements: [], counts: [] }), buildObjectModel(documents), documents, exampleRoomRecipes);
+    expect(plain.assumptions.map(a => a.description)).toContainEqual(expect.stringMatching(/inga typkoder lästes från ritningarna.*kontrollera/));
   });
 });
