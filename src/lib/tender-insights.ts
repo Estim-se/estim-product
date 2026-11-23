@@ -54,10 +54,17 @@ export function recoverInsightSource(raw: unknown, documents: InsightDocument[])
   const page = typeof numeric === 'number' && Number.isInteger(numeric) && numeric > 0 ? numeric : null;
   const rawEvidence = typeof s['evidence'] === 'string' ? s['evidence'].trim().slice(0, 1500) : '';
   // PDF pages and spreadsheet sheet/row locations are verified by the same shared rule.
-  const verified = doc && rawEvidence ? verifyTenderSource(documents, { document_id: doc.id, page, evidence: rawEvidence }, { label: true }) : null;
+  let verified = doc && rawEvidence ? verifyTenderSource(documents, { document_id: doc.id, page, evidence: rawEvidence }, { label: true }) : null;
+  // A quote attributed to the wrong file is moved to the single other document that verifiably contains it
+  // (e.g. a time-plan quote cited with the AF's id). Ambiguous quotes stay flagged.
+  if (!verified && rawEvidence) {
+    const elsewhere = documents.filter(d => d.id !== doc?.id).flatMap(d => verifyTenderSource(documents, { document_id: d.id, page: null, evidence: rawEvidence }, { label: true }) ?? []);
+    if (elsewhere.length === 1) verified = elsewhere[0]!;
+  }
+  const target = verified ? documents.find(d => d.id === verified!.document_id) : doc;
   const valid = !!verified;
   const evidence = verified?.evidence ?? rawEvidence;
-  return { document_id: doc?.id ?? UNKNOWN_SOURCE_ID, page: verified ? verified.page : doc?.file_type === 'pdf' && page !== null && doc.page_count !== null && page <= doc.page_count ? page : null, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
+  return { document_id: target?.id ?? UNKNOWN_SOURCE_ID, page: verified ? verified.page : doc?.file_type === 'pdf' && page !== null && doc.page_count !== null && page <= doc.page_count ? page : null, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
 }
 function recoverTenderInsights(raw: unknown, documents: InsightDocument[]): TenderInsights {
   const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};

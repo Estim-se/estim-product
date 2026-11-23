@@ -5,18 +5,32 @@ export function decodeCellText(value: string) { return value.replace(/&#(x[0-9a-
 export function objectSelectionEvidence(text: string, selection: ObjectSelection): string {
   const range = selection.range.match(/^([A-Z]+)(\d+):[A-Z]+(\d+)$/);
   if (!range) throw new Error('Objektlistans cellområde är ogiltigt.');
+  // Same filter rule as the count: exact first, the same word with an addition only when nothing matches exactly.
+  const wanted = selection.equals === null ? null : sameCellText(selection.equals);
+  const inRange: { cell: string; value: string }[] = [];
   let active = false;
   for (const line of text.split('\n')) {
     if (line.startsWith('Blad: ')) { active = decodeCellText(line.slice(6)).trim() === selection.sheet.trim(); continue; }
     if (!active) continue;
     for (const cell of line.split('\t')) {
       const m = cell.match(/^([A-Z]+)(\d+): (.*)$/);
-      if (m && m[1] === range[1] && Number(m[2]) >= Number(range[2]) && Number(m[2]) <= Number(range[3]) && (selection.equals === null || sameCellText(decodeCellText(m[3] ?? '')) === sameCellText(selection.equals))) return cell.slice(0,1500);
+      if (m && m[1] === range[1] && Number(m[2]) >= Number(range[2]) && Number(m[2]) <= Number(range[3])) inRange.push({ cell, value: decodeCellText(m[3] ?? '') });
     }
   }
+  const exact = wanted !== null && inRange.some(c => sameCellText(c.value) === wanted);
+  const hit = inRange.find(c => c.value.trim() && cellMatches(c.value, wanted, exact));
+  if (hit) return hit.cell.slice(0, 1500);
   throw new Error('Objektlistans urval saknar källceller.');
 }
 const sameCellText = (s: string) => s.replace(/\s+/g, ' ').trim().toLocaleLowerCase('sv');
+// Exact filter match, or (when no row matches exactly) the same word with an addition or a plural ending.
+function cellMatches(value: string, wanted: string | null, exact: boolean) {
+  if (wanted === null) return true;
+  const v = sameCellText(value);
+  if (exact) return v === wanted;
+  const word = (a: string, b: string) => b.length >= 3 && a.startsWith(b) && (a.length === b.length || !/\p{L}/u.test(a[b.length]!) || /^(?:er|ar|or|na|en|n)$/.test(a.slice(b.length)));
+  return word(v, wanted) || word(wanted, v) || word(wanted, v.split(/[\s\d(),:-]+/)[0] ?? '');
+}
 const ROOM_WORDS: Record<string, number> = { en: 1, ett: 1, etta: 1, 'två': 2, 'tvåa': 2, tre: 3, trea: 3, fyra: 4, fem: 5, femma: 5, sex: 6, sexa: 6, sju: 7, sjua: 7 };
 // Rooms excluding the kitchen from a type label: "3 rok", "3 RoK", "4 rum och kök", "Typ B 2 r.o.k", "trea". Null when not stated.
 // A bare leading number is accepted only from a dedicated room-count column, never from an area column.
@@ -63,11 +77,19 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
     if(apartmentHeader&&stairHeader){const column=stairHeader[0].match(/^[A-Z]+/)?.[0];if(column)selection.address_range=`${column}${start}:${column}${end}`;}
   }
   let result = 0n, matched = 0; const unique = new Set<string>();
+  // A filter matches the cell text exactly. Only when no row matches exactly, the same word with an addition is
+  // accepted ("Lokal" ~ "Lokal 1", "Lokaler" ~ "Lokal"), so a filter never silently counts zero rows.
+  const wanted = selection.equals === null ? null : sameCellText(selection.equals);
+  const exact = wanted !== null && Array.from({ length: end - start + 1 }, (_, i) => cells.get(`${match[1]}${start + i}`)).some(v => v !== undefined && sameCellText(v) === wanted);
+  const matches = (value: string) => cellMatches(value, wanted, exact);
+  // A selection explicitly filtered on premises counts those rows; apartment rooms are never derived for them.
+  const premises = selection.equals !== null && NON_APARTMENT.test(selection.equals);
   for (let row = start; row <= end; row++) {
     const value = cells.get(`${match[1]}${row}`);
     if (value === undefined) throw new Error('Objektlistans cellområde innehåller en okänd cell.');
-    if (!value || selection.equals !== null && sameCellText(value) !== sameCellText(selection.equals)) continue;
+    if (!value || !matches(value)) continue;
     matched++;
+    if (premises && selection.operation === 'Rum per rad') { result += 1_000_000n; continue; }
     if (selection.operation === 'Rum per rad') {
       const roomMatch=selection.room_count_range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
       if(selection.room_count_range && (!roomMatch || roomMatch[1]!==roomMatch[3] || Number(roomMatch[2])!==start || Number(roomMatch[4])!==end)) throw Error('Rumskolumnen matchar inte lägenhetsraderna.');
@@ -86,7 +108,7 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
     else if (selection.operation === 'Avrunda upp per rad') {
       // With a type column given, premises rows are not apartments and are left out of per-apartment rounding.
       const typeMatch=selection.room_count_range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-      if(typeMatch && NON_APARTMENT.test(cells.get(`${typeMatch[1]}${row}`) ?? '')) continue;
+      if(!premises && typeMatch && NON_APARTMENT.test(cells.get(`${typeMatch[1]}${row}`) ?? '')) continue;
       const area=Number(value.replace(',','.')), divisor=selection.divisor;
       if(!Number.isFinite(area)||area<=0||!divisor||!Number.isFinite(divisor)||divisor<=0) throw Error('Ogiltig radvis mängdregel.');
       const units=BigInt(Math.round(area*1_000_000)), d=BigInt(Math.round(divisor*1_000_000));

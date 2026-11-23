@@ -62,7 +62,9 @@ export function checkTenderFasit(name:'Testlärkan'|'Provbänken',snapshot:Fasit
  if(name==='Provbänken'){
   const deadline=snapshot.insights.key_data.find(k=>k.field==='Anbudstid');const file=snapshot.documents.find(d=>d.id===deadline?.source?.document_id);if(!file?.file_name.toLowerCase().endsWith('.docx'))issues.push('Anbudstid måste komma från förfrågningsbrevet DOCX');
   if(texts.some(t=>/vite/i.test(t)&&/utan tak|obegräns/i.test(t)))issues.push('Vitet har tak 20 %, får inte påstås vara utan tak');
-  if(snapshot.insights.risks.some(r=>/EM.?index|indexreglering/i.test(r.title)))issues.push('Gynnsam EM-indexreglering får inte bli risk');
+  // Rejected only when the index itself is presented as the risk: a risk about ÄTA/mark-ups, or one that describes
+  // the applying index as favourable, is accepted.
+  if(snapshot.insights.risks.some(r=>/EM.?index|indexreglering/i.test(r.title)&&!/ÄTA|påslag/i.test(r.title)&&!/gynnsam|fördelaktig|positiv|skyddar|till entreprenörens fördel/i.test(`${r.title} ${r.description}`)))issues.push('Gynnsam EM-indexreglering får inte bli risk');
   if(snapshot.insights.risks.some(r=>/begränsad.*arbetstid|arbetstid.*begräns/i.test(`${r.title} ${r.description}`)))issues.push('Gynnsamma arbetstider 07–18 och lördag får inte bli en begränsningsrisk utan särskilt källstöd');
   if(items.some(i=>/rivning.*lägenhet|rivning.*lgh/i.test(included(i.post))))issues.push('Rivning gäller byggnaden, inte lägenheter');
  }

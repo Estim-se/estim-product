@@ -49,15 +49,42 @@ const comparable = (s: string) => s.normalize('NFKC').replace(/­/g, '').replace
 const words = (s: string) => comparable(s).split(' ').filter(Boolean);
 // The page supports the quote when it contains it in comparable form, contains each part of an elided quote
 // ("…"), or contains at least 70 % of its words and every number in it. Numbers must never be paraphrased.
-export function pageSupports(page: string, evidence: string) {
+export function pageSupports(page: string, evidence: string) { return supportScore(page, evidence) >= 0.7; }
+// 1 for an exact or elided match, otherwise the share of quoted words present (0 when a number is missing).
+export function supportScore(page: string, evidence: string) {
   const text = comparable(page), quote = comparable(evidence);
-  if (!quote || !text) return false;
-  if (` ${text} `.includes(` ${quote} `)) return true;
+  if (!quote || !text) return 0;
+  if (` ${text} `.includes(` ${quote} `)) return 1;
   const parts = evidence.split(/\s*(?:…|\.{3}|\[\.\.\.\])\s*/).map(comparable).filter(p => p.split(' ').length >= 3);
-  if (parts.length > 1 && parts.every(p => ` ${text} `.includes(` ${p} `))) return true;
+  if (parts.length > 1 && parts.every(p => ` ${text} `.includes(` ${p} `))) return 1;
   const available = new Set(words(page)), quoted = words(evidence);
-  if (quoted.length < 4 || quoted.filter(w => /\d/.test(w)).some(w => !available.has(w))) return false;
-  return quoted.filter(w => available.has(w)).length / quoted.length >= 0.7;
+  if (quoted.length < 4 || quoted.filter(w => /\d/.test(w)).some(w => !available.has(w))) return 0;
+  return quoted.filter(w => available.has(w)).length / quoted.length;
+}
+
+// Excel stores dates as serial numbers; the extracted text shows the serial, a quote may show the date.
+const excelDate = (serial: number) => new Date(Date.UTC(1899, 11, 30) + serial * 86_400_000).toISOString().slice(0, 10);
+const withDateAliases = (value: string) => /^\d{5}(?:\.\d+)?$/.test(value) && Number(value) >= 30000 && Number(value) <= 60000 ? `${value} ${excelDate(Math.floor(Number(value)))}` : value;
+export function spreadsheetFuzzyLocation(text: string, evidence: string): SpreadsheetLocation | null {
+  const quote = evidence.replace(LOCATION_PREFIX, '').replace(/\b[A-Z]{1,3}\d+:\s*/g, ' ');
+  if (!comparable(quote)) return null;
+  const sheets = new Map<string, { row: number; text: string }[]>(); let sheet = '';
+  for (const line of text.split('\n')) {
+    if (line.startsWith('Blad: ')) { sheet = decodeCellText(line.slice(6)).trim(); continue; }
+    const cells = line.split('\t').flatMap(cell => { const m = cell.match(/^[A-Z]{1,3}(\d+): ?(.*)$/); return m?.[1] ? [{ row: Number(m[1]), value: withDateAliases(decodeCellText(m[2] ?? '').replace(/ \(formel:.*\)$/, '').trim()) }] : []; });
+    if (!cells.length) continue;
+    const rows = sheets.get(sheet) ?? []; rows.push({ row: cells[0]!.row, text: cells.map(c => c.value).join(' ') }); sheets.set(sheet, rows);
+  }
+  // The window of consecutive rows (1–8) that best supports the quote, the smallest on ties; bounded for large workbooks.
+  let best: (SpreadsheetLocation & { score: number }) | null = null;
+  for (let size = 1; size <= 8; size++) for (const [name, rows] of sheets) {
+    if (rows.length > 5000) continue;
+    for (let i = 0; i + size <= rows.length; i++) {
+      const window = rows.slice(i, i + size), score = supportScore(window.map(r => r.text).join('\n'), quote);
+      if (score >= 0.7 && score > (best?.score ?? 0)) best = { sheet: name, first_row: window[0]!.row, last_row: window.at(-1)!.row, score };
+    }
+  }
+  return best ? { sheet: best.sheet, first_row: best.first_row, last_row: best.last_row } : null;
 }
 
 export function spreadsheetLocationLabel(l: SpreadsheetLocation) {
@@ -90,7 +117,9 @@ export function verifyTenderSource<T extends TenderSourceRef>(documents: TenderS
   }
   if (doc.file_type === 'xlsx') {
     if (!doc.text) return { ...source, page: null };
-    const location = spreadsheetEvidenceLocation(doc.text, evidence);
+    // Exact cell words first; otherwise a summarising quote (e.g. of a time plan) is accepted on a window of
+    // consecutive rows with the same tolerance as a PDF page. The location (sheet, rows) is always recorded.
+    const location = spreadsheetEvidenceLocation(doc.text, evidence) ?? spreadsheetFuzzyLocation(doc.text, evidence);
     if (!location) return collapse(doc.text).includes(collapse(evidence)) ? { ...source, page: null } : null;
     if (!options.label) return { ...source, page: null };
     const quote = evidence.replace(LOCATION_PREFIX, '').trim();

@@ -169,13 +169,14 @@ const FLAG_TEXT: Record<TenderChecklistFlag, string> = {
 };
 
 // An index regulation that applies (e.g. EM-index) protects the contractor against cost increases: it is "Normalt",
-// never a risk. Only a missing index regulation (fixed price without index) can be a risk.
+// never a risk. Only an explicitly missing index regulation can be a risk; "fast pris" with EM-index is indexed.
 const INDEX = /index/i;
-const NO_INDEX = /(?:utan|ingen|inga|ej|inte|icke|saknar|saknas)\s+(?:[\p{L}-]+\s+){0,3}?index|fast(?:a)?\s+pris|index\S*\s+(?:saknas|gäller\s+(?:inte|ej)|tillämpas\s+(?:inte|ej))|ej\s+indexreglerad/iu;
+const NO_INDEX = /(?:utan|ingen|inga|ej|inte|icke|saknar|saknas)\s+(?:[\p{L}-]+\s+){0,3}?index|index\S*\s+(?:saknas|gäller\s+(?:inte|ej)|tillämpas\s+(?:inte|ej))|ej\s+indexreglerad/iu;
 const INDEX_APPLIES = /em-?index|enligt\s+(?:\S+\s+){0,2}index|indexreglering\s+(?:enligt|med|sker|tillämpas|gäller)|indexregleras|regleras\s+(?:med|enligt)\s+(?:\S+\s+)?index|med\s+indexreglering/i;
+export function indexRegulationApplies(text: string) { return INDEX.test(text) && INDEX_APPLIES.test(text) && !NO_INDEX.test(text); }
 export function isFavourableIndexRisk(risk: { title: string; description: string }) {
   const text = `${risk.title} ${risk.description}`;
-  return INDEX.test(text) && INDEX_APPLIES.test(text) && !NO_INDEX.test(text);
+  return INDEX.test(text) && INDEX_APPLIES.test(text) && !NO_INDEX.test(text) && !/äta|påslag|ändrings|tilläggsarbete|betalning|vite|garanti|säkerhet/i.test(text);
 }
 // Concrete terms from the cited AF section: "45 dagar", "5 % påslag", "10 000 kr", "5 år".
 const VALUE = /(?:[\p{L}][\p{L}-]*\s+){0,2}\d[\d\s.,]*\s*(?:%|procent|dagar|dygn|arbetsdagar|kalenderdagar|veckor|månader|år|kr|kronor|SEK|MSEK|tkr)(?:\s+[\p{L}][\p{L}-]*)?/giu;
@@ -203,6 +204,28 @@ function withoutFavourableIndex(obj: Record<string, unknown>, areas: readonly Te
   return { ...obj, risks: kept, risk_checklist: checklist };
 }
 
+// Largest amount in SEK stated in a text: "20 000 000 kr", "20 MSEK", "20 miljoner kronor", "20 Mkr".
+export function largestSekAmount(text: string) {
+  let max = 0;
+  for (const m of text.matchAll(/(\d[\d\s.,]*\d|\d)\s*(msek|mkr|mnkr|miljon(?:er)?|milj\.?|kr|kronor|sek)(?![\p{L}])/giu)) {
+    const n = Number(m[1]!.replace(/[\s.]/g, '').replace(',', '.'));
+    if (Number.isFinite(n)) max = Math.max(max, /^m/i.test(m[2]!) ? n * 1_000_000 : n);
+  }
+  return max;
+}
+// A high insurance requirement (at least 10 MSEK) is always a priced risk with its amount, even if the model
+// assessed the area as normal. The saved key-data figure and its AF citation are the source.
+export const HIGH_INSURANCE_SEK = 10_000_000;
+type KeyRow = { field: string; value: string; source: { document_id: string; page: number | null; af_code: string | null; evidence: string; flag?: string | undefined } | null };
+function insuranceRisk(keyData: unknown, areas: readonly TenderRiskArea[]) {
+  if (!areas.some(a => /försäkring/i.test(a)) || !Array.isArray(keyData)) return null;
+  const row = (keyData as KeyRow[]).find(k => k?.field === 'Försäkring');
+  if (!row?.source || row.source.flag || largestSekAmount(row.value) < HIGH_INSURANCE_SEK) return null;
+  const source = { document_id: row.source.document_id, page: row.source.page, af_code: row.source.af_code, evidence: row.source.evidence };
+  const code = row.source.af_code ? ` (${row.source.af_code})` : '';
+  return { title: 'Högt försäkringskrav', description: `Underlaget kräver ${row.value.replace(/\.?\s*$/, '')}${code}. Kontrollera att företagets ansvars- och entreprenadförsäkring täcker beloppet och prissätt eventuell tilläggsförsäkring.`.slice(0, 2000), severity: 'Medel' as const, suggestion: 'Prissätt' as const, source, sources: [source], consequence: 'Pengar' as const, deviation: null };
+}
+
 // Keep checklist metadata internal; the persisted result and existing UI stay unchanged.
 export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS, resilient = false) {
   const obj = withoutFavourableIndex(record(raw) ?? {}, areas);
@@ -220,9 +243,12 @@ export function validateTenderRiskReview(raw: unknown, documents: InsightDocumen
     const description = sources[0] ? concreteRiskDescription(risk.description, sources[0]) : risk.description;
     return { ...risk, description, source: sources[0], sources, consequence: 'Tid och pengar', deviation: null };
   });
+  const insurance = insuranceRisk(obj['key_data'], areas);
+  const addInsurance = !!insurance && !expanded.some(r => /försäkring/i.test(`${r.title} ${r.description}`));
+  if (insurance && addInsurance) expanded.push(insurance);
   // A flagged checklist row becomes a visible review warning, never a failed analysis.
   for (const row of links) {
-    if (!row.flag) continue;
+    if (!row.flag || addInsurance && /försäkring/i.test(row.area) && row.flag === 'unlinked_risk') continue;
     expanded.push({ title: row.area, description: `${SOURCE_WARNING}. ${FLAG_TEXT[row.flag]}`, source: { document_id: UNKNOWN_SOURCE_ID, page: null, af_code: null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }, sources: [], consequence: 'Tid och pengar', deviation: null });
   }
   return validateTenderInsights({ key_data: obj['key_data'], risks: expanded, questions: obj['questions'] ?? [] }, documents, true);
