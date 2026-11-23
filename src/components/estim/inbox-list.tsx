@@ -40,7 +40,7 @@ export function InboxList({ threads, selected, filter, onFilter, onSelect, onSim
   return <div className="tl2">
     <div className="filters" aria-label="Filtrera inkorgen">{filters.map(([key, label]) =>
       <Button key={key} variant="prototype" className={`fchip ${filter === key ? 'on' : ''}`} aria-pressed={filter === key} onClick={() => onFilter(key)}>{label}</Button>)}</div>
-    <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={onSimulate}><Icon name="plus" />{real ? 'Ny förfrågan' : 'Simulera ny förfrågan'}</Button>
+    <Button variant="prototype" className="btn btn-ghost btn-sm new-request-button" onClick={onSimulate}><Icon name="plus" />{real ? 'Ny förfrågan' : 'Simulera ny förfrågan'}</Button>
     <div className="inbox-items" role="region" aria-label="Förfrågningar" tabIndex={0}>
     {customerGroups.map(group => {
       const isSelected = group.allThreads.some(t => t.id === selected);

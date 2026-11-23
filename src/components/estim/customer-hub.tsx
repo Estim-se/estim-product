@@ -38,7 +38,7 @@ export function CustomerHub({
           </div>
         </div>
         {onNewConversation && (
-          <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={onNewConversation}>
+          <Button variant="prototype" className="btn btn-ghost btn-sm new-request-button" onClick={onNewConversation}>
             <Icon name="plus" />Ny förfrågan
           </Button>
         )}

@@ -271,6 +271,8 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
 
+.prototype-control.btn-sm.new-request-button{flex:none;width:max-content;min-width:max-content;padding:0 14px}
+
 :root{--thread-tone-1:#EFEDE7;--thread-tone-2:#F5F4EF;--thread-tone-3:rgba(255,255,255,.7);--thread-tone-4:#d9d5cc;--thread-tone-5:#cfcac0;--thread-tone-6:#FBF4DF;--thread-tone-7:#EEF4E2;--thread-tone-8:rgba(245,244,239,.7);--thread-tone-9:rgba(245,244,239,.12);--thread-tone-10:rgba(245,244,239,.35);--thread-tone-11:#D9DCA5;--thread-tone-12:rgba(78,107,28,.08);--thread-tone-13:#FBFCEF;--thread-tone-14:#fff;--thread-tone-15:#FFFEFB;--thread-tone-16:rgba(238,239,200,.9);--thread-tone-17:#cbc7bf;--thread-tone-18:#e6e3dc;--thread-tone-19:#FDFCFA;--thread-tone-20:rgba(255,255,255,.08);--thread-tone-21:rgba(255,255,255,.15);--thread-tone-22:#E7EFD6;--thread-tone-23:#DCE9C3;--thread-tone-24:#B88A1E;--thread-tone-25:rgba(245,244,239,.6);--thread-tone-26:#D7D3CB;--thread-tone-27:rgba(0,0,0,.2);}
 
 /* Stage 2: exact prototype thread styles, expressed through semantic tokens. */
