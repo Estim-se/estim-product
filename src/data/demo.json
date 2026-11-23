@@ -191,6 +191,101 @@
       ]
     },
     {
+      "id": "lind-laddbox",
+      "name": "Sara Lind",
+      "ini": "SL",
+      "ch": "email",
+      "chs": [
+        "email"
+      ],
+      "time": "09:15",
+      "place": "BRF-lägenhet, Södermalm",
+      "addr": "Bergsundsgatan 5, lgh 1102",
+      "phone": "070-412 33 18",
+      "email": "sara.lind@mail.se",
+      "job": "Installation av laddbox",
+      "status": "oppnad",
+      "read": true,
+      "autopilot": false,
+      "waWin": false,
+      "msgs": [
+        {
+          "from": "kund",
+          "ch": "email",
+          "time": "Igår 15:30",
+          "text": "Hej! Vi har nu också fått godkänt av styrelsen att sätta upp en laddbox på vår parkeringsplats i garaget. Kan ni hjälpa oss med det också och vad skulle det kosta?"
+        },
+        {
+          "from": "ai",
+          "ch": "email",
+          "time": "Igår 15:31",
+          "text": "Hej Sara! Vad roligt. Jag har tagit fram ett förslag på en Zaptec Go med standardinstallation.",
+          "auto": true
+        },
+        {
+          "from": "vv",
+          "ch": "email",
+          "time": "09:15",
+          "text": "Hej Sara! Här kommer offerten på laddboxen inkl. installation och grön teknik-avdrag. /Volt Vision",
+          "quote": true
+        }
+      ],
+      "asks": [
+        [
+          "Offert på laddbox till p-plats",
+          1
+        ]
+      ],
+      "facts": [
+        [
+          "info",
+          "BRF-garage med framdragen el till central"
+        ],
+        [
+          "spark",
+          "Zaptec Go 11kW"
+        ]
+      ],
+      "why": "Nytt separat ärende gällande laddbox på p-plats.",
+      "att": [
+        "Offert #1058"
+      ],
+      "q": {
+        "nr": "1058",
+        "owners": 1,
+        "addOn": false,
+        "prisform": "fast",
+        "lines": [
+          {
+            "t": "Zaptec Go laddbox 11kW",
+            "typ": "material",
+            "q": 1,
+            "u": "st",
+            "p": 6990,
+            "rot": false
+          },
+          {
+            "t": "Standardinstallation och driftsättning",
+            "typ": "arbete",
+            "q": 4,
+            "u": "h",
+            "p": 650,
+            "rot": true
+          }
+        ]
+      },
+      "events": [
+        [
+          "Igår 15:30",
+          "Förfrågan om laddbox"
+        ],
+        [
+          "09:15",
+          "Offert #1058 skickad"
+        ]
+      ]
+    },
+    {
       "id": "wallin",
       "name": "Erik och Nora Wallin",
       "ini": "EW",

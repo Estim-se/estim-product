@@ -4,7 +4,8 @@ import { calc, calcAdd, kr } from './quote';
 // Verbatim prototype draft generators; amounts are derived from quote lines.
 export type DraftVariant = 'std' | 'kort' | 'formell';
 type DraftGenerator = (t: Thread, v?: DraftVariant) => string;
-export const DRAFTS: Record<'lind' | 'wallin' | 'jonas' | 'karl' | 'karl2' | 'sofia', DraftGenerator> & Partial<Record<string, DraftGenerator>> = {
+export const DRAFTS: Record<'lind' | 'lind-laddbox' | 'wallin' | 'jonas' | 'karl' | 'karl2' | 'sofia', DraftGenerator> & Partial<Record<string, DraftGenerator>> = {
+  'lind-laddbox': (t, v) => `Hej Sara!\nOfferten för laddboxen på er parkeringsplats är skickad (#1058). Säg till om du har några frågor!\nHälsningar,\nVolt Vision`,
   lind: (t,v)=>{ const q=t.q; if (!q) return ''; const c0=calc(q,false), c1=calc(q,true), a=calcAdd(q);
     if(v==='kort') return `Hej Sara!\nJa, ${kr(c0.betala)} efter ROT stämmer.\nGolvvärme i badrummet: ${kr(a.inkl)} före ROT, ${kr(a.betala)} efter. Det ligger som tillval i offerten.\nROT-avdraget blir ${kr(c1.av)} totalt och ryms gott, ni har max 50 000 kr var.\nFörsäkringsbevis och auktorisation är bifogade till föreningen.\n/Volt Vision`;
     return `Hej Sara!\nJa, det stämmer. Elen till nya köket blir ${kr(c0.betala)} efter ROT.\nGolvvärme i badrummet kostar ${kr(a.inkl)} före ROT och ${kr(a.betala)} efter ROT. Jag har lagt in det som ett tillval i offerten, så ni kan bocka i det direkt i länken.\nMed golvvärmen blir ROT-avdraget ${kr(c1.av)} totalt. Ni är två ägare med max 50 000 kr var, så det räcker även om Johan har använt en del i år. Enklast är att lägga hela avdraget på dig.\nFörsäkringsbevis och vår auktorisation från Elsäkerhetsverket ligger bifogade, så kan ni skicka dem direkt till föreningen.\nHälsningar,\nVolt Vision`; },
