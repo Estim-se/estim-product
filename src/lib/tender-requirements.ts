@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { QuantityItem, QuantityLevel, TenderQuantities } from './tender-quantities';
+import type { CountBasis, QuantityItem, QuantityLevel, StoredObjectModel, TenderQuantities } from './tender-quantities';
 import type { InsightDocument } from './tender-insights';
 import type { RoomRecipes } from './tender-room-recipes';
 import { perApartmentArea, type ObjectModel } from './tender-object-model';
@@ -61,22 +61,24 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
   const listSource: Source | null = model ? { document_id: model.document_id, page: null, evidence: model.evidence } : null;
   const textCount = (name: string) => input.counts.find(c => c.name === name && verifyTenderSource(documents, c.source)) ?? null;
   // Unit counts: code from the object model first; text figures only for what the object list cannot show.
-  function unitCount(r: Requirement): { value: number; label: string; level: QuantityLevel; source: Source | null } | null {
+  // basis: the unit is counted from the object model alone, so the Excel export can link it to the apartment sheet.
+  function unitCount(r: Requirement): { value: number; label: string; level: QuantityLevel; source: Source | null; basis?: CountBasis['unit'] } | null {
     const key = ROOM_UNITS[r.unit_of_count];
-    if (key && model && (model.counts[key] > 0 || r.unit_of_count === 'halvrum' || r.unit_of_count === 'wc')) return { value: model.counts[key], label: `${r.unit_of_count} i objektlistan`, level: r.unit_of_count === 'lägenhet' || r.unit_of_count === 'lokal' ? 'Bekräftad' : 'Räknad', source: listSource };
-    if (r.unit_of_count === 'sovrum_och_halvrum' && model) return { value: model.counts.sovrum + model.counts.halvrum, label: 'sovrum och halvrum i objektlistan', level: 'Räknad', source: listSource };
-    if (r.unit_of_count === 'lägenhet_och_lokal' && model) { const premises = model.counts.premises || textCount('lokal')?.value || 0; return { value: model.counts.apartments + premises, label: 'lägenheter och lokaler', level: 'Bekräftad', source: listSource }; }
-    if (r.unit_of_count === 'per_area' && model && r.area_divisor) return { value: perApartmentArea(model, r.area_divisor), label: `påbörjade ${r.area_divisor} m² per lägenhet`, level: 'Räknad', source: listSource };
+    const linked = r.unit_of_count === 'trapphusplan' ? undefined : r.unit_of_count as CountBasis['unit'];
+    if (key && model && (model.counts[key] > 0 || r.unit_of_count === 'halvrum' || r.unit_of_count === 'wc')) return { value: model.counts[key], label: `${r.unit_of_count} i objektlistan`, level: r.unit_of_count === 'lägenhet' || r.unit_of_count === 'lokal' ? 'Bekräftad' : 'Räknad', source: listSource, ...(linked ? { basis: linked } : {}) };
+    if (r.unit_of_count === 'sovrum_och_halvrum' && model) return { value: model.counts.sovrum + model.counts.halvrum, label: 'sovrum och halvrum i objektlistan', level: 'Räknad', source: listSource, basis: 'sovrum_och_halvrum' };
+    if (r.unit_of_count === 'lägenhet_och_lokal' && model) { const text = model.counts.premises ? null : textCount('lokal')?.value ?? null; return { value: model.counts.apartments + (model.counts.premises || text || 0), label: 'lägenheter och lokaler', level: 'Bekräftad', source: listSource, ...(text === null ? { basis: 'lägenhet_och_lokal' as const } : {}) }; }
+    if (r.unit_of_count === 'per_area' && model && r.area_divisor) return { value: perApartmentArea(model, r.area_divisor), label: `påbörjade ${r.area_divisor} m² per lägenhet`, level: 'Räknad', source: listSource, basis: 'per_area' };
     if (r.unit_of_count === 'trapphus' && model && model.counts.stairwells > 0) return { value: model.counts.stairwells, label: 'trapphus (adresser) i objektlistan', level: 'Räknad', source: listSource };
     if (r.unit_of_count === 'post') return { value: 1, label: 'post', level: 'Bekräftad', source: null };
     const text = (TEXT_COUNTS as readonly string[]).includes(r.unit_of_count) ? textCount(r.unit_of_count) : null;
     return text ? { value: text.value, label: `${r.unit_of_count} enligt underlaget`, level: 'Bekräftad', source: { document_id: text.source.document_id, page: text.source.page, evidence: text.source.evidence } } : null;
   }
   const seen = new Set<string>();
-  const add = (post: string, section: number, unit: QuantityItem['unit'], quantity: number | null, calculation: string, rule: string, level: QuantityLevel, sources: Source[], note: string | null) => {
+  const add = (post: string, section: number, unit: QuantityItem['unit'], quantity: number | null, calculation: string, rule: string, level: QuantityLevel, sources: Source[], note: string | null, basis?: CountBasis) => {
     const key = withoutNegatedTerms(post).toLocaleLowerCase('sv').replace(/\s+/g, ' ').trim();
     if (seen.has(key)) return; seen.add(key);
-    const item: QuantityItem = { post, unit, quantity: String(quantity ?? 0), calculation, rule, sources, certainty: levelCertainty[level], level, section };
+    const item: QuantityItem = { post, unit, quantity: String(quantity ?? 0), calculation, rule, sources, certainty: levelCertainty[level], level, section, ...(basis && quantity !== null ? { count_basis: basis } : {}) };
     if (level === 'Bekräftad' || level === 'Räknad') items.push(item);
     else assumptions.push({ description: note ?? `${post}: ${rule}`, sources, item });
     const id = `req_${ruleItems.length}`;
@@ -101,7 +103,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     }
     const quantity = Math.round(count.value * r.per_unit * 1000) / 1000;
     const level: QuantityLevel = r.assumed ? 'Antagen' : !source ? 'Antagen' : count.level;
-    add(r.post, r.section, r.unit, quantity, `${count.value} × ${r.per_unit}`, `${source ? '' : `${UNSOURCED}. `}${r.per_unit} per ${r.unit_of_count} × ${count.label}.`, level, [...sources, ...(count.source ? [count.source] : [])], r.note);
+    add(r.post, r.section, r.unit, quantity, `${count.value} × ${r.per_unit}`, `${source ? '' : `${UNSOURCED}. `}${r.per_unit} per ${r.unit_of_count} × ${count.label}.`, level, [...sources, ...(count.source ? [count.source] : [])], r.note, count.basis ? { unit: count.basis, per_unit: r.per_unit, area_divisor: count.basis === 'per_area' ? r.area_divisor : null } : undefined);
   }
   // Company recipes for room equipment the documents do not specify (marked Antagen, as in the reference calculation).
   if (model) for (const recipe of recipes.rooms) {
@@ -111,9 +113,13 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       const roomCount = model.counts[(ROOM_UNITS[unitKey] ?? 'apartments') as keyof ObjectModel['counts']];
       if (!roomCount) continue;
       const post = eq === 'lamps' ? `Lamputtag ${unitKey} enligt typrecept` : recipe.room === 'Kök' ? 'Bänkuttag kök enligt typrecept' : `Dubbla vägguttag ${unitKey} enligt typrecept`;
-      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.`, 'Antagen', listSource ? [listSource] : [], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`);
+      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.`, 'Antagen', listSource ? [listSource] : [], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`, { unit: unitKey as CountBasis['unit'], per_unit: recipe[eq], area_divisor: null });
     }
   }
   if (!model) assumptions.push({ description: 'Kontroll av omfattning: ingen objektlista med lägenhetstyper hittades. Poster per lägenhet, kök, badrum och rum kan inte räknas – fyll i mängderna.', sources: [], item: null });
-  return { rules: { operands, items: ruleItems, assumptions: [] }, items, assumptions };
+  return { rules: { operands, items: ruleItems, assumptions: [] }, items, assumptions, ...(model ? { object_model: storedObjectModel(model) } : {}) };
+}
+// The object model as stored with the quantities (for the per-apartment Excel sheet).
+export function storedObjectModel(model: ObjectModel): StoredObjectModel {
+  return { document_id: model.document_id, sheet: model.sheet, premises: model.premises, apartments: model.apartments.slice(0, 5000).map(a => ({ row: a.row, number: a.number?.slice(0, 80) ?? null, address: a.address?.slice(0, 240) ?? null, floor: a.floor?.slice(0, 80) ?? null, label: a.label.slice(0, 240), rooms: a.rooms, area: a.area, bedrooms: a.bedrooms, half_rooms: a.half_rooms, kitchens: a.kitchens, bathrooms: a.bathrooms, wc: a.wc, basis: a.basis, code: a.code?.slice(0, 40) ?? null })) };
 }
