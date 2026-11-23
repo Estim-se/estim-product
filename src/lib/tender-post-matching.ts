@@ -98,7 +98,8 @@ export const PACKAGE_MEANINGS = new Set(['demontering', 'tvattstuga', 'serviscen
 // fire-safe feed type, a washing-machine supply with the IP44 outlet type).
 const PRICED_AS: Record<string, string> = { 'stigarledning': 'huvudledning-fastighet', 'matning-hiss': 'matning-fs', 'matning-ventilation': 'matning-fs', 'matning-fjarrvarme': 'matning-teknik', 'matning-markvarme': 'matning-teknik', 'kombimaskin': 'uttag-ip44' };
 // The meaning a post is priced with in the catalog.
-export const pricedMeaning = (post: string) => { const m = postMeaning(post); return m ? PRICED_AS[m] ?? m : null; };
+export const pricedAs = (meaning: string) => PRICED_AS[meaning] ?? meaning;
+export const pricedMeaning = (post: string) => { const m = postMeaning(post); return m ? pricedAs(m) : null; };
 function typesForMeaning(meaning: string, settings: CalculationSettings) {
   const own = settings.post_types.filter(t => postMeaning(t.name) === meaning);
   return own.length || !PRICED_AS[meaning] ? own : settings.post_types.filter(t => postMeaning(t.name) === PRICED_AS[meaning]);

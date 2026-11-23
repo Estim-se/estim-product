@@ -150,14 +150,14 @@ const insightsWork = (async () => {
 })();
 const quantityWork = (async () => {
   const docs = inputs(false);
-  const quantities = await extractRequirementQuantities(docs, 'local-run', model, settings.room_recipes ?? null);
+  const quantities = await extractRequirementQuantities(docs, 'local-run', model, settings.room_recipes ?? null, settings.post_types.map(t => ({ id: t.id, name: t.name, section: t.section })));
   const matches = await matchTenderCost(quantities, settings, docs, 'local-run', model);
   return { quantities, matches };
 })();
 const [insights, { quantities, matches }] = await Promise.all([insightsWork, quantityWork]);
 const result = calculateTenderCost(quantities, settings, matches);
 const typeName = (id: string | null) => settings.post_types.find(t => t.id === id)?.name ?? null;
-const rows = [...result.rows, ...result.proposals].map(r => ({ post: r.post, type: typeName(r.type_id), quantity: r.quantity, unit: r.unit, level: r.level, total: r.total,
+const rows = [...result.rows, ...result.proposals].map(r => ({ post: r.post, type: typeName(r.type_id), type_id: r.type_id, scope: r.scope ?? null, quantity: r.quantity, unit: r.unit, level: r.level, total: r.total, hours: r.hours, labor: r.labor, material: r.material,
   section: sectionOfPost(r.post, r.section, settings.post_types.find(t => t.id === r.type_id)?.section, postMeaning), sources: r.sources.length, rule: r.rule }));
 const issues = fasit ? checkTenderFasit(fasit, { insights, quantities, documents: documents.map(d => ({ id: d.id, file_name: d.file_name, doc_type: d.doc_type })) }) : [];
 const spent = calls.reduce((s, c) => s + cost(c), 0);
@@ -169,5 +169,7 @@ for (const s of [...new Set(rows.map(r => r.section))].sort((a, b) => a - b)) {
   for (const r of inSection) console.log(`  ${r.post} = ${r.quantity} ${r.unit} · ${r.level}${r.total === null ? ' (utanför totalen)' : ''}${r.type ? ` · ${r.type}` : ''}`);
 }
 if (fasit) console.log(`\nFasit ${fasit}: ${issues.length ? issues.join('; ') : 'OK'}`);
+const coverageCounts = (quantities.coverage ?? []).reduce<Record<string, number>>((m, c) => ({ ...m, [c.status]: (m[c.status] ?? 0) + 1 }), {});
+console.log(`Kravtäckning: ${(quantities.coverage ?? []).length} krav · ${Object.entries(coverageCounts).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 console.log(`\nAI-anrop: ${calls.length}, in ${calls.reduce((s, c) => s + c.input + c.cache_write + c.cache_read, 0).toLocaleString('sv-SE')} tokens, ut ${calls.reduce((s, c) => s + c.output, 0).toLocaleString('sv-SE')} tokens, kostnad ${spent.toFixed(2)} USD, tid ${Math.round((Date.now() - started) / 1000)} s`);
 if (outPath) writeFileSync(outPath, JSON.stringify({ model: modelId, total: result.total, rows, fasit: issues, insights, quantities, matches, calls, cost_usd: spent, tool_outputs: toolOutputs, documents: documents.map(d => ({ id: d.id, file_name: d.file_name, file_type: d.file_type, page_count: d.page_count, doc_type: d.doc_type, text: d.text })) }, null, 1));

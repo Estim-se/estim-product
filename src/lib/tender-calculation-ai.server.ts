@@ -10,6 +10,14 @@ const source = { type: 'object', additionalProperties: false, properties: { docu
 const wire = { type: 'object', additionalProperties: false, properties: { matches: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { post: {type:'string'}, type_id: {type:['string','null']} }, required:['post','type_id'] } }, demolition: { anyOf: [{ type:'null' }, { type:'object',additionalProperties:false,properties:{ source, apartment_operand_id:{type:'string'},type_id:{type:['string','null']} },required:['source','apartment_operand_id','type_id'] }] } }, required:['matches','demolition'] };
 const rawSchema = z.object({ matches:z.array(z.object({post:z.string(),type_id:z.string().uuid().nullable()}).strict()).max(200),demolition:z.object({source:z.object({document_id:z.string().uuid(),page:z.number().int().positive().nullable(),evidence:z.string().min(1).max(1500)}).strict(),apartment_operand_id:z.string(),type_id:z.string().uuid().nullable()}).strict().nullable() }).strict();
 export async function matchTenderCost(quantities: TenderQuantities, settings: CalculationSettings, documents: TenderInsightInput[], key: string, model: string) {
+  // The requirements engine chose each row's catalog type in the requirements analysis: the bindings are taken from the
+  // rows, without a model call, so the price of a row never depends on a second matching answer.
+  const rows = [...quantities.items, ...quantities.assumptions.flatMap(assumptionItems)];
+  if (rows.length && rows.every(i => i.type_id !== undefined)) {
+    const posts = new Set<string>();
+    const bindings = rows.filter(i => !posts.has(i.post) && posts.add(i.post)).map(i => ({ post: i.post, type_id: i.type_id && settings.post_types.some(t => t.id === i.type_id) ? i.type_id : null, manual_hours: null, manual_list_price: null }));
+    return validateBindings({ bindings, demolition: null }, quantities, settings);
+  }
   const content: unknown[] = [{type:'text',text:JSON.stringify({ quantity_posts:[...quantities.items,...quantities.assumptions.flatMap(assumptionItems)].map(i=>({post:i.post,unit:i.unit,rule:i.rule})),object_operands:quantities.rules.operands.filter(o=>o.basis==='Lista'),post_types:settings.post_types.map(t=>({id:t.id,name:t.name})) })}];
   for(const d of documents.filter(d=>d.doc_type==='AF'||d.doc_type==='Teknisk beskrivning/Rambeskrivning')) {
     content.push({type:'text',text:`Dokument-id ${d.id}, ${d.file_name}, ${d.page_count ?? 'ej sidindelat'} sidor.`});

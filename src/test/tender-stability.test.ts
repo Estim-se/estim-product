@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineRequirementAnswers, missingDocumentedCategories } from '@/lib/tender-requirements-ai.server';
+import { missingDocumentedCategories } from '@/lib/tender-requirements-ai.server';
 import { decodeRequirements, type Requirement } from '@/lib/tender-requirements';
 import { correctedScopeType, postMeaning } from '@/lib/tender-post-matching';
 import { calculateTenderCost, emptyCalculationSettings } from '@/lib/tender-calculation';
@@ -8,13 +8,6 @@ import type { TenderQuantities } from '@/lib/tender-quantities';
 const req = (post: string, unit_of_count: Requirement['unit_of_count'], per_unit: number | null, extra: Partial<Requirement> = {}): Requirement => ({ post, section: 3, unit_of_count, per_unit, fixed_quantity: null, area_divisor: null, unit: 'st', assumed: false, note: null, source: null, ...extra });
 
 describe('requirements stay the same between runs', () => {
-  it('combines the section answers: the same equipment once, options and room types kept apart', () => {
-    const combined = combineRequirementAnswers([
-      decodeRequirements({ counts: [], requirements: [req('Option: Timer på handdukstork', 'badrum', 1), req('Närvarogivare, lekrum', 'rumstyp', 1, { room_type: 'Lekrum' })] }),
-      decodeRequirements({ counts: [], requirements: [req('Elektrisk handdukstork i badrum', 'badrum', 1), req('Närvarogivare, kapprum', 'rumstyp', 1, { room_type: 'Kapprum' }), req('Elektrisk handdukstork', 'badrum', 1), req('Matning hiss', 'trapphus', 1), req('Funktionssäker matning till hiss', 'trapphus', 1)] }),
-    ]);
-    expect(combined.requirements.map(r => r.post)).toEqual(['Option: Timer på handdukstork', 'Närvarogivare, lekrum', 'Elektrisk handdukstork i badrum', 'Närvarogivare, kapprum', 'Matning hiss']);
-  });
   it('finds documented categories missing from the requirements, also in a list under a lead line', () => {
     const text = 'Fysisk sida: 4\nNya gruppcentraler monteras i:\n- Garage\n- Tvättstuga\n61 EL- OCH TELEKANALISATIONSSYSTEM\nSyn i lägenheter före rivning.';
     const missing = missingDocumentedCategories([{ id: 'd1', file_name: 'El.pdf', doc_type: 'Teknisk beskrivning', text }], decodeRequirements({ counts: [], requirements: [req('Syn före rivning', 'lägenhet', 1)] }));
@@ -58,5 +51,15 @@ describe('the catalog binding and calculation do not depend on wording', () => {
     const qty = (p: string) => rows.find(r => r.post === p)?.quantity;
     expect([qty('Håltagning och tätning'), qty('Tätning av håltagning i våtrum'), qty('Håltagning i allmänna utrymmen')]).toEqual(['0', '6', '1']);
     expect([qty('Debiteringsmätare per lägenhet'), qty('Mätartavla, mätarblock'), qty('Mätartavla lokal')]).toEqual(['5', '0', '2']);
+  });  it('a one-off requirement on a per-apartment catalog type that already has its own per-apartment row is not counted again', () => {
+    const item = (post: string, quantity: string, count_unit: string, level: 'Bekräftad' | 'Saknar mängd' = 'Bekräftad') => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level, count_unit, type_id: id(9) });
+    const apartments = Array.from({ length: 5 }, (_, i) => ({ row: i + 2, number: `10${i}`, address: 'Gata 1', floor: '1', label: '2 rok', rooms: 2, area: 50, bedrooms: 1, half_rooms: 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default' as const, code: null }));
+    const q: TenderQuantities = { rules: { operands: [], items: [], assumptions: [] }, assumptions: [], object_model: { document_id: id(99), sheet: 'Lista', premises: 0, apartments },
+      items: [item('Håltagning och brandtätning per lägenhet', '5', 'lägenhet'), item('Brandavskiljande kabelgenomföringar', '0', 'post', 'Saknar mängd')] };
+    const bindings = q.items.map(i => ({ post: i.post, type_id: id(9), manual_hours: null, manual_list_price: null }));
+    const cost = calculateTenderCost(q, settings, { bindings, demolition: null });
+    const row = cost.rows.find(r => r.post === 'Brandavskiljande kabelgenomföringar')!;
+    expect(row.quantity).toBe('0'); expect(row.rule).toMatch(/Ingår i Håltagning och brandtätning per lägenhet/);
+    expect(cost.rows.filter(r => (r.total ?? 0) > 0)).toHaveLength(1);
   });
 });

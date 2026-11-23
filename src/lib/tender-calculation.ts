@@ -63,7 +63,8 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     const t = typeOf(item.post);
     const oneOff = item.count_unit === 'post' || item.count_unit === 'fast_antal' && Number(item.quantity) <= 1;
     const otherArea = /allmänn|lokal|trapphus|källar|garage|fastighet|tvättstuga|tekni|förråd|vind|entré|fasad|utomhus|gård/i.test(item.post);
-    return !!t && oneOff && !otherArea && apartments > 0 && /\bper\s+(?:lägenhet|lgh)\b/i.test(t.name);
+    // The catalog type decides: "… per lägenhet", or a type for work done in each apartment (testing, apartment central).
+    return !!t && oneOff && !otherArea && apartments > 0 && (/\bper\s+(?:lägenhet|lgh)\b/i.test(t.name) || /-lgh$/.test(postMeaning(t.name) ?? ''));
   };
   // One post per catalog type and unit family, priced once with the largest quantity: one-off posts on the same type
   // ("Projektering" and "Bygghandlingar"), a complete-package type ("Tvättstuga komplett elinstallation"), and any
@@ -74,7 +75,8 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   const effective = (item: { post: string; count_unit?: string | undefined; quantity: string }) => perApartmentOf(item) ? { unit: 'lägenhet', quantity: apartments } : { unit: item.count_unit, quantity: Number(item.quantity) };
   const packageKey = (i: { post: string; count_unit?: string | undefined; quantity: string; option?: boolean | undefined }) => {
     const t = typeOf(i.post);
-    if (!t || i.option || !i.count_unit) return null;
+    // Rows of the requirements engine are already one row per requirement identity (tender-requirements.ts).
+    if (!t || i.option || !i.count_unit || 'type_id' in i && i.type_id) return null;
     const unit = effective(i).unit!, family = UNIT_FAMILY[unit] ?? unit;
     if (i.count_unit === 'post') return `${t.id}|${family}`;
     const meaning = postMeaning(t.name);
@@ -90,13 +92,18 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   // premises posts ("Mätartavla" per apartment and per premises, and "Mätartavla, mätarblock" for both).
   const specific = (t: { name: string } | undefined) => { const m = t ? postMeaning(t.name) : null; return !!m && !GENERIC_MEANINGS.has(m); };
   const splitTypes = new Set(items.filter(i => i.count_unit && i.count_unit !== 'lägenhet_och_lokal' && (UNIT_FAMILY[effective(i).unit!] === 'lägenhet' || i.count_unit === 'lokal') && specific(typeOf(i.post))).map(i => typeOf(i.post)?.id).filter(Boolean));
+  // A one-off post that would be counted per apartment from its catalog type, while the same type already has its own
+  // per-apartment row, is that delivery again: it stays visible at 0 instead of being counted a second time.
+  const apartmentRowOf = (item: { post: string }) => { const t = typeOf(item.post); return t ? items.find(x => x !== item && typeOf(x.post)?.id === t.id && !x.option && UNIT_FAMILY[x.count_unit ?? ''] === 'lägenhet')?.post : undefined; };
   const rows = items.map(item => {
     const b = bindingOf(item.post), t = typeOf(item.post);
     const packaged = packageKey(item), carrier = packaged ? carrierOf.get(packaged) : undefined;
-    const perApartment = perApartmentOf(item);
+    const apartmentRow = perApartmentOf(item) ? apartmentRowOf(item) : undefined;
+    const perApartment = perApartmentOf(item) && !apartmentRow;
     const covered = item.count_unit === 'lägenhet_och_lokal' && !!t && splitTypes.has(t.id);
     const i = carrier && carrier !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${carrier} (samma katalogtyp och enhet).` }
       : covered ? { ...item, quantity: '0', rule: `${item.rule} Ingår i postens egna rader för lägenheter och lokaler (samma katalogtyp).` }
+      : apartmentRow ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${apartmentRow} (samma katalogtyp, räknad per lägenhet).` }
       : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Antaget: katalogtypen gäller per lägenhet, ${apartments} lägenheter i objektlistan.`, level: 'Antagen' as const, certainty: 'Låg' as const }
       : item;
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
