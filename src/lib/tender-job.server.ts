@@ -66,7 +66,7 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const { tenderHash } = await import('./tender-source-parts');
   // Keyed by file content and document type, not document ids: the same files give the same result in a new tender.
   // ANBUD_CACHE_SALT (server env) forces fresh model answers, e.g. to verify robustness.
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v5` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v6` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);

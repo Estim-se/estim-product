@@ -32,7 +32,8 @@ Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagni
 Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens af_code (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden. En gällande indexreglering (t.ex. EM-index) är gynnsam för entreprenören: assessment Normalt och ingen risk. Endast avsaknad av indexreglering kan vara en risk.
 Varje risk ska i description återge de konkreta villkoren med sina värden ur underlaget (t.ex. "45 dagar", "5 % påslag", "1 % per arbetsdag") och ange AF-koden i af_code; en allmän rubrik räcker aldrig.
 Ett tydligt formulerat villkor kan ändå vara ofördelaktigt: bedöm följden, inte bara om villkoret är oklart eller ändrar AB. Kontrollera exempelvis säkerheters kapitalbindning/kostnad under en lång garantitid även om procentsatserna är tydliga. Beskriv fem års materialansvar och 45 dagars likviditetspåverkan direkt utan påståenden om vad standardavtalet annars skulle ha gett.
-Returnera risks som platt lista (title, severity, description, suggestion, af_code, page) och risk_checklist som ett objekt med EXAKT en egenskap per område ovan (${areas.length} st), där nyckeln är områdets namn exakt som det står och värdet har assessment och af_code. Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. assessment är Risk, Normalt eller Ej nämnt; en tom risk_checklist är aldrig giltig. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
+Ni är elentreprenören (underentreprenör el eller sidoentreprenör el), inte totalentreprenör: rapportera bara risker som påverkar el-arbetet, el-kalkylen eller el-tidplanen. En ren TE-fråga (flyttfirma, hyresgästlogistik, tätskikt, försäkring av hyresgästers egendom, beställarens säkerheter eller förskott) tas bara med om den direkt påverkar el; miljöfarliga ämnen och vite tas med med sin följd för el. Varje risk anger i impact vad den betyder för oss som elentreprenör (kostnad, tid, provisorier, samordning) i en mening.
+Returnera risks som platt lista (title, severity, description, impact, suggestion, af_code, page) och risk_checklist som ett objekt med EXAKT en egenskap per område ovan (${areas.length} st), där nyckeln är områdets namn exakt som det står och värdet har assessment och af_code. Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. assessment är Risk, Normalt eller Ej nämnt; en tom risk_checklist är aldrig giltig. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
 }
 export const TENDER_RISK_CHECKLIST_PROMPT = tenderRiskChecklistPrompt();
 
@@ -44,7 +45,7 @@ export function tenderRiskReviewWireSchemaFor(areas: readonly TenderRiskArea[] =
     type: 'object', additionalProperties: false,
     properties: {
       risks: { type: 'array', items: { type: 'object', additionalProperties: false,
-        properties: { title: { type: 'string' }, description: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
+        properties: { title: { type: 'string' }, description: { type: 'string' }, impact: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
         required: ['title', 'description'] } },
       risk_checklist: { type: 'object', additionalProperties: false, properties: Object.fromEntries(areas.map(area => [area, status])), required: [...areas] },
     }, required: ['risks', 'risk_checklist'],
@@ -58,7 +59,7 @@ export function tenderChecklistRows(raw: unknown): unknown {
   return { ...obj, risk_checklist: Object.entries(keyed).map(([area, value]) => ({ area, ...(record(value) ?? {}) })) };
 }
 
-type FlatRisk = { title: string; description: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
+type FlatRisk = { title: string; description: string; impact?: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
 type Assessment = 'Risk' | 'Normalt' | 'Ej nämnt';
 type FlatChecklistRow = { area: TenderRiskArea; assessment: Assessment; af_code: string | null };
 export type TenderChecklistFlag = 'missing' | 'unsourced_normal' | 'unlinked_risk';
@@ -92,7 +93,8 @@ export function parseFlatTenderRisks(raw: unknown): FlatRisk[] {
     const description = text(row['description'], 2000) || title;
     if (!title || /placeholder/i.test(`${title} ${description}`)) return [];
     const page = typeof row['page'] === 'number' && Number.isInteger(row['page']) && row['page'] > 0 ? row['page'] : null;
-    return [{ title, description,
+    const impact = text(row['impact'], 800);
+    return [{ title, description, ...(impact ? { impact } : {}),
       ...(SEVERITIES.includes(row['severity'] as never) ? { severity: row['severity'] as NonNullable<FlatRisk['severity']> } : {}),
       ...(SUGGESTIONS.includes(row['suggestion'] as never) ? { suggestion: row['suggestion'] as NonNullable<FlatRisk['suggestion']> } : {}),
       af_code: typeof row['af_code'] === 'string' ? row['af_code'].slice(0, 80) : null, page }];
