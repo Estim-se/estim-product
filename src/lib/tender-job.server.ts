@@ -10,7 +10,7 @@ type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v2', quantities: 'bedrooms-pdf-pages-v2', calculation: 'bedrooms-pdf-pages-v2' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'premises-documented-v8', calculation: 'premises-documented-v8' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -63,7 +63,7 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const docs = await db.from('tender_documents').select('id,content_hash,doc_type').eq('tender_id', job.tender_id).eq('company_id', job.company_id).order('id');
   if (docs.error) throw Error('Kontrollsummorna kunde inte läsas.');
   const { tenderHash } = await import('./tender-source-parts');
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v3` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: docs.data, model: aiConfig().model, context }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v5` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: docs.data, model: aiConfig().model, context }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return prior.data.result as T;
@@ -157,7 +157,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const inputs = await loadInputs(db, job, false);
     const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v5' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v11' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

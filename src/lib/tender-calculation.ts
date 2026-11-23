@@ -53,12 +53,12 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   const rows = items.map(i => {
     const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
-    // Explicit, source-backed estimates are priced provisionally; unresolved measurements still require manual input.
-    const needsQuantity = i.certainty === 'Låg' && !i.estimated_quantity;
+    // One rule for every Låg row, estimates included: it stays outside the total until its quantity is confirmed.
+    const needsQuantity = i.certainty === 'Låg';
     const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
     const manualQuantity = b?.manual_quantity ?? null;
     if (hoursPerUnit === null || listPrice === null || awaitingConfirmation) return { ...i, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
-    const quantity = (needsQuantity || i.estimated_quantity) && manualQuantity !== null ? String(manualQuantity) : i.quantity;
+    const quantity = needsQuantity && manualQuantity !== null ? String(manualQuantity) : i.quantity;
     const qty = fixed(quantity), hours = rounded(qty * fixed(hoursPerUnit), S);
     const labor = rounded(hours * fixed(s.hourly_rate) * 100n, S * S);
     const material = rounded(qty * fixed(listPrice) * (100n * S - fixed(s.list_discount)) * (100n * S + fixed(s.material_markup)) * 100n, S ** 4n * 10000n);

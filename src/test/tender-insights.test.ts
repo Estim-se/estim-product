@@ -29,7 +29,10 @@ describe('Tender-wide extraction rules', () => {
   it('does not invent Office page numbers and checks extracted citations', () => {
     const office = { ...doc, file_type: 'docx', text: 'Beställaren är Test AB.' };
     const result = empty(); result.key_data[0] = { field: 'Beställare', value: 'Test AB', source };
-    expect(() => validateTenderInsights(result, [office])).toThrow('obekräftat sidnummer');
+    // A Word page cannot be verified: it is dropped, and the quote itself must still be in the text.
+    expect(() => validateTenderInsights(result, [office])).toThrow('källcitat');
+    result.key_data[0] = { field: 'Beställare', value: 'Test AB', source: { ...source, page: 3, evidence: 'Beställaren är Test AB.' } };
+    expect(validateTenderInsights(result, [office]).key_data[0]?.source?.page).toBeNull();
     result.key_data[0] = { field: 'Beställare', value: 'Test AB', source: { ...source, page: null } };
     expect(() => validateTenderInsights(result, [office])).toThrow('källcitat');
     result.key_data[0] = { field: 'Beställare', value: 'Test AB', source: { ...source, page: null, evidence: 'Beställaren är Test AB.' } };
