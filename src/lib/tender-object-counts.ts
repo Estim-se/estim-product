@@ -51,7 +51,7 @@ function plausibleBedrooms(value: number, row: number) {
   if (!Number.isInteger(value) || value < 0 || value > MAX_BEDROOMS_PER_APARTMENT) throw new ImplausibleObjectCount(`${IMPLAUSIBLE}: ${value} sovrum på rad ${row}.`);
   return value;
 }
-const NON_APARTMENT = /(?<![\p{L}])(?:lokal|lokaler|förråd|kontor|butik|garage|verksamhet|teknikrum|undercentral)(?![\p{L}])/iu;
+export const NON_APARTMENT = /(?<![\p{L}])(?:lokal|lokaler|förråd|kontor|butik|garage|verksamhet|teknikrum|undercentral)(?![\p{L}])/iu;
 function bedroomColumn(cells: Map<string,string>, column: string, start: number) {
   for (let row = start - 1; row >= Math.max(1, start - 5); row--) { const header = cells.get(`${column}${row}`); if (header) return /sovrum|sov\.?rum|antal sov/i.test(header); }
   return false;

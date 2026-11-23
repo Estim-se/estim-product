@@ -4,6 +4,10 @@
 //       A saved run from verify-anbud-pipeline.ts (quantities, matches and cost).
 //   bun scripts/compare-anbud-v2.ts --documents <folder with the tender files>
 //       Runs only the code part of the quantity engine on local files (no model answer): shows what code builds alone.
+//   bun scripts/compare-anbud-v2.ts --documents <folder> --requirements <requirements.json> [--drawing-text <file>]
+//       Requirements engine: builds the quantities from a saved model answer (or a hand-written list) with the object
+//       model and type codes counted by code. --drawing-text adds a drawing transcription (type codes) when the
+//       drawings have no text layer.
 //   bun scripts/compare-anbud-v2.ts --catalog example
 //       Catalog coverage of the built-in example catalog (seed with refreshed example values + additional types).
 //   Add --json <file> to also write the comparison as JSON.
@@ -12,6 +16,10 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { calculateTenderQuantities } from '../src/lib/tender-quantities';
 import { readTenderDocument } from '../src/lib/tender-reading';
+import { buildObjectModel } from '../src/lib/tender-object-model';
+import { typeCodesInText } from '../src/lib/tender-type-codes';
+import { buildRequirementQuantities, decodeRequirements } from '../src/lib/tender-requirements';
+import { exampleRoomRecipes } from '../src/lib/tender-room-recipes';
 import { extractTenderPdfPageText } from '../src/lib/tender-pdf-text.server';
 import { catalogCoverage, compareWithV2, formatCatalogCoverage, formatV2Comparison, type V2Snapshot } from '../src/test/helpers/v2-comparison';
 import { ADDITIONAL_EXAMPLE_POST_TYPES, EXAMPLE_VALUE_UPDATES, SEEDED_EXAMPLE_POST_TYPES } from '../src/lib/tender-example-catalog';
@@ -26,6 +34,7 @@ if (catalog === 'example') {
 if (!snapshotPath === !folder) throw Error('Use exactly one of --snapshot <file>, --documents <folder> or --catalog example.');
 
 async function codeOnly(dir: string): Promise<V2Snapshot> {
+  const requirementsPath = arg('--requirements'), drawingPath = arg('--drawing-text');
   const documents = [];
   let n = 1;
   for (const name of readdirSync(dir).sort()) {
@@ -36,6 +45,12 @@ async function codeOnly(dir: string): Promise<V2Snapshot> {
     if (type === 'pdf') { const p = await extractTenderPdfPageText(bytes); pages = p.length; text = p.map((t, i) => `Fysisk sida: ${i + 1}\n${t}`).join('\n'); }
     else text = (await readTenderDocument(bytes, type)).text ?? '';
     documents.push({ id: `00000000-0000-4000-8000-${String(n++).padStart(12, '0')}`, file_name: name, file_type: type, page_count: pages, text });
+  }
+  if (requirementsPath) {
+    const codes = [...documents.flatMap(d => typeCodesInText(d.text)), ...(drawingPath ? typeCodesInText(readFileSync(drawingPath, 'utf8')) : [])];
+    const model = buildObjectModel(documents, codes, exampleRoomRecipes.separate_wc_min_area ?? null);
+    console.log(`Objektmodell: ${JSON.stringify(model?.counts ?? null)}, typkoder ${codes.length}, matchade ${model?.code_matches ?? 0}`);
+    return { quantities: buildRequirementQuantities(decodeRequirements(JSON.parse(readFileSync(requirementsPath, 'utf8'))), model, documents, exampleRoomRecipes), cost: null };
   }
   return { quantities: calculateTenderQuantities({ operands: [], items: [], assumptions: [] }, documents, null, true), cost: null };
 }

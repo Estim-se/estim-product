@@ -44,7 +44,7 @@ export async function kickTenderJob(tid: string) {
 async function readingVersion(db: Db, job: Job) {
   const r = await db.from('tenders').select('reading_version').eq('id', job.tender_id).eq('company_id', job.company_id).single();
   if (r.error || !r.data) throw Error('Anbudet kunde inte läsas.');
-  return `${String(r.data.reading_version)}:pdf-text-v1`;
+  return `${String(r.data.reading_version)}:pdf-text-v2`;
 }
 async function loadInputs(db: Db, job: Job, afFirst: boolean) {
   const rows = await db.from('tender_documents').select('id,file_name,file_type,path,size,doc_type,page_count,analysis_status,content_hash').eq('tender_id', job.tender_id).eq('company_id', job.company_id).eq('analysis_status', 'analysed').order('file_name');
@@ -160,7 +160,10 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const inputs = await loadInputs(db, job, false);
     const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v13' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    // Feature flag: the requirements engine (model lists requirements, code counts) replaces the operand engine when on.
+    const requirementsEngine = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1';
+    const { extractRequirementQuantities } = await import('./tender-requirements-ai.server');
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v13', engine: requirementsEngine ? 'requirements-v1' : 'operands' }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};
