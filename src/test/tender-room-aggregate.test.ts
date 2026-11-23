@@ -32,16 +32,22 @@ function run(apartments: TenderQuantityRules['operands'][number]): Record<string
   return Object.fromEntries([...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])].map(i => [i.post, i.quantity]));
 }
 
+// The model's combined recipe items are replaced by the code-built standard posts per room type.
+function expectRoomTotals(out: Record<string, string | undefined>) {
+  expect(out['Dubbla vägguttag sovrum enligt typrecept']).toBe('426');
+  expect(out['Dubbla vägguttag halvrum enligt typrecept']).toBe('81');
+  expect(Number(out['Dubbla vägguttag sovrum enligt typrecept']) + Number(out['Dubbla vägguttag halvrum enligt typrecept'])).toBe(507);
+  expect(Number(out['Lamputtag sovrum enligt typrecept']) + Number(out['Lamputtag halvrum enligt typrecept'])).toBe(169);
+  expect(out['Vägguttag i sovrum och halvrum enligt typrecept']).toBeUndefined();
+}
 describe('a whole-list room total is never multiplied by the apartment count again', () => {
   it('apartment count filtered on another column (premises in the list): 507 sockets and 169 lamp outlets', () => {
     const out = run({ id: 'apts', label: 'Antal lägenheter', value: '0', basis: 'Lista', source, list_selection: { sheet: 'Objekt', range: `B2:B${last}`, operation: 'Antal', equals: 'Lägenhet' } });
-    expect(out['Vägguttag i sovrum och halvrum enligt typrecept']).toBe('507');
-    expect(out['Lamputtag i sovrum och halvrum enligt typrecept']).toBe('169');
+    expectRoomTotals(out);
   });
   it('apartment count stated in the text document: same result', () => {
     const out = run({ id: 'apts', label: 'Antal lägenheter', value: '82', basis: 'Text', source: { document_id: pdf, page: 1, evidence: 'Huset omfattar 82 lägenheter.' } });
-    expect(out['Vägguttag i sovrum och halvrum enligt typrecept']).toBe('507');
-    expect(out['Lamputtag i sovrum och halvrum enligt typrecept']).toBe('169');
+    expectRoomTotals(out);
   });
   it('a per-apartment count without an aggregate is still multiplied normally', () => {
     const q = calculateTenderQuantities({ operands: [{ id: 'apts', label: 'Antal lägenheter', value: '82', basis: 'Text', source: { document_id: pdf, page: 1, evidence: 'Huset omfattar 82 lägenheter.' } }, { id: 'two', label: 'Två brandvarnare per lägenhet', value: '2', basis: 'Antagande', source: null }], items: [{ post: 'Brandvarnare', unit: 'st', rule: '2 per lägenhet', terms: [{ factors: ['apts', 'two'] }], assumption: 'Antas.' }], assumptions: [] }, documents, undefined, true);

@@ -6,6 +6,7 @@ import { uniqueQuantityAssumptions } from './tender-quantity-display';
 import { isQuantityHelperPost, normalizeRoomTotalFactors } from './tender-quantity-scope';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
+import { applyStandardPosts } from './tender-standard-posts';
 
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().trim().min(1).max(1500) }).strict();
 const selectionSchema = z.object({ sheet: z.string().min(1).max(240), range: z.string().max(40), operation: z.enum(['Antal', 'Summa','Unika','Unika trapphusplan','Avrunda upp per rad','Rum per rad']), equals: z.string().max(500).nullable(), divisor:z.number().positive().max(10000).nullable().optional(), room:z.enum(RECIPE_ROOMS).nullable().optional(), room_count_range:z.string().max(40).nullable().optional(), address_range:z.string().max(40).nullable().optional() }).strict();
@@ -67,6 +68,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   }
   // A dimension-based kitchen rule cannot be evaluated without bench lengths. Substitute the company's
   normalizeRoomTotalFactors(rules);
+  // Standard posts (recipe rooms, smoke detectors, documented per-apartment rules) are built by code, not left to the model.
+  const standardNotes = applyStandardPosts(rules, operands, documents, recipes);
   // editable recipe, not an invented bench length, while retaining the requirement and object-list source.
   const kitchenCount = rules.operands.find(o => o.basis === 'Lista' && o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')
     ?? rules.operands.find(o => o.basis !== 'Antagande' && /lägenhet/i.test(o.label) && (!o.list_selection || o.list_selection.operation === 'Antal' && (o.list_selection.equals === null || /lägenhet/i.test(o.list_selection.equals))));
@@ -105,6 +108,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   function fixed(value: string) { const [whole = '0', fraction = ''] = value.split('.'); return BigInt(whole) * scale + BigInt(fraction.padEnd(6, '0')); }
   function decimal(value: bigint, digits: number) { const s = value.toString().padStart(digits + 1, '0'); return `${s.slice(0, -digits)}.${s.slice(-digits)}`.replace(/\.?0+$/, ''); }
   const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => ({ description: a.description, sources: a.source && verified(a.source) ? [a.source] : [], item: null })) };
+  for (const note of standardNotes) result.assumptions.push({ description: note.description, sources: note.sources, item: null });
   // Verified apartment counts used by the per-apartment sanity bound (largest list count of apartments or kitchens).
   const apartmentOperands = new Set(rules.operands.filter(o => o.basis === 'Lista' && (o.list_selection?.operation === 'Antal' && /lägenhet|lgh/i.test(o.label) && !/lokal/i.test(o.label) || o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')));
   const apartments = [...apartmentOperands].reduce((max, o) => { const n = BigInt(Math.floor(Number(o.value))); return n > max ? n : max; }, 0n);
@@ -142,7 +146,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       return values.join(' × ');
     }).join(' + ');
     const standard=(o:z.infer<typeof operandSchema>) => o.basis==='Antagande' && o.value==='1' && /(?:kök|badrum|vardagsrum|hall)/i.test(o.label)&&/per lägenhet/i.test(o.label)&&!o.label.includes(UNSOURCED);
-    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad');
+    // Rooms derived from type texts or area bands are recipe-based; one kitchen per apartment row is a plain apartment count.
+    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad'&&o.list_selection.room!=='Kök');
     const standardBased=used.some(standard);
     const unresolved=used.some(o=>o.basis==='Antagande'&&!o.recipe&&!standard(o));
     const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption;

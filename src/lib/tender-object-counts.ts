@@ -84,6 +84,9 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
       result += BigInt(selection.room==='Sovrum'?bedrooms:selection.room==='Halvrum'?(rok%1===0?0:1):1)*1_000_000n;
     }
     else if (selection.operation === 'Avrunda upp per rad') {
+      // With a type column given, premises rows are not apartments and are left out of per-apartment rounding.
+      const typeMatch=selection.room_count_range?.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      if(typeMatch && NON_APARTMENT.test(cells.get(`${typeMatch[1]}${row}`) ?? '')) continue;
       const area=Number(value.replace(',','.')), divisor=selection.divisor;
       if(!Number.isFinite(area)||area<=0||!divisor||!Number.isFinite(divisor)||divisor<=0) throw Error('Ogiltig radvis mängdregel.');
       const units=BigInt(Math.round(area*1_000_000)), d=BigInt(Math.round(divisor*1_000_000));
