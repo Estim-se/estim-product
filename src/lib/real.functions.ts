@@ -2,7 +2,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import { parseMutation } from './real.schemas';
 import { saveCompanyAutoReply } from './company-auto-reply';
-import { pendingRpc } from './pending-rpc';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -83,14 +82,17 @@ export const mutateWorkspace =createServerFn({ method: 'POST' }).middleware([req
     case 'split': {
       // Moves a customer message and everything after it into a new thread for the same customer,
       // then lets the AI interpret the new case. The old thread keeps its quote and earlier messages.
-      const split = await pendingRpc(db, 'estim_split_thread', { tid: data.id, mid: data.message });
-      if (split.error || !split.data) throw new Error(/busy/i.test(split.error?.message ?? '') ? 'Vänta tills AI:n är klar.' : 'Meddelandet kunde inte flyttas.');
-      await startAiJob(db, cid, split.data.id, split.data.job_id);
-      return { id: split.data.id };
+      const split = await db.rpc('estim_split_thread', { tid: data.id, mid: data.message });
+      if (split.error) throw new Error(/busy/i.test(split.error.message) ? 'Vänta tills AI:n är klar.' : 'Meddelandet kunde inte flyttas.');
+      // jsonb result: {"id": new thread id, "job_id": queued AI job}
+      const created = split.data as { id?: unknown; job_id?: unknown } | null;
+      if (typeof created?.id !== 'string' || typeof created.job_id !== 'string') throw new Error('Meddelandet kunde inte flyttas.');
+      await startAiJob(db, cid, created.id, created.job_id);
+      return { id: created.id };
     }
     case 'merge': {
       if (data.keep === data.drop) throw new Error('Välj två olika kunder.');
-      const merged = await pendingRpc(db, 'estim_merge_customers', { keep_id: data.keep, drop_id: data.drop });
+      const merged = await db.rpc('estim_merge_customers', { keep_id: data.keep, drop_id: data.drop });
       if (merged.error || !merged.data) throw new Error('Kunderna kunde inte slås ihop.');
       return { id: merged.data };
     }
@@ -102,7 +104,7 @@ export const mutateWorkspace =createServerFn({ method: 'POST' }).middleware([req
       // Manual win marking until customer approval is connected. estim_set_won locks the thread,
       // checks the current status, derives the restored status from stored messages and writes
       // the audit event atomically; it raises instead of silently changing nothing.
-      const won = await pendingRpc(db, 'estim_set_won', { tid: data.id, won: data.won });
+      const won = await db.rpc('estim_set_won', { tid: data.id, won: data.won });
       if (won.error || !won.data) throw new Error(/busy/i.test(won.error?.message ?? '') ? 'Vänta tills AI:n är klar.' : data.won ? 'Jobbet kunde inte markeras som vunnet.' : 'Jobbet kunde inte återställas.');
       return { id: data.id };
     }

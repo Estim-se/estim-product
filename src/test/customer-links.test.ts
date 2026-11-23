@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mentionedContacts, mergeCandidates, normalizePhone, type LinkInput } from '@/lib/customer-links';
 import { parseMutation } from '@/lib/real.schemas';
-import { pendingRpc } from '@/lib/pending-rpc';
 
 describe('customer linking', () => {
   it('normalizes Swedish phone formats to one form', () => {
@@ -59,13 +58,10 @@ describe('customer linking', () => {
     expect(mergeCandidates(input)).toEqual([]);
   });
 
-  it('accepts split and merge mutations and calls the pending database functions by name', async () => {
+  it('accepts split and merge mutations with stored ids only', () => {
     const id = '11111111-2222-3333-4444-555555555555', other = '22222222-3333-4444-5555-666666666666';
     expect(parseMutation({ kind: 'split', id, message: other })).toEqual({ kind: 'split', id, message: other });
     expect(parseMutation({ kind: 'merge', keep: id, drop: other })).toEqual({ kind: 'merge', keep: id, drop: other });
     expect(() => parseMutation({ kind: 'split', id, message: 'not-a-uuid' })).toThrow();
-    const rpc = vi.fn(async () => ({ data: 'vunnen', error: null }));
-    await expect(pendingRpc({ rpc }, 'estim_set_won', { tid: id, won: true })).resolves.toEqual({ data: 'vunnen', error: null });
-    expect(rpc).toHaveBeenCalledWith('estim_set_won', { tid: id, won: true });
   });
 });
