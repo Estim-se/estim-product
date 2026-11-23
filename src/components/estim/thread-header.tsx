@@ -6,7 +6,7 @@ import { Icon } from './icon';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
 import { realSentStatus } from '@/lib/real-presentation';
-import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { ConfirmDialog } from './confirm-dialog';
 
 // Thread identity and actions live at the top of the info column so they stay reachable
 // while the conversation scrolls, without taking vertical space from the messages.
@@ -83,35 +83,16 @@ export function ThreadHeader({
         </div>
       </div>
 
-      <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="ov confirm-overlay" />
-          <AlertDialog.Content className="md confirm-modal">
-            <div className="md-h">
-              <AlertDialog.Title className="overlay-heading">
-                {isWon ? 'Återställ jobbet?' : 'Markera jobbet som vunnet?'}
-              </AlertDialog.Title>
-            </div>
-            <div className="md-b">
-              <AlertDialog.Description className="small muted">
-                {isWon
-                  ? 'Jobbet flyttas tillbaka till inkorgen bland aktiva ärenden.'
-                  : 'Jobbet flyttas till Vunna. Nya meddelanden från kunden startar en separat konversation.'}
-              </AlertDialog.Description>
-            </div>
-            <div className="md-f confirm-actions">
-              <AlertDialog.Cancel asChild>
-                <Button variant="prototype" className="btn btn-ghost btn-sm">Avbryt</Button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <Button variant="prototype" className="btn btn-primary btn-sm" onClick={() => actions.markWon(t.id)}>
-                  <Icon name="check" />{isWon ? 'Återställ' : 'Markera vunnen'}
-                </Button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={isWon ? 'Återställ jobbet?' : 'Markera jobbet som vunnet?'}
+        description={isWon
+          ? 'Jobbet flyttas tillbaka till inkorgen bland aktiva ärenden.'
+          : 'Jobbet flyttas till Vunna. Nya meddelanden från kunden startar en separat konversation.'}
+        confirmLabel={isWon ? 'Återställ' : 'Markera vunnen'}
+        onConfirm={() => actions.markWon(t.id)}
+      />
     </>
   );
 }

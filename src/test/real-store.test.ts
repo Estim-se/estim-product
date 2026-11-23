@@ -56,4 +56,21 @@ describe('R1 real-mode rules',()=>{
   store.actions.update(s=>{const thread=s.threads[0];if(thread)thread.status='analys';});write.mockClear();
   store.actions.markWon(t.id);expect(write).not.toHaveBeenCalled();expect(store.getSnapshot().toast).toBe('Vänta tills AI:n är klar.');
  });
+ it('moves a customer message to a new case and opens the new thread after the reload',async()=>{
+  const newId='33333333-4444-5555-6666-777777777777';
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>({id:newId})),reload=vi.fn(async()=>{store.actions.update(s=>{const t=s.threads[0];if(t)s.threads=[t,{...t,id:newId}];});});store.connect(write,reload);
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,status:'svar'}];});
+  store.actions.splitThread(t.id,'44444444-5555-6666-7777-888888888888');await store.flush();
+  expect(write).toHaveBeenCalledWith({kind:'split',id:t.id,message:'44444444-5555-6666-7777-888888888888'});
+  expect(reload).toHaveBeenCalledTimes(1);await vi.waitFor(()=>expect(store.getSnapshot().sel).toBe(newId));await store.flush();
+  store.actions.update(s=>{const thread=s.threads[0];if(thread)thread.status='analys';});write.mockClear();
+  store.actions.splitThread(t.id,'44444444-5555-6666-7777-888888888888');expect(write).not.toHaveBeenCalled();
+ });
+ it('merges customers through the server and shows only known server messages',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>{throw new Error('Kunderna kunde inte slås ihop.');});store.connect(write,async()=>{});
+  store.actions.mergeCustomers('a','b');await expect(store.flush()).rejects.toThrow();
+  expect(write).toHaveBeenLastCalledWith({kind:'merge',keep:'a',drop:'b'});
+  await vi.waitFor(()=>expect(store.getSnapshot().toast).toBe('Kunderna kunde inte slås ihop.'));
+ });
 });

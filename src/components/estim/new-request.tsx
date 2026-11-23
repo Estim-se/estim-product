@@ -4,9 +4,11 @@ import { useWorkspace } from './workspace-provider';
 import { useEstim } from './store-provider';
 import { Icon } from './icon';
 
-export function NewRequest({onClose}:{onClose:()=>void}){
+export type RequestPrefill={name:string;email:string;phone:string;address:string;place:string;channel:'email'|'sms'|'wa'|'form'};
+// A prefilled request (from a customer's hub) is still stored as a separate case.
+export function NewRequest({onClose,prefill}:{onClose:()=>void;prefill?:RequestPrefill|undefined}){
  const workspace=useWorkspace(),estim=useEstim();
- const [values,setValues]=useState({name:'',email:'',phone:'',address:'',place:'',job:'Ny förfrågan',channel:'email' as 'email'|'sms'|'wa'|'form',text:''});
+ const [values,setValues]=useState({name:'',email:'',phone:'',address:'',place:'',channel:'email' as 'email'|'sms'|'wa'|'form',...prefill,job:'Ny förfrågan',text:''});
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{
   const result=await workspace.mutate({kind:'request',request:values});await workspace.refresh();

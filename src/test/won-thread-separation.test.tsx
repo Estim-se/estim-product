@@ -49,6 +49,23 @@ describe('Won thread separation and filtering', () => {
     expect(store.getSnapshot().threads.find(t => t.id === target.id)?.status).toBe('skickad');
   });
 
+  it('splits a later customer message into a new demo case and keeps earlier messages', () => {
+    const store = createEstimStore();
+    const source = store.getSnapshot().threads.find(t => t.id === 'lind');
+    if (!source) throw new Error('Missing fixture');
+    const index = source.msgs.findIndex((m, i) => i > 0 && m.from === 'kund');
+    if (index < 1) throw new Error('Fixture needs a later customer message');
+    const before = source.msgs.length;
+    store.actions.splitThread('lind', `i:${index}`);
+    const s = store.getSnapshot(), old = s.threads.find(t => t.id === 'lind'), fresh = s.threads.find(t => t.id === s.sel);
+    expect(fresh?.id).not.toBe('lind');
+    expect(old?.msgs).toHaveLength(index);
+    expect(fresh?.msgs).toHaveLength(before - index);
+    expect(fresh?.name).toBe('Sara Lind');
+    expect(fresh?.q).toBeNull();
+    store.actions.splitThread('lind', 'i:0');
+    expect(store.getSnapshot().threads).toHaveLength(s.threads.length);
+  });
   it('confirms that query excluding (vunnen, stangd) correctly filters out won threads', () => {
     const records = [
       { id: '1', status: 'skickad' },

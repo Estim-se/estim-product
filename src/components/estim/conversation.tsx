@@ -7,9 +7,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { nearConversationBottom, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
 import { ScrollJump } from './scroll-jump';
+import { ConfirmDialog } from './confirm-dialog';
 
 export function Conversation({ thread, contained = false, header }: { thread: Thread; contained?: boolean; header?: ReactNode }) {
-  const { state } = useEstim();
+  const { state, actions } = useEstim();
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const opened = useRef('');
@@ -39,7 +40,10 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
     observer.observe(el);
     return () => observer.disconnect();
   }, [contained]);
-  const messages = thread.msgs.map((message, i) => <Message key={i} message={message} thread={thread} />);
+  // A later customer message can start a new case; real messages use their stored id, demo ones their index.
+  const [splitKey, setSplitKey] = useState<string | null>(null);
+  const canSplit = (i: number) => contained && i > 0 && thread.msgs[i]?.from === 'kund' && thread.status !== 'analys';
+  const messages = thread.msgs.map((message, i) => <Message key={i} message={message} thread={thread} onSplit={canSplit(i) ? () => setSplitKey(message.id ?? `i:${i}`) : undefined} />);
   const reply = pending ? <Composer thread={thread} /> : <StatusCard thread={thread} />;
   if (!contained) return <div className="conv">{messages}{reply}</div>;
   return <div className="contained-conversation">
@@ -52,5 +56,13 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
     }}>{header}{messages}<div className="reply-dock">{pending && <div className="pending-label small b">Svarsutkast väntar</div>}{reply}</div></div>
     {unseen && <Button variant="prototype" className="btn btn-ghost btn-sm new-message" aria-label="Nytt meddelande, gå till senaste meddelandet" onClick={goBottom}>Nytt meddelande ↓</Button>}
     {!unseen && farFromBottom && <ScrollJump direction="down" label="Till slutet av konversationen" onClick={() => scrollToEdge(scroll.current, 'bottom')} />}
+    <ConfirmDialog
+      open={splitKey !== null}
+      onOpenChange={open => { if (!open) setSplitKey(null); }}
+      title="Flytta till nytt ärende?"
+      description="Meddelandet och allt som kommit efter det flyttas till ett nytt ärende för samma kund. AI:n läser det nya ärendet, och offerten stannar kvar i det här."
+      confirmLabel="Flytta"
+      onConfirm={() => { if (splitKey) actions.splitThread(thread.id, splitKey); setSplitKey(null); }}
+    />
   </div>;
 }

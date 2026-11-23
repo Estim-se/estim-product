@@ -10,7 +10,7 @@ import { Conversation } from './conversation';
 import { ContextPanel, CustomerCard } from './context-panel';
 import { TopHeader } from './top-header';
 import { useWorkspace } from './workspace-provider';
-import { NewRequest } from './new-request';
+import { NewRequest, type RequestPrefill } from './new-request';
 import { Button } from '@/components/ui/button';
 import { customerKeyOf, latestActivityOrder, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
 import { CustomerHub } from './customer-hub';
@@ -21,7 +21,8 @@ export function InboxScreen() {
   const waiting = waitingThreads(threads).length;
   const current = threads.find(t => t.id === selected);
   const workspace = useWorkspace(), real = workspace.mode === 'real';
-  const [newRequest, setNewRequest] = useState(false);
+  // false = closed; otherwise open, optionally prefilled with the customer whose hub is open.
+  const [newRequest, setNewRequest] = useState<false | { prefill?: RequestPrefill }>(false);
   const [mobileThread, setMobileThread] = useState(false);
   const [tab, setTab] = useState<'chat' | 'info'>('chat');
   const [viewingHubKey, setViewingHubKey] = useState<string | null>(null);
@@ -135,7 +136,7 @@ export function InboxScreen() {
           onFilter={filter => actions.update(s => { s.filter = filter; })}
           onSelect={select}
           onSimulate={() => {
-            if (real) setNewRequest(true);
+            if (real) setNewRequest({});
             else actions.simNew();
           }}
         />
@@ -156,8 +157,10 @@ export function InboxScreen() {
                     setViewingHubKey(null);
                   }}
                   onNewConversation={() => {
-                    if (real) setNewRequest(true);
-                    else actions.simNew();
+                    if (!real) { actions.simNew(); return; }
+                    const known = (v: string) => (v === '—' ? '' : v);
+                    const channel = current.ch === 'wa' || current.ch === 'sms' || current.ch === 'form' ? current.ch : 'email';
+                    setNewRequest({ prefill: { name: current.name, email: known(current.email), phone: known(current.phone), address: known(current.addr), place: current.place, channel } });
                   }}
                 />
               ) : (
@@ -197,7 +200,7 @@ export function InboxScreen() {
         )}
       </div>
 
-      {real && newRequest && <NewRequest onClose={() => setNewRequest(false)} />}
+      {real && newRequest && <NewRequest prefill={newRequest.prefill} onClose={() => setNewRequest(false)} />}
     </AppShell>
   );
 }

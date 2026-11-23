@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from './icon';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
+import { CustomerMerge } from './customer-merge';
 
 export function qStatus(t: Thread) {
   if (t.status === 'vunnen') return ['Godkänd', 'chip-sage'];
@@ -15,7 +16,8 @@ export function qStatus(t: Thread) {
 }
 // Customer-level details only; safe to show when no single conversation is open.
 export function CustomerCard({ thread: t }: { thread: Thread }) {
-  return <div className="card"><h3>Kund</h3><div className="kv"><div><span>Telefon</span><span>{t.phone}</span></div><div><span>E-post</span><span>{t.email}</span></div><div><span>Adress</span><span>{t.addr}</span></div><div><span>Kanaler</span><span className="row wrap customer-channels">{t.chs.map(ch => <span className="chip chip-line" key={ch}><Icon name={channelIcon(ch)} />{demo.channels[ch as keyof typeof demo.channels]?.[0]}</span>)}</span></div></div></div>;
+  const real = useWorkspace().mode === 'real';
+  return <div className="card"><h3>Kund</h3><div className="kv"><div><span>Telefon</span><span>{t.phone}</span></div><div><span>E-post</span><span>{t.email}</span></div><div><span>Adress</span><span>{t.addr}</span></div><div><span>Kanaler</span><span className="row wrap customer-channels">{t.chs.map(ch => <span className="chip chip-line" key={ch}><Icon name={channelIcon(ch)} />{demo.channels[ch as keyof typeof demo.channels]?.[0]}</span>)}</span></div></div>{real && t.customerId && <CustomerMerge customerId={t.customerId} />}</div>;
 }
 export function ContextPanel({ thread: t }: { thread: Thread }) {
   const { actions } = useEstim();

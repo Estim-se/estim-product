@@ -1,6 +1,7 @@
 import demo from './demo.json';
 
 export interface Message {
+  id?: string; // stored message id (real mode only)
   from: string;
   ch?: string;
   time: string;
