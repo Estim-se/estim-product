@@ -1643,6 +1643,11 @@ export type Database = {
         Args: { actor: string; cid: string; new_role: string; uid: string }
         Returns: undefined
       }
+      estim_merge_customers: {
+        Args: { drop_id: string; keep_id: string }
+        Returns: string
+      }
+      estim_norm_phone: { Args: { p: string }; Returns: string }
       estim_onboard: { Args: { payload: Json }; Returns: string }
       estim_prepare_auto_send: { Args: { jid: string }; Returns: string }
       estim_prepare_send: { Args: { tid: string }; Returns: string }
@@ -1685,6 +1690,8 @@ export type Database = {
         Returns: undefined
       }
       estim_session_valid: { Args: never; Returns: boolean }
+      estim_set_won: { Args: { tid: string; won: boolean }; Returns: string }
+      estim_split_thread: { Args: { mid: string; tid: string }; Returns: Json }
       estim_start_tender_job: {
         Args: { p_base_url: string; p_resume: boolean; tid: string }
         Returns: string
