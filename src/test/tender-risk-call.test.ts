@@ -34,7 +34,13 @@ function gateway(json: string, stop = 'tool_use') {
   vi.stubGlobal('fetch', fetch);
   return fetch;
 }
-const run = () => extractTenderInsightStep('risks', [af], 'test-key', 'test-model', { key_data }, areas);
+const run = async () => {
+  const result = await extractTenderInsightStep('risks', [af], 'test-key', 'test-model', { key_data }, areas);
+  return result.map(risk => {
+    if (!('title' in risk)) throw Error('Expected a risk result');
+    return risk;
+  });
+};
 async function rejection() {
   vi.useFakeTimers();
   const pending = run().then(() => null, (e: unknown) => e);
