@@ -4,6 +4,7 @@ import type { InsightDocument } from './tender-insights';
 import type { RoomRecipes } from './tender-room-recipes';
 import { perApartmentArea, type ObjectModel } from './tender-object-model';
 import { roomsOfType, type RoomList } from './tender-room-list';
+import { postMeaning } from './tender-post-matching';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
 
@@ -65,9 +66,12 @@ const perCounterLength = (r: Requirement) => r.unit_of_count === 'bänklängd' |
 // drawing type codes give apartments with two kitchens or bathrooms. Only when the post itself names that room.
 const KITCHEN = /kök|spis|perilex|\bugn|diskmaskin|mikro|\bkyl|\bfrys|köksfläkt|överskåp|arbetsbänk|matplats/;
 const BATHROOM = /badrum|våtrum|golvvärme|handdukstork|spegelskåp/;
+// An apartment has one washing machine however many bathrooms it has: its supply is counted per apartment.
+const PER_APARTMENT_EQUIPMENT = /kombimaskin|tvättmaskin|tvättpelare|torktumlare/;
 function roomUnit(r: Requirement): Requirement['unit_of_count'] {
-  if (r.unit_of_count !== 'lägenhet') return r.unit_of_count;
   const t = withoutNegatedTerms(`${r.post} ${r.note ?? ''}`).toLocaleLowerCase('sv');
+  if (r.unit_of_count === 'badrum' && PER_APARTMENT_EQUIPMENT.test(t)) return 'lägenhet';
+  if (r.unit_of_count !== 'lägenhet') return r.unit_of_count;
   if (r.section === 2 && KITCHEN.test(t) && !BATHROOM.test(t)) return 'kök';
   if (r.section === 3 && BATHROOM.test(t) && !KITCHEN.test(t)) return 'badrum';
   return r.unit_of_count;
@@ -79,6 +83,15 @@ function localWorkNotPremises(r: Requirement) {
   const e = r.source?.evidence ?? '', all = e.match(/\blokal\p{L}*/giu) ?? [], local = e.match(LOCAL_WORK) ?? [];
   return all.length > 0 && all.length === local.length;
 }
+
+// Options ("Option timer på handdukstork", "tillval") are their own rows, never priced as the main post.
+const OPTION = /\boption(?:er|en)?\b|\btillval\b/i;
+// Overlapping requirements for the same equipment in the same unit ("Strömförsörjning spis/ugn" and "Perilexuttag för
+// spishäll", "Mätartavla" and "Mätare för debiteringsmätning") are one post. Generic meanings that cover different
+// equipment (wall sockets, feeds to technical equipment, central parts …) are never merged on meaning alone.
+const GENERIC_MEANINGS = new Set(['vagguttag', 'lamputtag', 'uttag-ip44', 'matning-teknik', 'matning-fs', 'dorrautomatik', 'serviscentral', 'demontering', 'jordning', 'tvattstuga', 'wc', 'utomhusuttag', 'fasadstyrning']);
+const unitFamily = (unit: string | undefined) => unit === 'kök' || unit === 'badrum' || unit === 'lägenhet' ? 'lägenhet' : unit ?? '';
+const unitRank = (unit: string | undefined) => unit === 'kök' || unit === 'badrum' ? 0 : unit === 'lägenhet' ? 1 : 2;
 
 export function buildRequirementQuantities(input: Requirements, model: ObjectModel | null, documents: InsightDocument[], recipes: RoomRecipes, roomList: RoomList | null = null): TenderQuantities {
   const items: QuantityItem[] = [], assumptions: TenderQuantities['assumptions'] = [];
@@ -106,10 +119,10 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     return text ? { value: text.value, label: `${r.unit_of_count} enligt underlaget`, level: 'Bekräftad', source: { document_id: text.source.document_id, page: text.source.page, evidence: text.source.evidence } } : null;
   }
   const seen = new Set<string>();
-  const add = (post: string, section: number, unit: QuantityItem['unit'], quantity: number | null, calculation: string, rule: string, level: QuantityLevel, sources: Source[], note: string | null, basis?: CountBasis) => {
+  const add = (post: string, section: number, unit: QuantityItem['unit'], quantity: number | null, calculation: string, rule: string, level: QuantityLevel, sources: Source[], note: string | null, basis?: CountBasis, meta: Pick<QuantityItem, 'count_unit' | 'option'> = {}) => {
     const key = withoutNegatedTerms(post).toLocaleLowerCase('sv').replace(/\s+/g, ' ').trim();
     if (seen.has(key)) return; seen.add(key);
-    const item: QuantityItem = { post, unit, quantity: String(quantity ?? 0), calculation, rule, sources, certainty: levelCertainty[level], level, section, ...(basis && quantity !== null ? { count_basis: basis } : {}) };
+    const item: QuantityItem = { post, unit, quantity: String(quantity ?? 0), calculation, rule, sources, certainty: levelCertainty[level], level, section, ...(basis && quantity !== null ? { count_basis: basis } : {}), ...meta };
     if (level === 'Bekräftad' || level === 'Räknad') items.push(item);
     else assumptions.push({ description: note ?? `${post}: ${rule}`, sources, item });
     const id = `req_${ruleItems.length}`;
@@ -125,27 +138,33 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       add(raw.post, raw.section, raw.unit, null, '–', 'Underlaget anger lokal (punktvis) rivning eller demontering, inte arbete i lokaler – kontrollera om lokalerna omfattas och fyll i mängd.', 'Saknar mängd', sources, raw.note);
       continue;
     }
-    const unit = model ? roomUnit(raw) : raw.unit_of_count;
+    // A per-area rule stated per apartment ("en per påbörjade 60 m²": area_divisor with unit lägenhet) is per started area.
+    const perArea = raw.area_divisor !== null && raw.unit_of_count === 'lägenhet';
+    const unit = perArea ? 'per_area' : model ? roomUnit(raw) : raw.unit_of_count;
     const r = unit === raw.unit_of_count ? raw : { ...raw, unit_of_count: unit };
-    const moved = r !== raw ? ` Angivet per lägenhet; posten gäller ${unit} och räknas per ${unit}.` : '';
-    if (r.unit_of_count === 'fast_antal') {
+    const moved = r === raw || perArea ? '' : raw.unit_of_count === 'lägenhet' ? ` Angivet per lägenhet; posten gäller ${unit} och räknas per ${unit}.` : ` Angivet per ${raw.unit_of_count}; en per lägenhet oavsett antal ${raw.unit_of_count}.`;
+    const option = OPTION.test(`${raw.post} ${raw.note ?? ''}`);
+    const optionRule = option ? ' Option enligt underlaget: egen rad som prissätts separat och inte ingår i totalen.' : '';
+    // A stated fixed quantity is always used, whatever unit the requirement names.
+    if (r.unit_of_count === 'fast_antal' || r.fixed_quantity !== null) {
       const level: QuantityLevel = r.fixed_quantity === null ? 'Saknar mängd' : r.assumed || !source ? 'Antagen' : 'Bekräftad';
-      add(r.post, r.section, r.unit, r.fixed_quantity, String(r.fixed_quantity ?? '–'), `${source ? '' : `${UNSOURCED}. `}Fast antal enligt underlaget.`, level, sources, r.note);
+      add(r.post, r.section, r.unit, r.fixed_quantity, String(r.fixed_quantity ?? '–'), `${source ? '' : `${UNSOURCED}. `}Fast antal enligt underlaget.${optionRule}`, level, sources, r.note, undefined, { count_unit: 'fast_antal', ...(option ? { option } : {}) });
       continue;
     }
+    const meta = { count_unit: r.unit_of_count === 'rumstyp' ? `rumstyp:${r.room_type ?? ''}` : r.unit_of_count, ...(option ? { option } : {}) };
     const count = unitCount(r);
     const rooms = r.unit_of_count === 'sovrum_och_halvrum' ? ['sovrum', 'halvrum'] : [r.unit_of_count];
     const eq = equipment(r.post); if (eq) for (const room of rooms) covered.add(`${room}|${eq}`);
     if (!count || r.per_unit === null) {
       const why = r.unit_of_count === 'rumstyp' ? !roomList ? 'Ingen rumsförteckning med rumstyper hittades' : r.room_type ? `Rumstypen ${r.room_type} finns inte i rumsförteckningen` : 'Rumstyp saknas'
         : !count ? `Antal ${r.unit_of_count} kan inte räknas ur objektlistan eller underlaget` : 'Antal per enhet saknas i underlaget';
-      add(r.post, r.section, r.unit, null, '–', `${why} – fyll i mängd.`, 'Saknar mängd', sources, r.note);
+      add(r.post, r.section, r.unit, null, '–', `${why} – fyll i mängd.${optionRule}`, 'Saknar mängd', sources, r.note, undefined, meta);
       continue;
     }
     const quantity = Math.round(count.value * r.per_unit * 1000) / 1000;
     const level: QuantityLevel = r.assumed ? 'Antagen' : !source ? 'Antagen' : count.level;
     const per = r.unit_of_count === 'rumstyp' ? `rum av typen ${r.room_type}` : r.unit_of_count;
-    add(r.post, r.section, r.unit, quantity, `${count.value} × ${r.per_unit}`, `${source ? '' : `${UNSOURCED}. `}${r.per_unit} per ${per} × ${count.label}.${moved}`, level, [...sources, ...(count.source ? [count.source] : [])], r.note, count.basis ? { unit: count.basis, per_unit: r.per_unit, area_divisor: count.basis === 'per_area' ? r.area_divisor : null } : undefined);
+    add(r.post, r.section, r.unit, quantity, `${count.value} × ${r.per_unit}`, `${source ? '' : `${UNSOURCED}. `}${r.per_unit} per ${per} × ${count.label}.${moved}${optionRule}`, level, [...sources, ...(count.source ? [count.source] : [])], r.note, count.basis ? { unit: count.basis, per_unit: r.per_unit, area_divisor: count.basis === 'per_area' ? r.area_divisor : null } : undefined, meta);
   }
   // Counter sockets stated per length or worktop: one post from the kitchen recipe (Antagen), as in the reference
   // calculation; without an object list or recipe the posts stay Saknar mängd.
@@ -154,7 +173,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const names = counterLength.map(c => c.r.post).join(', '), sources = counterLength.flatMap(c => c.sources);
     if (kitchens && perKitchen) {
       covered.add('kök|sockets');
-      add('Bänkuttag kök enligt typrecept', 2, 'st', kitchens * perKitchen, `${kitchens} × ${perKitchen}`, `Underlaget anger uttag per bänklängd eller arbetsbänk (${names}) men bänklängderna framgår inte. Enligt typrecept: ${perKitchen} per kök × antal kök.`, 'Antagen', [...sources, ...(listSource ? [listSource] : [])], `Bänkuttag enligt typrecept (${perKitchen} per kök): bänklängderna framgår inte av underlaget.`, { unit: 'kök', per_unit: perKitchen, area_divisor: null });
+      add('Bänkuttag kök enligt typrecept', 2, 'st', kitchens * perKitchen, `${kitchens} × ${perKitchen}`, `Underlaget anger uttag per bänklängd eller arbetsbänk (${names}) men bänklängderna framgår inte. Enligt typrecept: ${perKitchen} per kök × antal kök.`, 'Antagen', [...sources, ...(listSource ? [listSource] : [])], `Bänkuttag enligt typrecept (${perKitchen} per kök): bänklängderna framgår inte av underlaget.`, { unit: 'kök', per_unit: perKitchen, area_divisor: null }, { count_unit: 'kök' });
     } else for (const c of counterLength) add(c.r.post, c.r.section, c.r.unit, null, '–', 'Bänklängderna framgår inte och antal kök eller typrecept för kök saknas – fyll i mängd.', 'Saknar mängd', c.sources, c.r.note);
   }
   // Company recipes for room equipment the documents do not specify (marked Antagen, as in the reference calculation).
@@ -165,17 +184,46 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       const roomCount = model.counts[(ROOM_UNITS[unitKey] ?? 'apartments') as keyof ObjectModel['counts']];
       if (!roomCount) continue;
       const post = eq === 'lamps' ? `Lamputtag ${unitKey} enligt typrecept` : recipe.room === 'Kök' ? 'Bänkuttag kök enligt typrecept' : `Dubbla vägguttag ${unitKey} enligt typrecept`;
-      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.`, 'Antagen', listSource ? [listSource] : [], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`, { unit: unitKey as CountBasis['unit'], per_unit: recipe[eq], area_divisor: null });
+      add(post, recipe.room === 'Kök' ? 2 : 4, 'st', roomCount * recipe[eq], `${roomCount} × ${recipe[eq]}`, `Enligt typrecept: ${recipe[eq]} per ${unitKey} × antal ${unitKey} i objektlistan.`, 'Antagen', listSource ? [listSource] : [], `Enligt typrecept: ${unitKey}, ${eq === 'lamps' ? 'lamputtag' : 'dubbla vägguttag'} där underlaget inte anger antal.`, { unit: unitKey as CountBasis['unit'], per_unit: recipe[eq], area_divisor: null }, { count_unit: unitKey });
     }
   }
   // How kitchens and bathrooms were counted, so a missing or unmatched drawing reading is visible in the result.
   if (model) assumptions.push({ description: model.code_matches
     ? `Kök, badrum och WC: typkoder från ritningarna kopplade till ${model.code_matches} av ${model.counts.apartments} lägenheter (${model.codes_found} typkoder lästa); övriga räknas som 1 kök och 1 badrum.`
-    : `Kök, badrum och WC: ${model.codes_found ? `${model.codes_found} typkoder lästes från ritningarna men ingen kunde kopplas till lägenhetslistan (nummer eller yta)` : 'inga typkoder lästes från ritningarna'}. Varje lägenhet räknas som 1 kök och 1 badrum – kontrollera mot ritningarna.`, sources: listSource ? [listSource] : [], item: null });
+    : `Kök, badrum och WC: ${model.codes_found ? `${model.codes_found} typkoder lästes från ritningarna men ingen kunde kopplas till lägenhetslistan (nummer eller yta)` : 'inga typkoder lästes från ritningarna'}. Varje lägenhet räknas som 1 kök och 1 badrum – kontrollera mot ritningarna.`
+    + (model.unmatched_codes.length ? ` Ej kopplade: ${model.unmatched_codes.join('; ')}.` : ''), sources: listSource ? [listSource] : [], item: null });
+  mergeOverlaps(items, assumptions, ruleItems);
   if (!model && !roomList) assumptions.push({ description: 'Kontroll av omfattning: ingen objektlista med lägenhetstyper eller rumsförteckning hittades. Poster per lägenhet, kök, badrum och rum kan inte räknas – fyll i mängderna.', sources: [], item: null });
   return { rules: { operands, items: ruleItems, assumptions: [] }, items, assumptions, ...(model ? { object_model: storedObjectModel(model) } : {}) };
 }
 // The object model as stored with the quantities (for the per-apartment Excel sheet).
 export function storedObjectModel(model: ObjectModel): StoredObjectModel {
   return { document_id: model.document_id, sheet: model.sheet, premises: model.premises, apartments: model.apartments.slice(0, 5000).map(a => ({ row: a.row, number: a.number?.slice(0, 80) ?? null, address: a.address?.slice(0, 240) ?? null, floor: a.floor?.slice(0, 80) ?? null, label: a.label.slice(0, 240), rooms: a.rooms, area: a.area, bedrooms: a.bedrooms, half_rooms: a.half_rooms, kitchens: a.kitchens, bathrooms: a.bathrooms, wc: a.wc, basis: a.basis, code: a.code?.slice(0, 40) ?? null })) };
+}
+
+// One post per equipment and unit: overlapping requirements are merged into the most specific counted one (kitchen or
+// bathroom before apartment, a quantity before Saknar mängd); the merged posts are named in its rule and in Antaganden.
+function mergeOverlaps(items: QuantityItem[], assumptions: TenderQuantities['assumptions'], ruleItems: TenderQuantities['rules']['items']) {
+  const all = [...items, ...assumptions.flatMap(a => a.item ? [a.item] : [])];
+  const groups = new Map<string, QuantityItem[]>();
+  for (const i of all) {
+    const meaning = postMeaning(i.post);
+    if (!meaning || GENERIC_MEANINGS.has(meaning) || i.option || !i.count_unit) continue;
+    const key = `${meaning}|${unitFamily(i.count_unit)}`;
+    groups.set(key, [...groups.get(key) ?? [], i]);
+  }
+  const removed = new Set<QuantityItem>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const keep = [...group].sort((a, b) => Number(a.level === 'Saknar mängd') - Number(b.level === 'Saknar mängd') || unitRank(a.count_unit) - unitRank(b.count_unit) || Number(!a.sources.length) - Number(!b.sources.length))[0]!;
+    const others = group.filter(i => i !== keep);
+    keep.rule = `${keep.rule} Omfattar även: ${others.map(o => o.post).join(', ')} (samma utrustning och enhet).`;
+    for (const o of others) removed.add(o);
+    assumptions.push({ description: `Sammanslaget: ${others.map(o => o.post).join(', ')} ingår i ${keep.post} (samma utrustning och enhet, räknas en gång).`, sources: [], item: null });
+  }
+  if (!removed.size) return;
+  const gone = new Set([...removed].map(i => i.post));
+  items.splice(0, items.length, ...items.filter(i => !removed.has(i)));
+  assumptions.splice(0, assumptions.length, ...assumptions.filter(a => !a.item || !removed.has(a.item)));
+  ruleItems.splice(0, ruleItems.length, ...ruleItems.filter(r => !gone.has(r.post)));
 }

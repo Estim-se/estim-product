@@ -30,8 +30,9 @@ const RULES: Rule[] = [
   [/provning/, n => /allmanna|funktionsprovning|samordnad/.test(n) ? 'provning-allm' : 'provning-lgh'],
   [/kvalitetsplan|egenkontroll/, 'kvalitetsplan'],
   [/relationshandling/, 'relationshandling'],
-  [/drift\w* och underhall|\bdu parm/, 'du-parm'],
+  // Training of operating staff is its own post, also when the staff is called "drift- och underhållspersonal".
   [/utbildning/, 'utbildning'],
+  [/drift\w* och underhall|\bdu parm/, 'du-parm'],
   [/servicebesok|garantibesok/, 'servicebesok'],
   [/markning|\bskyltar|gruppforteckning/, 'markning'],
   [/haltagning|bilning|brandtatning/, 'haltagning'],

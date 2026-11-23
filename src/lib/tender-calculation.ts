@@ -52,15 +52,29 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');
     items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: m.demolition.flag ? `Rivning per lägenhet. ${m.demolition.flag}.` : 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: m.demolition.flag ? 'Låg' : 'Hög' });
   }
-  const rows = items.map(i => {
-    const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);
+  // One-off posts bound to the same catalog type are one post (e.g. "Projektering" and "Bygghandlingar"): the first
+  // carries the quantity, the others are kept visible at quantity 0 with a note.
+  const bindingOf = (post: string) => m.bindings.find(b => b.post === post);
+  const firstOneOff = new Map<string, string>();
+  for (const i of items) { const type = bindingOf(i.post)?.type_id; if (type && i.count_unit === 'post' && !i.option && !firstOneOff.has(type)) firstOneOff.set(type, i.post); }
+  const apartments = q.object_model?.apartments.length ?? 0;
+  const rows = items.map(item => {
+    const b = bindingOf(item.post), t = s.post_types.find(t => t.id === b?.type_id);
+    const mergedInto = t && item.count_unit === 'post' && !item.option ? firstOneOff.get(t.id) : undefined;
+    // A one-off post bound to a catalog type priced per apartment ("Håltagning och brandtätning per lägenhet") is counted
+    // per apartment of the object list.
+    const perApartment = t && item.count_unit === 'post' && apartments > 0 && /\bper\s+(?:lägenhet|lgh)\b/i.test(t.name);
+    const i = mergedInto && mergedInto !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${mergedInto} (samma katalogtyp).` }
+      : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Katalogtypen gäller per lägenhet: ${apartments} lägenheter i objektlistan.`, level: 'Räknad' as const, certainty: 'Medel' as const }
+      : item;
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
     // Levels as in the reference calculation: Bekräftad, Räknad and Antagen are in the total (Antagen is marked for
     // checking); Saknar mängd stays outside until a quantity is entered; a post without catalog type is Saknar pris.
     const quantityLevelOfRow = quantityLevel(i);
     const needsQuantity = quantityLevelOfRow === 'Saknar mängd';
     // A catalog type with neither time nor price (e.g. a grid owner's fee awaiting a quote) has no price yet either.
-    const unpriced = !t || hoursPerUnit === 0 && listPrice === 0;
+    // An option is never priced as its main post: it stays Saknar pris until its own time or price is entered.
+    const unpriced = !t || hoursPerUnit === 0 && listPrice === 0 || !!i.option && b?.manual_hours == null && b?.manual_list_price == null;
     const level: RowLevel = unpriced ? 'Saknar pris' : quantityLevelOfRow;
     const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
     const manualQuantity = b?.manual_quantity ?? null;

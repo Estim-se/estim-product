@@ -63,7 +63,7 @@ const additionalKeys:Record<string,Record<string,RegExp[]>>={
 };
 export function checkTenderFasit(name:'Testlärkan'|'Provbänken'|'Baggen',snapshot:FasitSnapshot):string[]{
  const issues:string[]=[];
- const items=[...snapshot.quantities.items,...snapshot.quantities.assumptions.flatMap(assumptionItems)].filter((r,i,all)=>all.findIndex(x=>x.post===r.post&&x.unit===r.unit)===i);
+ const items=[...snapshot.quantities.items,...snapshot.quantities.assumptions.flatMap(assumptionItems)].filter(r=>!r.option).filter((r,i,all)=>all.findIndex(x=>x.post===r.post&&x.unit===r.unit)===i);
  // Match on what a post includes: negated phrases ("exkl. diskmaskin", "ej lägenhetsunderlag") describe exclusions.
  const included=(post:string)=>withoutNegatedTerms(post);
  for(const e of tenderQuantityExpectations[name]){const found=items.filter(i=>e.pattern.test(included(i.post))&&!e.exclude?.test(included(i.post)));const value=found.reduce((sum,i)=>sum+Number(i.quantity),0);if(value!==e.value)issues.push(`${e.name}: ${value}, förväntat ${e.value}`);}

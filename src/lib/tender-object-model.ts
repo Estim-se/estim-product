@@ -14,7 +14,7 @@ export type ObjectModel = {
   document_id: string; sheet: string; type_column: string; first_row: number; last_row: number;
   apartments: Apartment[]; premises: number;
   counts: { apartments: number; premises: number; kitchens: number; bathrooms: number; wc: number; vardagsrum: number; hall: number; sovrum: number; halvrum: number; stairwells: number; stairwell_floors: number };
-  code_matches: number; codes_found: number; evidence: string;
+  code_matches: number; codes_found: number; unmatched_codes: string[]; evidence: string;
 };
 type Doc = { id: string; file_type: string; text?: string | null };
 
@@ -60,11 +60,16 @@ export function buildObjectModel(documents: Doc[], typeCodes: TypeCode[] = [], w
         apartments.push({ row: n, number: numberColumn ? r.get(numberColumn) ?? null : null, address: addressColumn ? r.get(addressColumn) ?? null : null, floor: floorColumn ? r.get(floorColumn) ?? null : null,
           label, rooms, area, bedrooms: Math.max(0, Math.floor(rooms) - 1), half_rooms: rooms % 1 ? 1 : 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default', code: null });
       }
-      // Type codes: by apartment number when the number is unique in the list, otherwise by identical area.
+      // Type codes: by apartment number when the number is unique in the list, otherwise by identical area. Each code
+      // uses the first of its candidate numbers/areas that exists in this list (a room area or stray figure never decides).
+      const uniqueNumber = (n: string) => apartments.filter(x => x.number === n).length === 1;
+      const resolved = typeCodes.map(c => ({ c,
+        number: (c.apartments ?? (c.apartment ? [c.apartment] : [])).find(uniqueNumber) ?? null,
+        area: (c.areas ?? (c.area !== null ? [c.area] : [])).find(x => apartments.some(a => a.area !== null && Math.abs(a.area - x) <= 0.5)) ?? null }));
       let code_matches = 0;
       for (const a of apartments) {
-        const unique = a.number && apartments.filter(x => x.number === a.number).length === 1;
-        const candidates = (unique ? typeCodes.filter(c => c.apartment === a.number) : []).concat(typeCodes.filter(c => c.area !== null && a.area !== null && Math.abs(c.area - a.area) <= 0.5));
+        const byNumber = a.number ? resolved.filter(r => r.number === a.number).map(r => r.c) : [];
+        const candidates = byNumber.concat(resolved.filter(r => r.area !== null && a.area !== null && Math.abs(r.area - a.area) <= 0.5).map(r => r.c));
         if (!candidates.length) continue;
         const key = (c: TypeCode) => `${c.kitchens}|${c.bathrooms}|${c.wc}`;
         const common = [...candidates].sort((x, y) => candidates.filter(c => key(c) === key(y)).length - candidates.filter(c => key(c) === key(x)).length)[0]!;
@@ -74,6 +79,7 @@ export function buildObjectModel(documents: Doc[], typeCodes: TypeCode[] = [], w
       const sum = (f: (a: Apartment) => number) => apartments.reduce((s, a) => s + f(a), 0);
       const model: ObjectModel = {
         document_id: d.id, sheet, type_column: typeColumn.c, first_row: firstData, last_row: Math.max(...dataRows.map(([n]) => n)), apartments, premises, code_matches, codes_found: typeCodes.length,
+        unmatched_codes: resolved.filter(r => r.number === null && r.area === null).slice(0, 5).map(r => `${r.c.code} (nr ${r.c.apartments?.join('/') || r.c.apartment || '–'}, yta ${r.c.areas?.join('/') || r.c.area || '–'})`),
         evidence: `${typeColumn.c}${apartments[0]?.row ?? firstData}: ${apartments[0]?.label ?? ''}`,
         counts: { apartments: apartments.length, premises, kitchens: sum(a => a.kitchens), bathrooms: sum(a => a.bathrooms), wc: sum(a => a.wc), vardagsrum: apartments.length, hall: apartments.length,
           sovrum: sum(a => a.bedrooms), halvrum: sum(a => a.half_rooms), stairwells: new Set(apartments.map(a => a.address).filter(Boolean)).size,
