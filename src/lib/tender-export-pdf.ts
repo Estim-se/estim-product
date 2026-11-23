@@ -198,8 +198,9 @@ export async function generateTenderPdf(input: TenderExportInput, branding: Tend
     if(r.total===null)rect(M,top,CW,height,warning);else if(i%2)rect(M,top,CW,height,cream);
     postLines.forEach((l,j)=>draw(l,M+5,top+6+j*11));
     draw(`${format(Number(r.quantity),Number(r.quantity)%1?2:0)} ${r.unit}`,M+222,top+6,8.2,false,ink,true);
-    pill(r.certainty,M+232,top+4,34,r.certainty);
-    if(r.total===null)draw(r.awaiting_confirmation?'Låg – exkluderad, bekräfta mängd':'Saknar tid – ange manuellt',M+280,top+6,7,true,warningInk);
+    // Levels as in the reference calculation; the pill colour follows how much the quantity needs checking.
+    pill(r.level==='Saknar mängd'?'Saknar':r.level==='Saknar pris'?'Pris?':r.level,M+232,top+4,34,r.level==='Saknar mängd'||r.level==='Saknar pris'?'Hög':r.level==='Antagen'?'Medel':'Låg');
+    if(r.total===null)draw(r.awaiting_confirmation?'Saknar mängd – fyll i':'Saknar pris – ange tid och pris',M+280,top+6,7,true,warningInk);
     else {
       const values=[format(r.hours??0,1),format(r.labor??0),format(r.material??0),format(r.total)];
       let x=M+275;values.forEach((v,j)=>{x+=colWidths[j+3]??0;draw(v,x-5,top+6,8.2,j===3,ink,true);});

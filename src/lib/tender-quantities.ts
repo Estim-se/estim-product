@@ -15,9 +15,18 @@ const itemSchema = z.object({ post: z.string().trim().min(1).max(240), unit: z.e
 export const tenderQuantityRulesSchema = z.object({ operands: z.array(operandSchema).max(4000), items: z.array(itemSchema).max(2000), assumptions: z.array(z.object({ description: z.string().trim().min(1).max(2000), source: sourceSchema.nullable() }).strict()).max(2000) }).strict();
 export type TenderQuantityRules = z.infer<typeof tenderQuantityRulesSchema>;
 type Source = z.infer<typeof sourceSchema>;
-export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined };
+// Quantity level in the reference calculation's terms: Bekräftad (stated in the documents or a plain count), Räknad
+// (calculated from the object list or a drawing), Antagen (our assessment: recipe, estimate, unverified figure — counted
+// in the total and marked), Saknar mängd (cannot be calculated — shown, outside the total until filled in).
+export const QUANTITY_LEVELS = ['Bekräftad', 'Räknad', 'Antagen', 'Saknar mängd'] as const;
+export type QuantityLevel = typeof QUANTITY_LEVELS[number];
+export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined };
+// Results saved before levels existed: Hög = Bekräftad, Medel = Räknad, a Låg estimate = Antagen, other Låg = Saknar mängd.
+export function quantityLevel(item: Pick<QuantityItem, 'certainty' | 'estimated_quantity' | 'level'>): QuantityLevel {
+  return item.level ?? (item.certainty === 'Hög' ? 'Bekräftad' : item.certainty === 'Medel' ? 'Räknad' : item.estimated_quantity ? 'Antagen' : 'Saknar mängd');
+}
 export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[] };
-const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional() }).strict();
+const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional() }).strict();
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()) }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';
@@ -168,6 +177,15 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
     const badValue = used.find(o => o.label.includes(IMPLAUSIBLE));
     if (badValue && !item.rule.includes(IMPLAUSIBLE)) item.rule = `${IMPLAUSIBLE}. ${item.rule}`;
+    // Level: a quantity that cannot be calculated (implausible value, unknown factor, zero) is Saknar mängd; recipes,
+    // estimates, unverified figures and doubtful notes are Antagen; list/drawing-derived counts are Räknad; the rest
+    // (stated figures times plain counts) is Bekräftad.
+    const derived = (o: z.infer<typeof operandSchema>) => o.basis === 'Ritning' || standard(o) || ['Rum per rad', 'Summa', 'Unika', 'Unika trapphusplan', 'Avrunda upp per rad'].includes(o.list_selection?.operation ?? '');
+    // A placeholder for an unknown value ("Okänd längd", "Bänklängd saknas") is a missing quantity, not an assumption.
+    const unknownValue = used.some(o => o.basis === 'Antagande' && !o.recipe && !standard(o) && /okänd|saknas|ej angiv|framgår ej|oklar/i.test(o.label));
+    item.level = badValue || total === 0n || unknownValue || used.some(o => o.label.startsWith('Okänd mängduppgift')) ? 'Saknar mängd'
+      : used.some(o => o.recipe) || used.some(o => o.basis === 'Antagande' && !standard(o)) || missingSource || doubt || (!!i.assumption && !listDocumented && !documentedAll) ? 'Antagen'
+      : used.some(derived) ? 'Räknad' : 'Bekräftad';
     // No silent fallback: a recipe term must be multiplied by a verified room/object count from the object list or the
     // documents. Without one (missing, flagged, or a placeholder) the post is flagged Låg and stays outside the total.
     const countFor = (term: { factors: string[] }) => term.factors.map(id => operands.get(id)).some(o => !!o && !o.recipe && o.basis !== 'Antagande' && !!o.source && Number(o.value) > 0 && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE) && (o.basis === 'Lista' || /antal|lägenhet|lgh|kök|rum|hall|lokal|totalt|per rad/i.test(o.label)));
@@ -179,7 +197,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       const reason = uncounted
         ? 'Rumsantal saknas – typreceptet kan inte räknas utan antal rum från objektlistan'
         : `Mängden ${item.quantity.replace('.', ',')} är lägre än antalet lägenheter (${apartments}) för ett rum som finns i varje lägenhet`;
-      item.certainty = 'Låg';
+      item.certainty = 'Låg'; item.level = 'Saknar mängd';
       item.rule = `${reason} – kontrollera. ${item.rule}`;
       result.assumptions.push({ description: `${i.post}: ${reason}. Posten räknas inte in i totalen förrän mängden kontrollerats.`, sources: item.sources, item });
       continue;
@@ -188,7 +206,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     const perApartment = apartments > 0n && i.unit !== 'm' && (recipeBased || standardBased || used.some(o => apartmentOperands.has(o)) || /per lägenhet|typrecept/i.test(`${i.post} ${i.rule}`));
     if (perApartment && total > apartments * BigInt(MAX_PER_APARTMENT) * scale ** 4n) {
       const per = decimal(total / apartments, 24);
-      item.certainty = 'Låg';
+      item.certainty = 'Låg'; item.level = 'Saknar mängd';
       item.rule = `Orimlig mängd – kontrollera: ${per.replace('.', ',')} per lägenhet överstiger gränsen ${MAX_PER_APARTMENT}. ${item.rule}`;
       result.assumptions.push({ description: `${i.post}: ${per.replace('.', ',')} per lägenhet överstiger rimlighetsgränsen ${MAX_PER_APARTMENT} och räknas inte in i totalen förrän mängden kontrollerats.`, sources: item.sources, item });
       continue;
@@ -199,7 +217,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       && used.some(o => o.basis === 'Antagande')
       && used.some(o => o.basis !== 'Antagande' && o.source) && used.every(o => Number(o.value) > 0 && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE));
     if (supportedEstimate) {
-      item.certainty = 'Låg'; item.estimated_quantity = true;
+      item.certainty = 'Låg'; item.estimated_quantity = true; item.level = 'Antagen';
       if (!item.rule.startsWith('Uppskattad mängd.')) item.rule = `Uppskattad mängd. ${item.rule}`;
       result.assumptions.push({ description: i.assumption ?? `${i.post}: ${item.rule} Kontrollera uppskattningen före anbud.`, sources: item.sources, item });
       continue;

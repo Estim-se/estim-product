@@ -1,5 +1,5 @@
 // Evaluation only: compares a pipeline result with the reference calculation v2, post by post, without AI.
-import type { QuantityItem, TenderQuantities } from '@/lib/tender-quantities';
+import { quantityLevel, type QuantityItem, type TenderQuantities } from '@/lib/tender-quantities';
 import { assumptionItems } from '@/lib/tender-quantity-display';
 import { withoutNegatedTerms } from '@/lib/tender-negation';
 import { V2_POSTS, V2_SECTIONS, V2_SETTINGS, V2_TOTAL, type V2Post } from './v2-baggen';
@@ -11,6 +11,8 @@ export type V2Line = { v2: V2Post; status: V2Status; quantity: number | null; ro
 export type V2Comparison = {
   lines: V2Line[]; extras: QuantityItem[];
   counts: Record<V2Status, number>; found: number;
+  /** Found posts whose level (Bekräftad/Räknad/Antagen/Saknar mängd) equals the v2 certainty. */
+  same_level: number;
   /** Pipeline quantities priced with the v2 unit prices: isolates quantities and completeness from catalog prices. */
   at_v2_prices: { base: number; total: number };
   catalog_total: number | null;
@@ -36,7 +38,7 @@ export function compareWithV2(snapshot: V2Snapshot): V2Comparison {
     const quantity = rows.length ? rows.reduce((n, r) => n + Number(r.quantity), 0) : null;
     let status: V2Status;
     if (!rows.length) status = 'saknas';
-    else if (p.quantity === null) status = rows.every(r => r.certainty === 'Låg' || Number(r.quantity) === 0) ? 'flaggad' : 'mängd satt';
+    else if (p.quantity === null) status = rows.every(r => quantityLevel(r) === 'Saknar mängd' || Number(r.quantity) === 0) ? 'flaggad' : 'mängd satt';
     else if (quantity === p.quantity) status = 'rätt';
     else if (Math.abs((quantity ?? 0) - p.quantity) <= p.quantity * 0.05) status = 'nära';
     else status = 'fel';
@@ -47,7 +49,8 @@ export function compareWithV2(snapshot: V2Snapshot): V2Comparison {
   const counts = { 'rätt': 0, 'nära': 0, 'fel': 0, 'saknas': 0, 'flaggad': 0, 'mängd satt': 0 } as Record<V2Status, number>;
   for (const l of lines) counts[l.status]++;
   const base = lines.reduce((n, l) => n + (l.quantity ?? 0) * unitCost(l.v2), 0);
-  return { lines, extras, counts, found: lines.length - counts['saknas'], at_v2_prices: { base: round(base), total: round(withAdditions(base)) }, catalog_total: snapshot.cost?.total ?? null };
+  const same_level = lines.filter(l => l.rows.length && l.v2.certainty !== 'Saknar pris' && l.rows.every(r => quantityLevel(r) === l.v2.certainty)).length;
+  return { lines, extras, counts, same_level, found: lines.length - counts['saknas'], at_v2_prices: { base: round(base), total: round(withAdditions(base)) }, catalog_total: snapshot.cost?.total ?? null };
 }
 
 const kr = (n: number) => `${Math.round(n).toLocaleString('sv-SE')} kr`;
@@ -62,7 +65,7 @@ export function formatV2Comparison(c: V2Comparison) {
   }
   if (c.extras.length) { out.push('\nPoster utan motsvarighet i v2'); for (const r of c.extras) out.push(`  ${r.post} = ${r.quantity} ${r.unit} (${r.certainty})`); }
   const s = c.counts;
-  out.push(`\nSammanfattning: ${c.found}/${c.lines.length} v2-poster hittade · rätt ${s['rätt']} · nära ${s['nära']} · fel ${s['fel']} · saknas ${s['saknas']} · flaggad (saknar mängd) ${s['flaggad']} · mängd satt där v2 saknar mängd ${s['mängd satt']} · extra ${c.extras.length}`);
+  out.push(`\nSammanfattning: ${c.found}/${c.lines.length} v2-poster hittade · rätt ${s['rätt']} · nära ${s['nära']} · fel ${s['fel']} · saknas ${s['saknas']} · flaggad (saknar mängd) ${s['flaggad']} · mängd satt där v2 saknar mängd ${s['mängd satt']} · extra ${c.extras.length} · samma nivå som v2 ${c.same_level}`);
   out.push(`Total vid v2-priser: ${kr(c.at_v2_prices.total)} (bas ${kr(c.at_v2_prices.base)}) mot v2 ${kr(V2_TOTAL.total)} (${Math.round(c.at_v2_prices.total / V2_TOTAL.total * 1000) / 10} %)`);
   if (c.catalog_total !== null) out.push(`Total med företagets katalog: ${kr(c.catalog_total)}`);
   return out.join('\n');

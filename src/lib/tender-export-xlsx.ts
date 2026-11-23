@@ -27,20 +27,20 @@ export async function createTenderWorkbook(input: TenderExportInput) {
   if (input.settings.example_values) settings.addRow(['Exempelvärden']);
   const calc = sheet('Kalkyl', ['Post', 'Mängd', 'Enhet', 'Säkerhet', 'Tid/enhet (h)', 'Listpris/enhet (kr)', 'Källa', 'Timmar', 'Arbete (kr)', 'Material (kr)', 'Summa (kr)', 'Status', 'Bekräfta mängd (0/1)'], [48,14,10,12,16,20,65,16,20,20,22,40,24]);
   data.rows.forEach(r => {
-    const row = calc.addRow([r.post, Number(r.quantity), r.unit, r.certainty, r.awaiting_confirmation ? r.hours_per_unit : r.total === null ? null : r.hours_per_unit, r.awaiting_confirmation ? r.list_price : r.total === null ? null : r.list_price, r.source]);
+    const row = calc.addRow([r.post, Number(r.quantity), r.unit, r.level, r.awaiting_confirmation ? r.hours_per_unit : r.total === null ? null : r.hours_per_unit, r.awaiting_confirmation ? r.list_price : r.total === null ? null : r.list_price, r.source]);
     const n = row.number;
     row.getCell(13).value = r.needs_quantity ? r.awaiting_confirmation ? 0 : 1 : 1;
-    if(r.needs_quantity){yellow(row.getCell(13),"Låg säkerhet: 0 = exkluderad från total, 1 = bekräftad och inkluderad om tid/listpris finns.");row.getCell(13).dataValidation={type:"whole",operator:"between",formulae:[0,1],showErrorMessage:true,error:"Ange 0 eller 1."};}
+    if(r.needs_quantity){yellow(row.getCell(13),"Saknar mängd: 0 = exkluderad från total, 1 = mängd ifylld och inkluderad om tid/listpris finns.");row.getCell(13).dataValidation={type:"whole",operator:"between",formulae:[0,1],showErrorMessage:true,error:"Ange 0 eller 1."};}
     yellow(row.getCell(5), `Source: Företagets posttyp eller manuellt angiven tid, ${r.post}`);
     yellow(row.getCell(6), `Source: Företagets posttyp eller manuellt angivet listpris, ${r.post}`);
     row.getCell(2).note = `Source: ${r.source || 'Anbudsanalys'}. Beräkning: ${r.calculation}${r.needs_quantity ? '. Antagen mängd – bekräfta eller ändra innan prissättning.' : ''}`;
     if (r.needs_quantity) yellow(row.getCell(2), String(row.getCell(2).note));
-    if (r.total === null) row.getCell(1).note = 'Saknar tid – ange manuellt. Exkluderad från totalsummor tills mängd, tid och listpris är ifyllda.';
+    if (r.total === null) row.getCell(1).note = 'Saknar mängd eller pris. Exkluderad från totalsummor tills mängd, tid och listpris är ifyllda.';
     row.getCell(8).value = { formula: r.needs_quantity ? `IF(OR(M${n}=0,COUNT(B${n},E${n},F${n})<3),"",ROUND(B${n}*E${n},6))` : `IF(COUNT(B${n},E${n},F${n})<3,"",ROUND(B${n}*E${n},6))`, result: r.hours ?? '' };
     row.getCell(9).value = { formula: `IF(H${n}="","",ROUND(H${n}*'Inställningar'!$B$2,2))`, result: r.labor ?? '' };
     row.getCell(10).value = { formula: `IF(H${n}="","",ROUND(B${n}*F${n}*(1-'Inställningar'!$B$4)*(1+'Inställningar'!$B$3),2))`, result: r.material ?? '' };
     row.getCell(11).value = { formula: `IF(H${n}="","",I${n}+J${n})`, result: r.total ?? '' };
-    row.getCell(12).value = { formula: `IF(M${n}=0,"Låg – exkluderad, bekräfta mängd",IF(H${n}="","Saknar tid – ange manuellt","Komplett"))`, result: r.awaiting_confirmation ? 'Låg – exkluderad, bekräfta mängd' : r.total === null ? 'Saknar tid – ange manuellt' : 'Komplett' };
+    row.getCell(12).value = { formula: `IF(M${n}=0,"Saknar mängd – fyll i",IF(H${n}="","Saknar pris – ange tid och pris","Komplett"))`, result: r.awaiting_confirmation ? 'Saknar mängd – fyll i' : r.total === null ? 'Saknar pris – ange tid och pris' : 'Komplett' };
     [2,8,9,10,11].forEach(c => { row.getCell(c).numFmt = numberFormat; });
   });
   const end = calc.rowCount;
