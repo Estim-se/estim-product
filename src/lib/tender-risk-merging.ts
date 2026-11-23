@@ -1,4 +1,5 @@
 import type { TenderInsights } from './tender-insights';
+import { indexRegulationApplies } from './tender-risk-checklist';
 type Risk = TenderInsights['risks'][number];
 type Source = Risk['source'];
 export const insightSources = (value: {source: Source;sources?:Source[]|undefined}) => [value.source,...value.sources??[]].filter((s,i,all)=>all.findIndex(t=>JSON.stringify(t)===JSON.stringify(s))===i);
@@ -31,7 +32,8 @@ export const needsRiskQuestion=(r:Risk)=>r.suggestion==='Fråga beställaren'||/
 // Ordinary positive indexation cannot become an adverse condition through risk merging.
 export function reconcileTenderIndexRisks(risks:Risk[],keyData:TenderInsights['key_data']):Risk[]{
  const compensation=keyData.find(k=>k.field==='Ersättningsform');
- if(!compensation?.source||compensation.source.flag||!/(?:indexreglering sker|med indexreglering).*EM.?index/i.test(compensation.value))return risks;
+ // Any wording of an applying index regulation ("enligt EM-index", "EM-index tillämpas", "indexregleras").
+ if(!compensation?.source||compensation.source.flag||!indexRegulationApplies(compensation.value))return risks;
  const changes=keyData.find(k=>k.field==='ÄTA-regler');
  return risks.flatMap(r=>{
   if(!/indexreglering|EM.?index/i.test(r.title))return [r];

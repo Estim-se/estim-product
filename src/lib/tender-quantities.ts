@@ -153,8 +153,14 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     const unresolved=used.some(o=>o.basis==='Antagande'&&!o.recipe&&!standard(o));
     // Documented figures times verified object-list counts are Hög; a model note on such a post is kept as an
     // assumption but does not demote it. Posts built only from text figures still follow the model's note.
-    const listDocumented = used.length > 0 && used.some(o => o.basis === 'Lista') && used.every(o => (o.basis === 'Lista' || o.basis === 'Text') && !!o.source && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE));
-    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption && !listDocumented;
+    const verifiedFigure = (o: z.infer<typeof operandSchema>) => (o.basis === 'Lista' || o.basis === 'Text' || o.basis === 'Ritning') && !!o.source && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE);
+    const listDocumented = used.length > 0 && used.some(o => o.basis === 'Lista') && used.every(o => verifiedFigure(o) || standard(o));
+    // A note that only describes the basis ("en per badrum enligt el-beskrivningen") never demotes a post whose every
+    // figure is verified (text, list, drawing or specification) or a standard one-room-per-apartment; a note that
+    // expresses doubt keeps it Låg.
+    const doubt = !!i.assumption && /inte bekräft|ej bekräft|obekräft|oklar|osäker|antas|antagen|antaget|antagande|uppskatt|saknas|okänd|kontrollera|bekräftas|bedöm|tolk|troligen|ungefär|cirka|ca\.?\s/i.test(i.assumption);
+    const documentedAll = used.length > 0 && used.every(o => verifiedFigure(o) || standard(o)) && used.some(verifiedFigure);
+    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption && (doubt || !listDocumented && !documentedAll);
     const item: QuantityItem = { post: i.post, unit: i.unit, rule: i.rule, quantity: decimal(total, 24), calculation: expression, sources: sources(used.flatMap(o => o.source ? [o.source] : [])), certainty: (recipeBased||standardBased)&&!unresolved&&!used.some(o=>o.label.includes(UNSOURCED)) ? 'Medel' : uncertain ? 'Låg' : used.some(o => o.basis === 'Ritning') ? 'Medel' : 'Hög' };
     const missingSource = used.some(o => o.label.includes(UNSOURCED));
     if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
