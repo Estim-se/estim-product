@@ -146,11 +146,15 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       return values.join(' × ');
     }).join(' + ');
     const standard=(o:z.infer<typeof operandSchema>) => o.basis==='Antagande' && o.value==='1' && /(?:kök|badrum|vardagsrum|hall)/i.test(o.label)&&/per lägenhet/i.test(o.label)&&!o.label.includes(UNSOURCED);
-    // Rooms derived from type texts or area bands are recipe-based; one kitchen per apartment row is a plain apartment count.
-    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad'&&o.list_selection.room!=='Kök');
+    // Bedrooms and half rooms are derived from type texts or area bands (recipe-based). Kitchen, living room and hall
+    // per apartment row are plain apartment counts from the object list.
+    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad'&&(o.list_selection.room==='Sovrum'||o.list_selection.room==='Halvrum'));
     const standardBased=used.some(standard);
     const unresolved=used.some(o=>o.basis==='Antagande'&&!o.recipe&&!standard(o));
-    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption;
+    // Documented figures times verified object-list counts are Hög; a model note on such a post is kept as an
+    // assumption but does not demote it. Posts built only from text figures still follow the model's note.
+    const listDocumented = used.length > 0 && used.some(o => o.basis === 'Lista') && used.every(o => (o.basis === 'Lista' || o.basis === 'Text') && !!o.source && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE));
+    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption && !listDocumented;
     const item: QuantityItem = { post: i.post, unit: i.unit, rule: i.rule, quantity: decimal(total, 24), calculation: expression, sources: sources(used.flatMap(o => o.source ? [o.source] : [])), certainty: (recipeBased||standardBased)&&!unresolved&&!used.some(o=>o.label.includes(UNSOURCED)) ? 'Medel' : uncertain ? 'Låg' : used.some(o => o.basis === 'Ritning') ? 'Medel' : 'Hög' };
     const missingSource = used.some(o => o.label.includes(UNSOURCED));
     if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
@@ -184,7 +188,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       const description = i.assumption || used.filter(o => o.basis === 'Antagande').map(o => o.label).join('; ');
       result.assumptions.push({ description: missingSource && !description.includes(UNSOURCED) ? `${UNSOURCED}. ${description}` : description, sources: item.sources, item });
     }
-    else result.items.push(item);
+    else { result.items.push(item); if (i.assumption) result.assumptions.push({ description: i.assumption, sources: item.sources, item: null }); }
   }
   result.assumptions = uniqueQuantityAssumptions(result.assumptions);
   return result;
