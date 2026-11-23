@@ -64,3 +64,18 @@ export function withExamplePostTypes(settings: CalculationSettings): Calculation
   const post_types = settings.post_types.map(p => { const u = outdated.find(x => x.id === p.id); return u ? { ...p, ...u.to } : p; });
   return { ...settings, post_types: [...post_types, ...missing.map(t => ({ ...t }))].slice(0, 200), example_values: true };
 }
+
+// The nine calculation sections of a residential electrical calculation (as in the reference calculation).
+export const TENDER_SECTIONS: Record<number, string> = {
+  1: 'Lägenheter: rivning, central och matning', 2: 'Lägenheter: kök', 3: 'Lägenheter: badrum och WC', 4: 'Lägenheter: rum och hall',
+  5: 'Lokaler', 6: 'Allmänna utrymmen och garage', 7: 'Fastighet och servis', 8: 'Provisorier och håltagning', 9: 'Projektering, provning och dokumentation',
+};
+export const OTHER_SECTION = 10;
+// Section of a post: its own section, its catalog type's section, or the section of the example type with the same meaning.
+export function sectionOfPost(post: string, ownSection: number | undefined, typeSection: number | undefined, meaning: (name: string) => string | null): number {
+  if (ownSection) return ownSection;
+  if (typeSection) return typeSection;
+  const m = meaning(post);
+  const example = m ? [...SEEDED_EXAMPLE_POST_TYPES, ...ADDITIONAL_EXAMPLE_POST_TYPES].find(t => meaning(t.name) === m) : undefined;
+  return example?.section ?? OTHER_SECTION;
+}
