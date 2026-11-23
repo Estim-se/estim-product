@@ -50,7 +50,7 @@ export const V2_POSTS: V2Post[] = [
   { nr: '4.6', section: 4, post: 'Vägguttag vardagsrum', quantity: 328, unit: 'st', certainty: 'Antagen', hours: 0.8, list_price: 150, match: /^(?=.*vardagsrum)(?=.*uttag)/, exclude: /lamp|tak|dcl/ },
   { nr: '4.7', section: 4, post: 'Vägguttag sovrum och halvrum', quantity: 507, unit: 'st', certainty: 'Antagen', hours: 0.8, list_price: 150, match: /^(?=.*(?:sovrum|halvrum))(?=.*uttag)/, exclude: /lamp|tak|dcl/ },
   { nr: '4.8', section: 4, post: 'Vägguttag hall', quantity: 82, unit: 'st', certainty: 'Antagen', hours: 0.8, list_price: 150, match: /^(?=.*\bhall)(?=.*uttag)/, exclude: /lamp|tak|dcl/ },
-  { nr: '4.9', section: 4, post: 'Brandvarnare med 10-årsbatteri', quantity: 150, unit: 'st', certainty: 'Räknad', hours: 0.3, list_price: 250, match: /brandvarnare/ },
+  { nr: '4.9', section: 4, post: 'Brandvarnare med 10-årsbatteri', quantity: 150, unit: 'st', certainty: 'Räknad', hours: 0.3, list_price: 250, match: /brandvarnare/, exclude: /provning|funktionsprov/ },
   { nr: '5.1', section: 5, post: 'Ny central i lokal', quantity: 9, unit: 'st', certainty: 'Räknad', hours: 6, list_price: 4000, match: /^(?=.*central)(?=.*lokal)/ },
   { nr: '5.2', section: 5, post: 'Ny huvudledning till lokal', quantity: 9, unit: 'st', certainty: 'Räknad', hours: 5, list_price: 2500, match: /^(?=.*huvudledning)(?=.*lokal)/ },
   { nr: '5.3', section: 5, post: 'Samordning och avbrottsplanering, verksamhet i drift', quantity: 1, unit: 'post', certainty: 'Bekräftad', hours: 8, list_price: 0, match: /samordning|avbrottsplan|förskola/ },

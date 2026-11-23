@@ -42,7 +42,7 @@ export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken'|'Bag
   {name:'Vägguttag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*uttag)/i,exclude:/lamp|takuttag|belysning/i,value:507},
   {name:'Lamputtag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*(?:lamputtag|takuttag|belysning))/i,value:169},
   {name:'Bänkuttag kök',pattern:/^(?=.*(?:kök|bänk))(?=.*(?:uttag|hörnbox))/i,exclude:/lamp|takuttag|belysning|diskmaskin|kyl|frys|spis|perilex|ugn/i,value:249},
-  {name:'Brandvarnare',pattern:/brandvarnare/i,value:150},
+  {name:'Brandvarnare',pattern:/brandvarnare/i,exclude:/provning|funktionsprov/i,value:150},
   {name:'Golvvärme',pattern:/golvvärme/i,value:87},
   {name:'Armatur L2 kök',pattern:/^(?=.*armatur)(?=.*(?:\bL2\b|arbetsbänk|överskåp))/i,value:83},
   {name:'Centraler i lokaler',pattern:/^(?=.*central)(?=.*lokal)/i,exclude:/huvudledning|rivning/i,value:9},

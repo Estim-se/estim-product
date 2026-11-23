@@ -14,11 +14,11 @@ export type ObjectModel = {
   document_id: string; sheet: string; type_column: string; first_row: number; last_row: number;
   apartments: Apartment[]; premises: number;
   counts: { apartments: number; premises: number; kitchens: number; bathrooms: number; wc: number; vardagsrum: number; hall: number; sovrum: number; halvrum: number; stairwells: number; stairwell_floors: number };
-  code_matches: number; evidence: string;
+  code_matches: number; codes_found: number; evidence: string;
 };
 type Doc = { id: string; file_type: string; text?: string | null };
 
-function sheets(text: string) {
+export function sheets(text: string) {
   const out = new Map<string, Map<number, Map<string, string>>>(); let sheet = '';
   for (const line of text.split('\n')) {
     if (line.startsWith('Blad: ')) { sheet = decodeCellText(line.slice(6)).trim(); out.set(sheet, new Map()); continue; }
@@ -73,7 +73,7 @@ export function buildObjectModel(documents: Doc[], typeCodes: TypeCode[] = [], w
       if (wcMinArea !== null) for (const a of apartments) if (a.basis === 'default' && a.area !== null && a.area >= wcMinArea) { a.wc = 1; a.basis = 'area rule'; }
       const sum = (f: (a: Apartment) => number) => apartments.reduce((s, a) => s + f(a), 0);
       const model: ObjectModel = {
-        document_id: d.id, sheet, type_column: typeColumn.c, first_row: firstData, last_row: Math.max(...dataRows.map(([n]) => n)), apartments, premises, code_matches,
+        document_id: d.id, sheet, type_column: typeColumn.c, first_row: firstData, last_row: Math.max(...dataRows.map(([n]) => n)), apartments, premises, code_matches, codes_found: typeCodes.length,
         evidence: `${typeColumn.c}${apartments[0]?.row ?? firstData}: ${apartments[0]?.label ?? ''}`,
         counts: { apartments: apartments.length, premises, kitchens: sum(a => a.kitchens), bathrooms: sum(a => a.bathrooms), wc: sum(a => a.wc), vardagsrum: apartments.length, hall: apartments.length,
           sovrum: sum(a => a.bedrooms), halvrum: sum(a => a.half_rooms), stairwells: new Set(apartments.map(a => a.address).filter(Boolean)).size,
