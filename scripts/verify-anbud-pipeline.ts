@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { calculateTenderCost } from '../src/lib/tender-calculation';
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { checkTenderFasit } from '../src/test/helpers/tender-fasit';
+import { compareWithV2 } from '../src/test/helpers/v2-comparison';
 // Privileged test-tender pipeline verification only; this does not establish signed-in page E2E proof.
 //
 // Two kinds of runs per test tender:
@@ -78,7 +79,9 @@ async function analyse(t:any,docs:any[],settings:any,label:string){
  writeFileSync(`/tmp/anbud-verification/${tid}-${rid}.json`,JSON.stringify(snapshot,null,2));
  // Post names and certainty only: shows which rows are left out of the total and why, without tender text.
  const excluded=[...cost.rows,...cost.proposals].filter((r:any)=>r.total===null).map((r:any)=>({post:r.post,quantity:r.quantity,certainty:r.certainty,reason:!r.type_id?'Ingen katalogtyp':r.awaiting_confirmation?'Låg säkerhet – väntar på bekräftad mängd':'Saknar tid eller pris',unsourced:/Källa saknas/.test(r.rule)}));
- return {ok:true,rows:JSON.stringify(cost.rows),entry:{status:'Analyserat',rows:cost.rows.length,total:cost.total as number|null,minutes,excluded,errors:ds.filter((d:any)=>d.error).length,fasit:fasitFor(t.name,snapshot) as string[]|null}};
+ // Baggen is also compared post by post with the reference calculation v2 (counts and totals only).
+ const v2=/baggen/i.test(t.name)?(c=>({found:c.found,of:c.lines.length,counts:c.counts,extras:c.extras.length,total_at_v2_prices:c.at_v2_prices.total,v2_total:5483340.94}))(compareWithV2(snapshot as any)):null;
+ return {ok:true,rows:JSON.stringify(cost.rows),entry:{status:'Analyserat',rows:cost.rows.length,total:cost.total as number|null,minutes,excluded,errors:ds.filter((d:any)=>d.error).length,fasit:fasitFor(t.name,snapshot) as string[]|null,v2}};
 }
 
 async function run(tid:string){

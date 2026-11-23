@@ -36,16 +36,17 @@ export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken'|'Bag
   {name:'Nödbelysning',pattern:/nöd.*belysning|nöd.*armatur/i,value:10},
   {name:'Fasadarmaturer',pattern:/fasad.*armatur|armatur.*fasad/i,value:4},
  ],
- // Baggen: reference calculation v2 and the verified nine-run result after PR #11 (142 sovrum + 27 halvrum).
+ // Baggen: core quantities of the reference calculation v2 (v2-baggen.ts holds all 70 posts; 83 kök and 87 badrum
+ // come from the drawing type codes). v2 removed demolition in premises (stambyte med återmontering): it must be 0.
  'Baggen':[
   {name:'Vägguttag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*uttag)/i,exclude:/lamp|takuttag|belysning/i,value:507},
   {name:'Lamputtag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*(?:lamputtag|takuttag|belysning))/i,value:169},
-  {name:'Bänkuttag kök',pattern:/^(?=.*(?:kök|bänk))(?=.*(?:uttag|hörnbox))/i,exclude:/lamp|takuttag|belysning|diskmaskin|kyl|frys|spis|perilex|ugn/i,value:246},
+  {name:'Bänkuttag kök',pattern:/^(?=.*(?:kök|bänk))(?=.*(?:uttag|hörnbox))/i,exclude:/lamp|takuttag|belysning|diskmaskin|kyl|frys|spis|perilex|ugn/i,value:249},
   {name:'Brandvarnare',pattern:/brandvarnare/i,value:150},
-  {name:'Golvvärme',pattern:/golvvärme/i,value:82},
-  {name:'Armatur L2 kök',pattern:/^(?=.*armatur)(?=.*(?:\bL2\b|arbetsbänk))/i,value:82},
+  {name:'Golvvärme',pattern:/golvvärme/i,value:87},
+  {name:'Armatur L2 kök',pattern:/^(?=.*armatur)(?=.*(?:\bL2\b|arbetsbänk|överskåp))/i,value:83},
   {name:'Centraler i lokaler',pattern:/^(?=.*central)(?=.*lokal)/i,exclude:/huvudledning|rivning/i,value:9},
-  {name:'Rivning per lokal',pattern:/^(?=.*rivning)(?=.*lokal)/i,value:9},
+  {name:'Rivning per lokal',pattern:/^(?=.*rivning)(?=.*lokal)/i,value:0},
  ]
 };
 const commonKeys: Record<string,Record<string,RegExp>> = {
