@@ -66,8 +66,8 @@ describe('recipe posts on a fresh tender', () => {
 describe('Baggen fasit (evaluation only)', () => {
   const row = (post: string, quantity: string) => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const });
   const snap = (items: ReturnType<typeof row>[]) => ({ insights: { key_data: [], risks: [], questions: [] }, quantities: { rules: { operands: [], items: [], assumptions: [] }, items, assumptions: [] }, documents: [] });
-  const good = [row('Dubbla vägguttag sovrum enligt typrecept', '426'), row('Dubbla vägguttag halvrum enligt typrecept', '81'), row('Lamputtag sovrum enligt typrecept', '142'), row('Lamputtag halvrum enligt typrecept', '27'), row('Bänkuttag kök enligt typrecept', '246'), row('Uttag diskmaskin', '82'), row('Brandvarnare', '150'), row('Elektrisk golvvärme i badrum', '82'), row('Armatur L2 ovan arbetsbänk i kök', '82'), row('Nya centraler i lokaler', '9'), row('Rivning per lokal', '9'), row('Huvudledning lokal', '9')];
-  it('passes the verified result', async () => {
+  const good = [row('Dubbla vägguttag sovrum enligt typrecept', '426'), row('Dubbla vägguttag halvrum enligt typrecept', '81'), row('Lamputtag sovrum enligt typrecept', '142'), row('Lamputtag halvrum enligt typrecept', '27'), row('Bänkuttag kök enligt typrecept', '249'), row('Uttag diskmaskin', '83'), row('Brandvarnare', '150'), row('Elektrisk golvvärme i badrum', '87'), row('Armatur L2 ovan arbetsbänk i kök', '83'), row('Nya centraler i lokaler', '9'), row('Huvudledning lokal', '9')];
+  it('passes the v2 core quantities', async () => {
     const { checkTenderFasit } = await import('./helpers/tender-fasit');
     expect(checkTenderFasit('Baggen', snap(good))).toEqual([]);
   });
@@ -76,6 +76,12 @@ describe('Baggen fasit (evaluation only)', () => {
     const demo = good.map(r => /sovrum|halvrum/.test(r.post) ? { ...r, quantity: /Lamp/.test(r.post) ? '1' : '3' } : /Bänkuttag/.test(r.post) ? { ...r, post: 'Kök – hörnbox/vägguttag enligt typrecept', quantity: '3' } : r);
     const issues = checkTenderFasit('Baggen', snap(demo));
     expect(issues).toContain('Vägguttag sovrum + halvrum: 6, förväntat 507');
-    expect(issues).toContain('Bänkuttag kök: 3, förväntat 246');
+    expect(issues).toContain('Bänkuttag kök: 3, förväntat 249');
   });
+});
+it('Baggen fasit rejects demolition in premises (removed in v2)', async () => {
+  const { checkTenderFasit } = await import('./helpers/tender-fasit');
+  const row = (post: string, quantity: string) => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const });
+  const issues = checkTenderFasit('Baggen', { insights: { key_data: [], risks: [], questions: [] }, quantities: { rules: { operands: [], items: [], assumptions: [] }, items: [row('Rivning befintlig elinstallation per lokal', '9')], assumptions: [] }, documents: [] });
+  expect(issues).toContain('Rivning per lokal: 9, förväntat 0');
 });
