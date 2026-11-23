@@ -6,6 +6,7 @@ import { uniqueQuantityAssumptions } from './tender-quantity-display';
 import { isQuantityHelperPost, normalizeRoomTotalFactors } from './tender-quantity-scope';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
+import { applyStandardPosts } from './tender-standard-posts';
 
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().trim().min(1).max(1500) }).strict();
 const selectionSchema = z.object({ sheet: z.string().min(1).max(240), range: z.string().max(40), operation: z.enum(['Antal', 'Summa','Unika','Unika trapphusplan','Avrunda upp per rad','Rum per rad']), equals: z.string().max(500).nullable(), divisor:z.number().positive().max(10000).nullable().optional(), room:z.enum(RECIPE_ROOMS).nullable().optional(), room_count_range:z.string().max(40).nullable().optional(), address_range:z.string().max(40).nullable().optional() }).strict();
@@ -14,9 +15,18 @@ const itemSchema = z.object({ post: z.string().trim().min(1).max(240), unit: z.e
 export const tenderQuantityRulesSchema = z.object({ operands: z.array(operandSchema).max(4000), items: z.array(itemSchema).max(2000), assumptions: z.array(z.object({ description: z.string().trim().min(1).max(2000), source: sourceSchema.nullable() }).strict()).max(2000) }).strict();
 export type TenderQuantityRules = z.infer<typeof tenderQuantityRulesSchema>;
 type Source = z.infer<typeof sourceSchema>;
-export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined };
+// Quantity level in the reference calculation's terms: Bekräftad (stated in the documents or a plain count), Räknad
+// (calculated from the object list or a drawing), Antagen (our assessment: recipe, estimate, unverified figure — counted
+// in the total and marked), Saknar mängd (cannot be calculated — shown, outside the total until filled in).
+export const QUANTITY_LEVELS = ['Bekräftad', 'Räknad', 'Antagen', 'Saknar mängd'] as const;
+export type QuantityLevel = typeof QUANTITY_LEVELS[number];
+export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined };
+// Results saved before levels existed: Hög = Bekräftad, Medel = Räknad, a Låg estimate = Antagen, other Låg = Saknar mängd.
+export function quantityLevel(item: Pick<QuantityItem, 'certainty' | 'estimated_quantity' | 'level'>): QuantityLevel {
+  return item.level ?? (item.certainty === 'Hög' ? 'Bekräftad' : item.certainty === 'Medel' ? 'Räknad' : item.estimated_quantity ? 'Antagen' : 'Saknar mängd');
+}
 export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[] };
-const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional() }).strict();
+const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional() }).strict();
 export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()) }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';
@@ -67,6 +77,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   }
   // A dimension-based kitchen rule cannot be evaluated without bench lengths. Substitute the company's
   normalizeRoomTotalFactors(rules);
+  // Standard posts (recipe rooms, smoke detectors, documented per-apartment rules) are built by code, not left to the model.
+  const standardNotes = applyStandardPosts(rules, operands, documents, recipes);
   // editable recipe, not an invented bench length, while retaining the requirement and object-list source.
   const kitchenCount = rules.operands.find(o => o.basis === 'Lista' && o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')
     ?? rules.operands.find(o => o.basis !== 'Antagande' && /lägenhet/i.test(o.label) && (!o.list_selection || o.list_selection.operation === 'Antal' && (o.list_selection.equals === null || /lägenhet/i.test(o.list_selection.equals))));
@@ -105,8 +117,11 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   function fixed(value: string) { const [whole = '0', fraction = ''] = value.split('.'); return BigInt(whole) * scale + BigInt(fraction.padEnd(6, '0')); }
   function decimal(value: bigint, digits: number) { const s = value.toString().padStart(digits + 1, '0'); return `${s.slice(0, -digits)}.${s.slice(-digits)}`.replace(/\.?0+$/, ''); }
   const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => ({ description: a.description, sources: a.source && verified(a.source) ? [a.source] : [], item: null })) };
-  // Verified apartment counts used by the per-apartment sanity bound (largest list count of apartments or kitchens).
-  const apartmentOperands = new Set(rules.operands.filter(o => o.basis === 'Lista' && (o.list_selection?.operation === 'Antal' && /lägenhet|lgh/i.test(o.label) && !/lokal/i.test(o.label) || o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')));
+  for (const note of standardNotes) result.assumptions.push({ description: note.description, sources: note.sources, item: null });
+  // Verified apartment counts used by the per-apartment sanity bounds (largest list count of apartments or kitchens,
+  // or a sourced text figure labelled as the number of apartments).
+  const apartmentOperands = new Set(rules.operands.filter(o => o.basis === 'Lista' && (o.list_selection?.operation === 'Antal' && /lägenhet|lgh/i.test(o.label) && !/lokal/i.test(o.label) || o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')
+    || o.basis === 'Text' && !!o.source && /antal\s+(?:lägenheter|lgh|bostäder)|^\s*lägenheter\s*$/i.test(o.label) && !o.label.includes(UNSOURCED)));
   const apartments = [...apartmentOperands].reduce((max, o) => { const n = BigInt(Math.floor(Number(o.value))); return n > max ? n : max; }, 0n);
   // A post "per trapphus" counts stairwells. A "Unika trapphusplan" selection counts stairwell × floor combinations,
   // so for such posts it is replaced by the distinct addresses/stairwells of the same rows.
@@ -142,20 +157,56 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       return values.join(' × ');
     }).join(' + ');
     const standard=(o:z.infer<typeof operandSchema>) => o.basis==='Antagande' && o.value==='1' && /(?:kök|badrum|vardagsrum|hall)/i.test(o.label)&&/per lägenhet/i.test(o.label)&&!o.label.includes(UNSOURCED);
-    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad');
+    // Bedrooms and half rooms are derived from type texts or area bands (recipe-based). Kitchen, living room and hall
+    // per apartment row are plain apartment counts from the object list.
+    const recipeBased=used.some(o=>o.recipe||o.list_selection?.operation==='Rum per rad'&&(o.list_selection.room==='Sovrum'||o.list_selection.room==='Halvrum'));
     const standardBased=used.some(standard);
     const unresolved=used.some(o=>o.basis==='Antagande'&&!o.recipe&&!standard(o));
-    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption;
+    // Documented figures times verified object-list counts are Hög; a model note on such a post is kept as an
+    // assumption but does not demote it. Posts built only from text figures still follow the model's note.
+    const verifiedFigure = (o: z.infer<typeof operandSchema>) => (o.basis === 'Lista' || o.basis === 'Text' || o.basis === 'Ritning') && !!o.source && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE);
+    const listDocumented = used.length > 0 && used.some(o => o.basis === 'Lista') && used.every(o => verifiedFigure(o) || standard(o));
+    // A note that only describes the basis ("en per badrum enligt el-beskrivningen") never demotes a post whose every
+    // figure is verified (text, list, drawing or specification) or a standard one-room-per-apartment; a note that
+    // expresses doubt keeps it Låg.
+    const doubt = !!i.assumption && /inte bekräft|ej bekräft|obekräft|oklar|osäker|antas|antagen|antaget|antagande|uppskatt|saknas|okänd|kontrollera|bekräftas|bedöm|tolk|troligen|ungefär|cirka|ca\.?\s/i.test(i.assumption);
+    const documentedAll = used.length > 0 && used.every(o => verifiedFigure(o) || standard(o)) && used.some(verifiedFigure);
+    const uncertain = used.some(o => o.basis === 'Antagande') || !!i.assumption && (doubt || !listDocumented && !documentedAll);
     const item: QuantityItem = { post: i.post, unit: i.unit, rule: i.rule, quantity: decimal(total, 24), calculation: expression, sources: sources(used.flatMap(o => o.source ? [o.source] : [])), certainty: (recipeBased||standardBased)&&!unresolved&&!used.some(o=>o.label.includes(UNSOURCED)) ? 'Medel' : uncertain ? 'Låg' : used.some(o => o.basis === 'Ritning') ? 'Medel' : 'Hög' };
     const missingSource = used.some(o => o.label.includes(UNSOURCED));
     if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
     const badValue = used.find(o => o.label.includes(IMPLAUSIBLE));
     if (badValue && !item.rule.includes(IMPLAUSIBLE)) item.rule = `${IMPLAUSIBLE}. ${item.rule}`;
+    // Level: a quantity that cannot be calculated (implausible value, unknown factor, zero) is Saknar mängd; recipes,
+    // estimates, unverified figures and doubtful notes are Antagen; list/drawing-derived counts are Räknad; the rest
+    // (stated figures times plain counts) is Bekräftad.
+    const derived = (o: z.infer<typeof operandSchema>) => o.basis === 'Ritning' || standard(o) || ['Rum per rad', 'Summa', 'Unika', 'Unika trapphusplan', 'Avrunda upp per rad'].includes(o.list_selection?.operation ?? '');
+    // A placeholder for an unknown value ("Okänd längd", "Bänklängd saknas") is a missing quantity, not an assumption.
+    const unknownValue = used.some(o => o.basis === 'Antagande' && !o.recipe && !standard(o) && /okänd|saknas|ej angiv|framgår ej|oklar/i.test(o.label));
+    item.level = badValue || total === 0n || unknownValue || used.some(o => o.label.startsWith('Okänd mängduppgift')) ? 'Saknar mängd'
+      : used.some(o => o.recipe) || used.some(o => o.basis === 'Antagande' && !standard(o)) || missingSource || doubt || (!!i.assumption && !listDocumented && !documentedAll) ? 'Antagen'
+      : used.some(derived) ? 'Räknad' : 'Bekräftad';
+    // No silent fallback: a recipe term must be multiplied by a verified room/object count from the object list or the
+    // documents. Without one (missing, flagged, or a placeholder) the post is flagged Låg and stays outside the total.
+    const countFor = (term: { factors: string[] }) => term.factors.map(id => operands.get(id)).some(o => !!o && !o.recipe && o.basis !== 'Antagande' && !!o.source && Number(o.value) > 0 && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE) && (o.basis === 'Lista' || /antal|lägenhet|lgh|kök|rum|hall|lokal|totalt|per rad/i.test(o.label)));
+    const uncounted = i.terms.some(t => t.factors.some(id => operands.get(id)?.recipe) && !countFor(t));
+    // Lower bound: a room type that exists in every apartment (vardagsrum, hall, kök) cannot have fewer posts than apartments.
+    const everyApartmentRoom = used.find(o => o.recipe && ['Vardagsrum', 'Hall', 'Kök'].includes(o.recipe.room) || o.list_selection?.operation === 'Rum per rad' && ['Vardagsrum', 'Hall', 'Kök'].includes(o.list_selection.room ?? ''));
+    const belowApartments = !!everyApartmentRoom && apartments > 0n && total < apartments * scale ** 4n;
+    if (uncounted || belowApartments) {
+      const reason = uncounted
+        ? 'Rumsantal saknas – typreceptet kan inte räknas utan antal rum från objektlistan'
+        : `Mängden ${item.quantity.replace('.', ',')} är lägre än antalet lägenheter (${apartments}) för ett rum som finns i varje lägenhet`;
+      item.certainty = 'Låg'; item.level = 'Saknar mängd';
+      item.rule = `${reason} – kontrollera. ${item.rule}`;
+      result.assumptions.push({ description: `${i.post}: ${reason}. Posten räknas inte in i totalen förrän mängden kontrollerats.`, sources: item.sources, item });
+      continue;
+    }
     // Sanity bound: a recipe or per-apartment post above the limit per apartment is flagged Låg (outside the total).
     const perApartment = apartments > 0n && i.unit !== 'm' && (recipeBased || standardBased || used.some(o => apartmentOperands.has(o)) || /per lägenhet|typrecept/i.test(`${i.post} ${i.rule}`));
     if (perApartment && total > apartments * BigInt(MAX_PER_APARTMENT) * scale ** 4n) {
       const per = decimal(total / apartments, 24);
-      item.certainty = 'Låg';
+      item.certainty = 'Låg'; item.level = 'Saknar mängd';
       item.rule = `Orimlig mängd – kontrollera: ${per.replace('.', ',')} per lägenhet överstiger gränsen ${MAX_PER_APARTMENT}. ${item.rule}`;
       result.assumptions.push({ description: `${i.post}: ${per.replace('.', ',')} per lägenhet överstiger rimlighetsgränsen ${MAX_PER_APARTMENT} och räknas inte in i totalen förrän mängden kontrollerats.`, sources: item.sources, item });
       continue;
@@ -166,7 +217,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       && used.some(o => o.basis === 'Antagande')
       && used.some(o => o.basis !== 'Antagande' && o.source) && used.every(o => Number(o.value) > 0 && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE));
     if (supportedEstimate) {
-      item.certainty = 'Låg'; item.estimated_quantity = true;
+      item.certainty = 'Låg'; item.estimated_quantity = true; item.level = 'Antagen';
       if (!item.rule.startsWith('Uppskattad mängd.')) item.rule = `Uppskattad mängd. ${item.rule}`;
       result.assumptions.push({ description: i.assumption ?? `${i.post}: ${item.rule} Kontrollera uppskattningen före anbud.`, sources: item.sources, item });
       continue;
@@ -179,7 +230,7 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
       const description = i.assumption || used.filter(o => o.basis === 'Antagande').map(o => o.label).join('; ');
       result.assumptions.push({ description: missingSource && !description.includes(UNSOURCED) ? `${UNSOURCED}. ${description}` : description, sources: item.sources, item });
     }
-    else result.items.push(item);
+    else { result.items.push(item); if (i.assumption) result.assumptions.push({ description: i.assumption, sources: item.sources, item: null }); }
   }
   result.assumptions = uniqueQuantityAssumptions(result.assumptions);
   return result;

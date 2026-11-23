@@ -8,9 +8,10 @@ import type { TenderInsights } from './tender-insights';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
+import { cacheDocumentKey, fromCacheForm, toCacheForm } from './tender-cache-keys';
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v2', quantities: 'room-aggregate-v5', calculation: 'room-aggregate-v5' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'levels-v11', calculation: 'levels-v11' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -43,7 +44,7 @@ export async function kickTenderJob(tid: string) {
 async function readingVersion(db: Db, job: Job) {
   const r = await db.from('tenders').select('reading_version').eq('id', job.tender_id).eq('company_id', job.company_id).single();
   if (r.error || !r.data) throw Error('Anbudet kunde inte läsas.');
-  return `${String(r.data.reading_version)}:pdf-text-v1`;
+  return `${String(r.data.reading_version)}:pdf-text-v2`;
 }
 async function loadInputs(db: Db, job: Job, afFirst: boolean) {
   const rows = await db.from('tender_documents').select('id,file_name,file_type,path,size,doc_type,page_count,analysis_status,content_hash').eq('tender_id', job.tender_id).eq('company_id', job.company_id).eq('analysis_status', 'analysed').order('file_name');
@@ -63,12 +64,14 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const docs = await db.from('tender_documents').select('id,content_hash,doc_type').eq('tender_id', job.tender_id).eq('company_id', job.company_id).order('id');
   if (docs.error) throw Error('Kontrollsummorna kunde inte läsas.');
   const { tenderHash } = await import('./tender-source-parts');
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v3` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: docs.data, model: aiConfig().model, context }));
+  // Keyed by file content and document type, not document ids: the same files give the same result in a new tender.
+  // ANBUD_CACHE_SALT (server env) forces fresh model answers, e.g. to verify robustness.
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v6` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
-  if (prior.data) return prior.data.result as T;
+  if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);
   const result = await work();
-  const saved = await db.from('tender_result_cache').upsert({ company_id: job.company_id, fingerprint, step, result }, { onConflict: 'company_id,fingerprint,step' });
+  const saved = await db.from('tender_result_cache').upsert({ company_id: job.company_id, fingerprint, step, result: toCacheForm(result, docs.data) as never }, { onConflict: 'company_id,fingerprint,step' });
   if (saved.error) throw Error('Analysreglerna kunde inte sparas.');
   return result;
 }
@@ -157,7 +160,10 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const inputs = await loadInputs(db, job, false);
     const settings = await db.from('tender_calculation_settings').select('room_recipes').eq('company_id',job.company_id).maybeSingle();
     if(settings.error) throw Error('Typrecepten kunde inte hämtas.');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v8' }, () => extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    // Feature flag: the requirements engine (model lists requirements, code counts) replaces the operand engine when on.
+    const requirementsEngine = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1';
+    const { extractRequirementQuantities } = await import('./tender-requirements-ai.server');
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v13', engine: requirementsEngine ? 'requirements-v1' : 'operands' }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

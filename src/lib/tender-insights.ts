@@ -6,7 +6,7 @@ export const NOT_SPECIFIED = 'Ej angivet i underlaget';
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), af_code: z.string().trim().max(80).nullable(), evidence: z.string().trim().min(1).max(1500), flag: z.literal('Källa saknas – kontrollera').optional() }).strict();
 export const tenderInsightsSchema = z.object({
   key_data: z.array(z.object({ field: z.enum(TENDER_KEY_FIELDS), value: z.string().trim().min(1).max(3000), source: sourceSchema.nullable() }).strict()).length(17),
-  risks: z.array(z.object({ title: z.string().trim().min(1).max(240), description: z.string().trim().min(1).max(2000), source: sourceSchema, sources: z.array(sourceSchema).max(60).optional(), deviation: z.string().trim().max(1000).nullable(), consequence: z.enum(['Tid', 'Pengar', 'Tid och pengar']), severity: z.enum(['Hög', 'Medel', 'Låg']), suggestion: z.enum(['Prissätt', 'Reservera', 'Fråga beställaren']) }).strict()).max(60),
+  risks: z.array(z.object({ title: z.string().trim().min(1).max(240), description: z.string().trim().min(1).max(2000), impact: z.string().trim().max(800).optional(), source: sourceSchema, sources: z.array(sourceSchema).max(60).optional(), deviation: z.string().trim().max(1000).nullable(), consequence: z.enum(['Tid', 'Pengar', 'Tid och pengar']), severity: z.enum(['Hög', 'Medel', 'Låg']), suggestion: z.enum(['Prissätt', 'Reservera', 'Fråga beställaren']) }).strict()).max(60),
   questions: z.array(z.object({ question: z.string().trim().min(1).max(2000), source: sourceSchema, sources: z.array(sourceSchema).max(60).optional(), risk_indices: z.array(z.number().int().nonnegative()).max(60).optional() }).strict()).max(120),
 }).strict();
 export type TenderInsights = z.infer<typeof tenderInsightsSchema>;
@@ -54,10 +54,17 @@ export function recoverInsightSource(raw: unknown, documents: InsightDocument[])
   const page = typeof numeric === 'number' && Number.isInteger(numeric) && numeric > 0 ? numeric : null;
   const rawEvidence = typeof s['evidence'] === 'string' ? s['evidence'].trim().slice(0, 1500) : '';
   // PDF pages and spreadsheet sheet/row locations are verified by the same shared rule.
-  const verified = doc && rawEvidence ? verifyTenderSource(documents, { document_id: doc.id, page, evidence: rawEvidence }, { label: true }) : null;
+  let verified = doc && rawEvidence ? verifyTenderSource(documents, { document_id: doc.id, page, evidence: rawEvidence }, { label: true }) : null;
+  // A quote attributed to the wrong file is moved to the single other document that verifiably contains it
+  // (e.g. a time-plan quote cited with the AF's id). Ambiguous quotes stay flagged.
+  if (!verified && rawEvidence) {
+    const elsewhere = documents.filter(d => d.id !== doc?.id).flatMap(d => verifyTenderSource(documents, { document_id: d.id, page: null, evidence: rawEvidence }, { label: true }) ?? []);
+    if (elsewhere.length === 1) verified = elsewhere[0]!;
+  }
+  const target = verified ? documents.find(d => d.id === verified!.document_id) : doc;
   const valid = !!verified;
   const evidence = verified?.evidence ?? rawEvidence;
-  return { document_id: doc?.id ?? UNKNOWN_SOURCE_ID, page: verified ? verified.page : doc?.file_type === 'pdf' && page !== null && doc.page_count !== null && page <= doc.page_count ? page : null, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
+  return { document_id: target?.id ?? UNKNOWN_SOURCE_ID, page: verified ? verified.page : doc?.file_type === 'pdf' && page !== null && doc.page_count !== null && page <= doc.page_count ? page : null, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
 }
 function recoverTenderInsights(raw: unknown, documents: InsightDocument[]): TenderInsights {
   const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -72,7 +79,7 @@ function recoverTenderInsights(raw: unknown, documents: InsightDocument[]): Tend
   const risks = list('risks').slice(0, 60).flatMap(r => {
     if (!r || typeof r['title'] !== 'string' || typeof r['description'] !== 'string') return [];
     const s = source(r['source']);
-    const parsed = tenderInsightsSchema.shape.risks.element.safeParse({ title: r['title'].slice(0, 240), description: r['description'].slice(0, 2000), source: s, deviation: null, consequence: ['Tid', 'Pengar', 'Tid och pengar'].includes(String(r['consequence'])) ? r['consequence'] : 'Tid och pengar', severity: s.flag ? 'Låg' : ['Hög', 'Medel', 'Låg'].includes(String(r['severity'])) ? r['severity'] : 'Låg', suggestion: ['Prissätt', 'Reservera', 'Fråga beställaren'].includes(String(r['suggestion'])) ? r['suggestion'] : 'Fråga beställaren', ...(Array.isArray(r['sources']) ? { sources: r['sources'].slice(0, 60).map(source) } : {}) });
+    const parsed = tenderInsightsSchema.shape.risks.element.safeParse({ title: r['title'].slice(0, 240), description: r['description'].slice(0, 2000), ...(typeof r['impact'] === 'string' && r['impact'].trim() ? { impact: r['impact'].trim().slice(0, 800) } : {}), source: s, deviation: null, consequence: ['Tid', 'Pengar', 'Tid och pengar'].includes(String(r['consequence'])) ? r['consequence'] : 'Tid och pengar', severity: s.flag ? 'Låg' : ['Hög', 'Medel', 'Låg'].includes(String(r['severity'])) ? r['severity'] : 'Låg', suggestion: ['Prissätt', 'Reservera', 'Fråga beställaren'].includes(String(r['suggestion'])) ? r['suggestion'] : 'Fråga beställaren', ...(Array.isArray(r['sources']) ? { sources: r['sources'].slice(0, 60).map(source) } : {}) });
     return parsed.success ? [parsed.data] : [];
   });
   const questions = list('questions').slice(0, 120).flatMap(q => {

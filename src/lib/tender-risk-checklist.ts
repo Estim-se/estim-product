@@ -29,9 +29,11 @@ export function tenderRiskChecklistPrompt(areas: readonly TenderRiskArea[] = TEN
 ${areas.map((area, i) => `${i + 1}. ${area}`).join('\n')}
 ${subset ? 'Övriga checklisteområden granskas i separata anrop: rapportera här bara risker som hör till områdena ovan, och checklistan ska innehålla exakt dessa områden.\n' : ''}Rapportera minst en risk med AF-kod för varje område där underlaget innehåller något ovanligt, oklart eller ofördelaktigt för entreprenören. Risk behöver INTE vara en avvikelse från AB 04/ABT 06. Gissa ingen regelreferens. Gissa inte standardvillkor eller branschpraxis. Jämför inte med en ”normal betalningscykel” eller okända leverantörsgarantier: beskriv bara det dokumenterade villkoret och dess konkreta likviditets-/ansvarsrisk. Saknad information är inte automatiskt en risk; ange konkret osäkerhet eller dokumenterad saknad handling som påverkar tid eller pengar.
 Gränsdragning: kontrollera särskilt om elentreprenören åläggs all håltagning, brandtätning, rivning eller samordning även mot andra entreprenörer. Återge ansvar och kostnads-/tidsföljd som en egen risk med AF-kod (t.ex. AFC.13 när den koden finns).
-Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens af_code (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden.
+Ekonomi: bedöm ersättningsform/index och ÄTA/påslag var för sig OCH tillsammans. Fast pris utan indexreglering i kombination med endast 5 % påslag på ÄTA ska inte försvinna därför att uppgifterna finns i nyckeldatatabellen. Beskriv möjliga kostnadsökningar/marginalrisk utan att beräkna priser och ange båda villkorens AF-koder i kombinationsriskens af_code (t.ex. AFC.61 och AFC.65 när de finns). Flera risker får dela samma checklisteområde och en kombinationsrisk får täcka flera områden. En gällande indexreglering (t.ex. EM-index) är gynnsam för entreprenören: assessment Normalt och ingen risk. Endast avsaknad av indexreglering kan vara en risk.
+Varje risk ska i description återge de konkreta villkoren med sina värden ur underlaget (t.ex. "45 dagar", "5 % påslag", "1 % per arbetsdag") och ange AF-koden i af_code; en allmän rubrik räcker aldrig.
 Ett tydligt formulerat villkor kan ändå vara ofördelaktigt: bedöm följden, inte bara om villkoret är oklart eller ändrar AB. Kontrollera exempelvis säkerheters kapitalbindning/kostnad under en lång garantitid även om procentsatserna är tydliga. Beskriv fem års materialansvar och 45 dagars likviditetspåverkan direkt utan påståenden om vad standardavtalet annars skulle ha gett.
-Returnera risks som platt lista (title, severity, description, suggestion, af_code, page) och risk_checklist som ett objekt med EXAKT en egenskap per område ovan (${areas.length} st), där nyckeln är områdets namn exakt som det står och värdet har assessment och af_code. Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. assessment är Risk, Normalt eller Ej nämnt; en tom risk_checklist är aldrig giltig. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
+Ni är elentreprenören (underentreprenör el eller sidoentreprenör el), inte totalentreprenör: rapportera bara risker som påverkar el-arbetet, el-kalkylen eller el-tidplanen. En ren TE-fråga (flyttfirma, hyresgästlogistik, tätskikt, försäkring av hyresgästers egendom, beställarens säkerheter eller förskott) tas bara med om den direkt påverkar el; miljöfarliga ämnen och vite tas med med sin följd för el. Varje risk anger i impact vad den betyder för oss som elentreprenör (kostnad, tid, provisorier, samordning) i en mening.
+Returnera risks som platt lista (title, severity, description, impact, suggestion, af_code, page) och risk_checklist som ett objekt med EXAKT en egenskap per område ovan (${areas.length} st), där nyckeln är områdets namn exakt som det står och värdet har assessment och af_code. Inga källobjekt, dokument-id, evidence-citat, riskindex eller extra struktur: koden hämtar källtexten via AF-koden. Endast title och description krävs för en risk; utelämna övriga fält om de är okända. assessment är Risk, Normalt eller Ej nämnt; en tom risk_checklist är aldrig giltig. Ange den AF-kod som stöder Risk eller Normalt när den finns. Ej nämnt betyder att området inte behandlas och behöver ingen AF-kod. Risk betyder att risks innehåller motsvarande konkreta problem med samma AF-kod. En tom risklista är giltig när checklistan har en rad för varje område ovan. Använd aldrig placeholder.`;
 }
 export const TENDER_RISK_CHECKLIST_PROMPT = tenderRiskChecklistPrompt();
 
@@ -43,7 +45,7 @@ export function tenderRiskReviewWireSchemaFor(areas: readonly TenderRiskArea[] =
     type: 'object', additionalProperties: false,
     properties: {
       risks: { type: 'array', items: { type: 'object', additionalProperties: false,
-        properties: { title: { type: 'string' }, description: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
+        properties: { title: { type: 'string' }, description: { type: 'string' }, impact: { type: 'string' }, severity: { type: 'string', enum: ['Hög', 'Medel', 'Låg'] }, suggestion: { type: 'string', enum: ['Prissätt', 'Reservera', 'Fråga beställaren'] }, af_code: { type: ['string', 'null'] }, page: { type: ['integer', 'null'] } },
         required: ['title', 'description'] } },
       risk_checklist: { type: 'object', additionalProperties: false, properties: Object.fromEntries(areas.map(area => [area, status])), required: [...areas] },
     }, required: ['risks', 'risk_checklist'],
@@ -57,7 +59,7 @@ export function tenderChecklistRows(raw: unknown): unknown {
   return { ...obj, risk_checklist: Object.entries(keyed).map(([area, value]) => ({ area, ...(record(value) ?? {}) })) };
 }
 
-type FlatRisk = { title: string; description: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
+type FlatRisk = { title: string; description: string; impact?: string; severity?: 'Hög' | 'Medel' | 'Låg'; suggestion?: 'Prissätt' | 'Reservera' | 'Fråga beställaren'; af_code?: string | null; page?: number | null };
 type Assessment = 'Risk' | 'Normalt' | 'Ej nämnt';
 type FlatChecklistRow = { area: TenderRiskArea; assessment: Assessment; af_code: string | null };
 export type TenderChecklistFlag = 'missing' | 'unsourced_normal' | 'unlinked_risk';
@@ -91,7 +93,8 @@ export function parseFlatTenderRisks(raw: unknown): FlatRisk[] {
     const description = text(row['description'], 2000) || title;
     if (!title || /placeholder/i.test(`${title} ${description}`)) return [];
     const page = typeof row['page'] === 'number' && Number.isInteger(row['page']) && row['page'] > 0 ? row['page'] : null;
-    return [{ title, description,
+    const impact = text(row['impact'], 800);
+    return [{ title, description, ...(impact ? { impact } : {}),
       ...(SEVERITIES.includes(row['severity'] as never) ? { severity: row['severity'] as NonNullable<FlatRisk['severity']> } : {}),
       ...(SUGGESTIONS.includes(row['suggestion'] as never) ? { suggestion: row['suggestion'] as NonNullable<FlatRisk['suggestion']> } : {}),
       af_code: typeof row['af_code'] === 'string' ? row['af_code'].slice(0, 80) : null, page }];
@@ -167,9 +170,67 @@ const FLAG_TEXT: Record<TenderChecklistFlag, string> = {
   unlinked_risk: 'Området bedömdes som Risk utan en kopplad risk med verifierbar AF-källa.',
 };
 
+// An index regulation that applies (e.g. EM-index) protects the contractor against cost increases: it is "Normalt",
+// never a risk. Only an explicitly missing index regulation can be a risk; "fast pris" with EM-index is indexed.
+const INDEX = /index/i;
+const NO_INDEX = /(?:utan|ingen|inga|ej|inte|icke|saknar|saknas)\s+(?:[\p{L}-]+\s+){0,3}?index|index\S*\s+(?:saknas|gäller\s+(?:inte|ej)|tillämpas\s+(?:inte|ej))|ej\s+indexreglerad/iu;
+const INDEX_APPLIES = /em-?index|enligt\s+(?:\S+\s+){0,2}index|indexreglering\s+(?:enligt|med|sker|tillämpas|gäller)|indexregleras|regleras\s+(?:med|enligt)\s+(?:\S+\s+)?index|med\s+indexreglering/i;
+export function indexRegulationApplies(text: string) { return INDEX.test(text) && INDEX_APPLIES.test(text) && !NO_INDEX.test(text); }
+export function isFavourableIndexRisk(risk: { title: string; description: string }) {
+  const text = `${risk.title} ${risk.description}`;
+  return INDEX.test(text) && INDEX_APPLIES.test(text) && !NO_INDEX.test(text) && !/äta|påslag|ändrings|tilläggsarbete|betalning|vite|garanti|säkerhet/i.test(text);
+}
+// Concrete terms from the cited AF section: "45 dagar", "5 % påslag", "10 000 kr", "5 år".
+const VALUE = /(?:[\p{L}][\p{L}-]*\s+){0,2}\d[\d\s.,]*\s*(?:%|procent|dagar|dygn|arbetsdagar|kalenderdagar|veckor|månader|år|kr|kronor|SEK|MSEK|tkr)(?:\s+[\p{L}][\p{L}-]*)?/giu;
+export function concreteRiskDescription(description: string, source: { af_code: string | null; evidence: string; flag?: string | undefined }) {
+  if (source.flag) return description;
+  let text = description;
+  if (!/\d/.test(text)) {
+    const values = [...new Set([...source.evidence.matchAll(VALUE)].map(m => m[0].replace(/\s+/g, ' ').trim()))].slice(0, 4);
+    if (values.length) text = `${text.replace(/\.?\s*$/, '.')} Underlaget anger: ${values.join('; ')}.`;
+  }
+  if (source.af_code && !text.includes(source.af_code)) text = `${text.replace(/\s*$/, '')} (${source.af_code})`;
+  return text.slice(0, 2000);
+}
+function withoutFavourableIndex(obj: Record<string, unknown>, areas: readonly TenderRiskArea[]) {
+  const risks = Array.isArray(obj['risks']) ? obj['risks'] as unknown[] : [];
+  const kept = risks.filter(r => { const row = record(r); return !row || typeof row['title'] !== 'string' || typeof row['description'] !== 'string' || !isFavourableIndexRisk({ title: row['title'], description: row['description'] }); });
+  if (kept.length === risks.length) return obj;
+  const area = areas.find(a => /indexreglering/i.test(a));
+  const keptCodes = kept.flatMap(r => codes(record(r)?.['af_code']));
+  const checklist = Array.isArray(obj['risk_checklist']) ? (obj['risk_checklist'] as unknown[]).map(r => {
+    const row = record(r);
+    if (!row || !area || matchArea(row['area'], areas) !== area || row['assessment'] !== 'Risk' || codes(row['af_code']).some(c => keptCodes.includes(c))) return r;
+    return { ...row, assessment: 'Normalt' };
+  }) : obj['risk_checklist'];
+  return { ...obj, risks: kept, risk_checklist: checklist };
+}
+
+// Largest amount in SEK stated in a text: "20 000 000 kr", "20 MSEK", "20 miljoner kronor", "20 Mkr".
+export function largestSekAmount(text: string) {
+  let max = 0;
+  for (const m of text.matchAll(/(\d[\d\s.,]*\d|\d)\s*(msek|mkr|mnkr|miljon(?:er)?|milj\.?|kr|kronor|sek)(?![\p{L}])/giu)) {
+    const n = Number(m[1]!.replace(/[\s.]/g, '').replace(',', '.'));
+    if (Number.isFinite(n)) max = Math.max(max, /^m/i.test(m[2]!) ? n * 1_000_000 : n);
+  }
+  return max;
+}
+// A high insurance requirement (at least 10 MSEK) is always a priced risk with its amount, even if the model
+// assessed the area as normal. The saved key-data figure and its AF citation are the source.
+export const HIGH_INSURANCE_SEK = 10_000_000;
+type KeyRow = { field: string; value: string; source: { document_id: string; page: number | null; af_code: string | null; evidence: string; flag?: string | undefined } | null };
+function insuranceRisk(keyData: unknown, areas: readonly TenderRiskArea[]) {
+  if (!areas.some(a => /försäkring/i.test(a)) || !Array.isArray(keyData)) return null;
+  const row = (keyData as KeyRow[]).find(k => k?.field === 'Försäkring');
+  if (!row?.source || row.source.flag || largestSekAmount(row.value) < HIGH_INSURANCE_SEK) return null;
+  const source = { document_id: row.source.document_id, page: row.source.page, af_code: row.source.af_code, evidence: row.source.evidence };
+  const code = row.source.af_code ? ` (${row.source.af_code})` : '';
+  return { title: 'Högt försäkringskrav', description: `Underlaget kräver ${row.value.replace(/\.?\s*$/, '')}${code}. Kontrollera att företagets ansvars- och entreprenadförsäkring täcker beloppet och prissätt eventuell tilläggsförsäkring.`.slice(0, 2000), severity: 'Medel' as const, suggestion: 'Prissätt' as const, source, sources: [source], consequence: 'Pengar' as const, deviation: null };
+}
+
 // Keep checklist metadata internal; the persisted result and existing UI stay unchanged.
 export function validateTenderRiskReview(raw: unknown, documents: InsightDocument[], areas: readonly TenderRiskArea[] = TENDER_RISK_AREAS, resilient = false) {
-  const obj = record(raw) ?? {};
+  const obj = withoutFavourableIndex(record(raw) ?? {}, areas);
   // Older saved/mocked results remain readable, but are never the new provider contract.
   if (Array.isArray(obj['risks']) && obj['risks'].some(r => r?.source)) {
     if (resilient) return validateTenderInsights({ key_data: obj['key_data'], risks: obj['risks'], questions: obj['questions'] ?? [] }, documents, true);
@@ -180,11 +241,16 @@ export function validateTenderRiskReview(raw: unknown, documents: InsightDocumen
   if (!resilient && links.some(row => row.flagged)) throw new Error('AI-resultatet saknar en fullständig riskchecklista.');
   const expanded = risks.map(risk => {
     const sources = resolveTenderRiskSources(risk.af_code, risk.page, documents);
-    return { ...risk, source: sources[0], sources, consequence: 'Tid och pengar', deviation: null };
+    // A risk states the documented terms and the AF code, not only a general title.
+    const description = sources[0] ? concreteRiskDescription(risk.description, sources[0]) : risk.description;
+    return { ...risk, description, source: sources[0], sources, consequence: 'Tid och pengar', deviation: null };
   });
+  const insurance = insuranceRisk(obj['key_data'], areas);
+  const addInsurance = !!insurance && !expanded.some(r => /försäkring/i.test(`${r.title} ${r.description}`));
+  if (insurance && addInsurance) expanded.push(insurance);
   // A flagged checklist row becomes a visible review warning, never a failed analysis.
   for (const row of links) {
-    if (!row.flag) continue;
+    if (!row.flag || addInsurance && /försäkring/i.test(row.area) && row.flag === 'unlinked_risk') continue;
     expanded.push({ title: row.area, description: `${SOURCE_WARNING}. ${FLAG_TEXT[row.flag]}`, source: { document_id: UNKNOWN_SOURCE_ID, page: null, af_code: null, evidence: SOURCE_WARNING, flag: SOURCE_WARNING }, sources: [], consequence: 'Tid och pengar', deviation: null });
   }
   return validateTenderInsights({ key_data: obj['key_data'], risks: expanded, questions: obj['questions'] ?? [] }, documents, true);

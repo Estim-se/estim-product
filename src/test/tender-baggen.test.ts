@@ -23,7 +23,9 @@ for(const [room,sockets,lamps] of [['Vardagsrum',4,1],['Sovrum',3,1],['Hall',1,1
 it('uses configured recipe values in code and marks them Medel with one assumption',()=>{
  const source={document_id:id(5),page:1,evidence:'2 lägenheter'};
  const q=calculateTenderQuantities({operands:[{id:'n',label:'Lägenheter',value:'2',basis:'Text',source},{id:'r',label:'Recept',value:'999',basis:'Antagande',source:null,recipe:{room:'Vardagsrum',equipment:'sockets'}}],items:[{post:'Dubbla vägguttag',unit:'st',rule:'Vardagsrum',terms:[{factors:['n','r']}],assumption:'Typrecept'}],assumptions:[]},[{id:id(5),file_name:'Teknik.pdf',file_type:'pdf',page_count:1,text:null}]);
- expect(q.items[0]?.quantity).toBe('8');expect(q.items[0]?.certainty).toBe('Medel');expect(q.assumptions).toHaveLength(1);
+ expect(q.items[0]?.quantity).toBe('8');expect(q.items[0]?.certainty).toBe('Medel');
+ // One recipe assumption, plus the scope note that the other recipe rooms cannot be counted without an object list.
+ expect(q.assumptions).toHaveLength(2);expect(q.assumptions.some(a=>a.description.startsWith('Kontroll av omfattning: ingen objektlista'))).toBe(true);
 });
 it('standard one kitchen per apartment is Medel and priced without manual quantity',()=>{
  const source={document_id:id(5),page:1,evidence:'2 lägenheter'};

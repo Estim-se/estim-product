@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { assumptionItems } from './tender-quantity-display';
 import { roomRecipeSchema } from './tender-room-recipes';
-import { tenderQuantitiesSchema, type TenderQuantities } from './tender-quantities';
+import { quantityLevel, tenderQuantitiesSchema, type QuantityLevel, type TenderQuantities } from './tender-quantities';
+export type RowLevel = QuantityLevel | 'Saknar pris';
 
 const amount = z.number().finite().nonnegative().max(100000000).multipleOf(0.000001);
-export const postTypeSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240), hours: amount.max(10000), list_price: amount }).strict();
+// section: optional calculation section (1-9) used to group the calculation; types without one are grouped by meaning.
+export const postTypeSchema = z.object({ id: z.string().uuid(), name: z.string().trim().min(1).max(240), hours: amount.max(10000), list_price: amount, section: z.number().int().min(1).max(20).optional() }).strict();
 export const calculationSettingsSchema = z.object({ hourly_rate: amount.max(100000), material_markup: amount.max(1000), list_discount: amount.max(100), establishment: amount.max(99.999999), contingency: amount.max(99.999999), post_types: z.array(postTypeSchema).max(200), example_values: z.boolean(), room_recipes: roomRecipeSchema.nullable().optional() }).strict().superRefine((s, ctx) => {
   if (s.establishment + s.contingency >= 100) ctx.addIssue({ code: 'custom', message: 'Etablering och oförutsett måste tillsammans vara mindre än 100 %.' });
   if (new Set(s.post_types.map(t => t.id)).size !== s.post_types.length) ctx.addIssue({ code: 'custom', message: 'Dubbla posttyper.' });
@@ -53,16 +55,20 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   const rows = items.map(i => {
     const b = m.bindings.find(b => b.post === i.post), t = s.post_types.find(t => t.id === b?.type_id);
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
-    // One rule for every Låg row, estimates included: it stays outside the total until its quantity is confirmed.
-    const needsQuantity = i.certainty === 'Låg';
+    // Levels as in the reference calculation: Bekräftad, Räknad and Antagen are in the total (Antagen is marked for
+    // checking); Saknar mängd stays outside until a quantity is entered; a post without catalog type is Saknar pris.
+    const quantityLevelOfRow = quantityLevel(i);
+    const needsQuantity = quantityLevelOfRow === 'Saknar mängd';
+    const level: RowLevel = !t ? 'Saknar pris' : quantityLevelOfRow;
     const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
     const manualQuantity = b?.manual_quantity ?? null;
-    if (hoursPerUnit === null || listPrice === null || awaitingConfirmation) return { ...i, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
-    const quantity = needsQuantity && manualQuantity !== null ? String(manualQuantity) : i.quantity;
+    if (hoursPerUnit === null || listPrice === null || awaitingConfirmation) return { ...i, level, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
+    // A manually entered quantity replaces a missing or assumed quantity.
+    const quantity = (needsQuantity || quantityLevelOfRow === 'Antagen') && manualQuantity !== null ? String(manualQuantity) : i.quantity;
     const qty = fixed(quantity), hours = rounded(qty * fixed(hoursPerUnit), S);
     const labor = rounded(hours * fixed(s.hourly_rate) * 100n, S * S);
     const material = rounded(qty * fixed(listPrice) * (100n * S - fixed(s.list_discount)) * (100n * S + fixed(s.material_markup)) * 100n, S ** 4n * 10000n);
-    return { ...i, quantity, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: Number(hours) / Number(S), labor: Number(labor) / 100, material: Number(material) / 100, total: Number(labor + material) / 100 };
+    return { ...i, quantity, level, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: Number(hours) / Number(S), labor: Number(labor) / 100, material: Number(material) / 100, total: Number(labor + material) / 100 };
   });
   const proposals = rows.filter(r => !s.post_types.some(t => t.id === r.type_id));
   const catalogRows = rows.filter(r => s.post_types.some(t => t.id === r.type_id));

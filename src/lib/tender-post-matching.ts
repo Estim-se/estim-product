@@ -2,44 +2,78 @@ import { withoutNegatedTerms } from './tender-negation';
 import type { CalculationSettings } from './tender-calculation';
 
 const normalize=(s:string)=>s.toLocaleLowerCase('sv').normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9]+/g,' ').trim();
-function meaning(name:string) {
+// The meaning of a post or catalog name. Rules run from specific to general and use word boundaries, so a word inside
+// another word never decides the meaning ("skyltar" is not "kyl", "vattenmätning" is not a supply line).
+type Rule = [RegExp, string | ((n: string) => string | null)];
+const RULES: Rule[] = [
+  [/projektering|projektor|bygghandling|belysningsberakning/, 'projektering'],
+  [/\bsyn\b|protokoll fore rivning|besiktning fore rivning/, 'syn'],
+  [/demonter|atermonter/, 'demontering'],
+  [/byggstrom|byggel\b|provisorisk el\b/, 'byggstrom'],
+  [/provisori/, 'provisorisk-matning'],
+  [/tvattstuga/, 'tvattstuga'],
+  [/serviscentral|servis\w* central/, 'serviscentral'],
+  [/servisledning|serviskabel|servisanslutning|anslutningsavgift/, 'servisledning'],
+  [/dimensionering|anmalan|natagare/, 'natagare'],
+  [/golvvarme/, 'golvvarme'],
+  [/handdukstork/, 'handdukstork'],
+  [/\bwc\b/, 'wc'],
+  [/diskmaskin/, 'diskmaskin'],
+  [/\bkyl|\bfrys/, 'kylfrys'],
+  [/mikro/, 'mikro'],
+  [/spiskapa|koksflakt|flaktkapa/, 'spiskapa'],
+  [/perilex|spishall|anslutning spis|\bspis\b/, 'perilex'],
+  [/\bcee\b|industriuttag/, 'cee'],
+  [/\bugn\b|\b16a\b/, 'uttag-16a'],
+  [/rivning/, 'rivning'],
+  [/huvudledning/, n => /lagenhet/.test(n) ? 'huvudledning-lgh' : /lokal/.test(n) ? 'huvudledning-lokal' : /fastighet|huvudcentral/.test(n) ? 'huvudledning-fastighet' : null],
+  [/provning/, n => /allmanna|funktionsprovning|samordnad/.test(n) ? 'provning-allm' : 'provning-lgh'],
+  [/kvalitetsplan|egenkontroll/, 'kvalitetsplan'],
+  [/relationshandling/, 'relationshandling'],
+  [/drift\w* och underhall|\bdu parm/, 'du-parm'],
+  [/utbildning/, 'utbildning'],
+  [/servicebesok|garantibesok/, 'servicebesok'],
+  [/markning|\bskyltar|gruppforteckning/, 'markning'],
+  [/haltagning|bilning|brandtatning/, 'haltagning'],
+  [/samordning|avbrottsplan/, 'samordning'],
+  [/tomror/, n => /\bsol/.test(n) ? 'tomror-sol' : 'tomror-matning'],
+  [/vattenmatning|\bbus\b/, 'tomror-matning'],
+  [/kabelstege|kanalisation|kabelranna/, 'kanalisation'],
+  [/potentialutjamning|skyddsutjamning|jordning/, 'jordning'],
+  [/totalmatare|total matning|huvudmatare/, 'totalmatare'],
+  [/matarplats|matarblock|debiteringsmatare|\belmatare\b|\bmatare\b/, 'matarplats'],
+  [/\bspegelskap/, 'spegelskap'],
+  [/kombimaskin|tvattmaskin/, 'uttag-ip44'],
+  [/\bmatning\b/, n => /hiss|flakt|ventilation|funktionssaker/.test(n) ? 'matning-fs' : /dorrautomatik|dorroppnare/.test(n) ? 'dorrautomatik' : /fjarrvarme|markvarme|varmepump|styrskap|teknisk/.test(n) ? 'matning-teknik' : null],
+  [/dorrautomatik|dorroppnare/, 'dorrautomatik'],
+  [/laddplat|laddning/, n => /ledning|installation|kabel|forberedelse/.test(n) ? 'laddledning' : null],
+  [/brandvarnare/, 'brandvarnare'],
+  [/dimmer|tryckknapp/, 'dimmer'],
+  [/lampstick|stickpropp|\be27\b/, 'lampstickpropp'],
+  [/lamputtag|takuttag|belysningsuttag|\bdcl\b/, 'lamputtag'],
+  [/datauttag|natverk|rj45/, 'datauttag'],
+  [/bankuttag|hornbox|koksuttag/, 'bankuttag'],
+  [/uttag/, n => /utomhus|fasad/.test(n) ? 'utomhusuttag' : /ip44/.test(n) ? 'uttag-ip44' : 'vagguttag'],
+  [/fasad/, n => /belysning|armatur|styrning|kopplingsur/.test(n) ? 'fasadstyrning' : null],
+  [/bankbelysning|overskap|\bl2\b|arbetsbank/, 'bankbelysning'],
+  [/armatur|belysning/, n => /\bnod/.test(n) ? 'nodbelysning' : /garage/.test(n) ? 'armatur-garage' : /trapphus|\bl4\b/.test(n) ? 'armatur-trapphus' : /kallar|forrad|teknikrum/.test(n) ? 'armatur-kallare' : /badrum|\bl5\b/.test(n) ? 'armatur-badrum' : /\bkok|\bl1\b/.test(n) ? 'armatur-kok' : null],
+  [/nodljus|nodutrymning|vagledande markering/, 'nodbelysning'],
+  [/narvaro|rorelsevakt|rorelsedetektor/, 'narvarogivare'],
+  [/\bspot/, 'spot'],
+  [/central/, n => /garage/.test(n) ? 'central-garage' : /lagenhet/.test(n) ? 'central-lgh' : /lokal/.test(n) ? 'central-lokal' : /fastighets|huvud/.test(n) ? 'central-fastighet' : null],
+];
+export function postMeaning(name:string) {
   // Excluded items in a post name ("exkl. diskmaskin") must not decide its meaning.
   const n=normalize(withoutNegatedTerms(name));
-  if (/diskmaskin/.test(n)) return 'diskmaskin';
-  if (/kyl|frys/.test(n)) return 'kylfrys';
-  if (/perilex/.test(n)) return 'perilex';
-  if (/projektering|projektor/.test(n)) return 'projektering';
-  if (/provning|egenkontroll|relationshandling|dokumentation/.test(n)) return 'provning';
-  if (/narvaro|rorelsevakt|rorelsedetektor/.test(n)) return 'narvarogivare';
-  if (/nodbelysning|nodljus|nodarmatur|nodutrymning|vagledande markering/.test(n)) return 'nodbelysning';
-  if (/potentialutjamning|skyddsutjamning|jordning/.test(n)) return 'jordning';
-  if (/tomror/.test(n)&&/sol/.test(n)) return 'tomror-sol';
-  if (/huvudledning/.test(n)) return /lagenhet/.test(n)?'huvudledning-lgh':/lokal/.test(n)?'huvudledning-lokal':/fastighet|huvudcentral/.test(n)?'huvudledning-fastighet':null;
-  if (/central/.test(n)) return /lagenhet/.test(n)?'central-lgh':/lokal/.test(n)?'central-lokal':/fastighets|huvud/.test(n)?'central-fastighet':null;
-  if (/brandvarnare/.test(n)) return 'brandvarnare';
-  if (/matare|matning/.test(n)) return 'elmatare';
-  if (/laddplat|laddning/.test(n)&&/ledning|installation|kabel/.test(n)) return 'laddledning';
-  if (/handdukstork/.test(n)) return 'handdukstork';
-  if (/spegelskap/.test(n)) return 'spegelskap';
-  if (/dimmer/.test(n)) return 'dimmer';
-  if (/lamputtag|takuttag|belysningsuttag/.test(n)) return 'lamputtag';
-  if (/datauttag|natverk|rj45/.test(n)) return 'datauttag';
-  if (/cee/.test(n)) return 'cee';
-  if (/uttag/.test(n)) return /utomhus|fasad/.test(n)?'utomhusuttag':/ip44/.test(n)?'uttag-ip44':/16a/.test(n)?'uttag-16a':'vagguttag';
-  if (/spot/.test(n)) return 'spot';
-  if (/trapphusbelysning/.test(n)) return 'armatur-trapphus';
-  if (/armatur/.test(n)) return /badrum/.test(n)?'armatur-badrum':/kok/.test(n)?'armatur-kok':/trapphus/.test(n)?'armatur-trapphus':/kallare/.test(n)?'armatur-kallare':null;
-  if (/rivning/.test(n)) return 'rivning';
-  if (/spis/.test(n)) return 'spis';
-  if (/golvvarme/.test(n)) return 'golvvarme';
+  for (const [pattern, meaning] of RULES) if (pattern.test(n)) return typeof meaning === 'string' ? meaning : meaning(n);
   return null;
 }
 // Deterministic fallback handles semantic equivalents, never inventing a catalog type or price.
 export function closestTenderPostType(post:string, settings:CalculationSettings) {
   const exact=settings.post_types.find(t=>normalize(t.name)===normalize(post));
   if (exact) return exact.id;
-  const kind=meaning(post);
-  const candidates=kind ? settings.post_types.filter(t=>meaning(t.name)===kind) : [];
+  const kind=postMeaning(post);
+  const candidates=kind ? settings.post_types.filter(t=>postMeaning(t.name)===kind) : [];
   // Prefer the same noun when duplicate semantic catalog types exist (Gruppcentral/Lägenhetscentral).
   const noun=normalize(post).split(' ')[0];
   return candidates.find(t=>normalize(t.name).split(' ')[0]===noun)?.id ?? candidates.at(-1)?.id ?? null;
