@@ -1,8 +1,10 @@
+import { withoutNegatedTerms } from './tender-negation';
 import type { CalculationSettings } from './tender-calculation';
 
 const normalize=(s:string)=>s.toLocaleLowerCase('sv').normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9]+/g,' ').trim();
 function meaning(name:string) {
-  const n=normalize(name);
+  // Excluded items in a post name ("exkl. diskmaskin") must not decide its meaning.
+  const n=normalize(withoutNegatedTerms(name));
   if (/diskmaskin/.test(n)) return 'diskmaskin';
   if (/kyl|frys/.test(n)) return 'kylfrys';
   if (/perilex/.test(n)) return 'perilex';

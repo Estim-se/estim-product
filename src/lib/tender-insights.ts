@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { verifyTenderSource } from './tender-source-verification';
 
 export const TENDER_KEY_FIELDS = ['Beställare', 'Objekt', 'Entreprenadform', 'Kontraktsform', 'Anbudstid', 'Giltighetstid', 'Sista dag för frågor', 'Start', 'Färdigställande', 'Etapper', 'Vite', 'Garantitid', 'Ersättningsform', 'Betalningsvillkor', 'Säkerhet', 'ÄTA-regler', 'Försäkring'] as const;
 export const NOT_SPECIFIED = 'Ej angivet i underlaget';
@@ -18,10 +19,12 @@ export function validateTenderInsights(raw: unknown, documents: InsightDocument[
   function check(source: z.infer<typeof sourceSchema>) {
     const doc = documents.find(d => d.id === source.document_id);
     if (!doc) throw new Error('AI-resultatet hänvisar till ett dokument som inte analyserats.');
-    // Office extraction has no stable mapping to printed pages, even with cached page metadata.
-    if (doc.file_type !== 'pdf' && source.page !== null) throw new Error('AI-resultatet anger ett obekräftat sidnummer.');
+    // Office extraction has no stable mapping to printed pages; spreadsheets are located by sheet and row instead.
+    if (doc.file_type !== 'pdf' && doc.file_type !== 'xlsx' && source.page !== null) throw new Error('AI-resultatet anger ett obekräftat sidnummer.');
     if (doc.file_type === 'pdf' && (source.page === null || doc.page_count === null || source.page > doc.page_count)) throw new Error('AI-resultatet anger en ogiltig sida.');
-    if (doc.text && !doc.text.replace(/\s+/g, ' ').includes(source.evidence.replace(/\s+/g, ' '))) throw new Error('AI-resultatets källcitat finns inte i dokumentet.');
+    const verified = verifyTenderSource(documents, source, { label: true });
+    if (!verified) throw new Error('AI-resultatets källcitat finns inte i dokumentet.');
+    source.page = verified.page; source.evidence = verified.evidence;
   }
   for (const k of result.key_data) {
     if (k.value === NOT_SPECIFIED) { if (k.source !== null) throw new Error('Saknad uppgift får inte ha en påhittad källa.'); }
@@ -49,11 +52,13 @@ export function recoverInsightSource(raw: unknown, documents: InsightDocument[])
   const s = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const doc = documents.find(d => d.id === s['document_id']);
   const numeric = typeof s['page'] === 'string' ? Number(s['page']) : s['page'];
-  const validPage = typeof numeric === 'number' && Number.isInteger(numeric) && numeric > 0 && doc?.file_type === 'pdf' && doc.page_count !== null && numeric <= doc.page_count;
-  const evidence = typeof s['evidence'] === 'string' ? s['evidence'].trim().slice(0, 1500) : '';
-  const page = validPage ? numeric : null;
-  const valid = !!doc && !!evidence && (doc.file_type === 'pdf' ? validPage : s['page'] == null) && (!doc.text || doc.text.replace(/\s+/g, ' ').includes(evidence.replace(/\s+/g, ' ')));
-  return { document_id: doc?.id ?? UNKNOWN_SOURCE_ID, page, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
+  const page = typeof numeric === 'number' && Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+  const rawEvidence = typeof s['evidence'] === 'string' ? s['evidence'].trim().slice(0, 1500) : '';
+  // PDF pages and spreadsheet sheet/row locations are verified by the same shared rule.
+  const verified = doc && rawEvidence && (doc.file_type === 'pdf' || doc.file_type === 'xlsx' || s['page'] == null) ? verifyTenderSource(documents, { document_id: doc.id, page, evidence: rawEvidence }, { label: true }) : null;
+  const valid = !!verified;
+  const evidence = verified?.evidence ?? rawEvidence;
+  return { document_id: doc?.id ?? UNKNOWN_SOURCE_ID, page: verified ? verified.page : doc?.file_type === 'pdf' && page !== null && doc.page_count !== null && page <= doc.page_count ? page : null, af_code: valid && typeof s['af_code'] === 'string' ? s['af_code'].slice(0, 80) : null, evidence: evidence || SOURCE_WARNING, ...(valid ? {} : { flag: SOURCE_WARNING }) };
 }
 function recoverTenderInsights(raw: unknown, documents: InsightDocument[]): TenderInsights {
   const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};

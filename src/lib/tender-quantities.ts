@@ -4,6 +4,8 @@ import type { InsightDocument } from './tender-insights';
 import { objectSelectionEvidence, resolveObjectCount } from './tender-object-counts';
 import { uniqueQuantityAssumptions } from './tender-quantity-display';
 import { normalizeRoomTotalFactors } from './tender-quantity-scope';
+import { verifyTenderSource } from './tender-source-verification';
+import { withoutNegatedTerms } from './tender-negation';
 
 const sourceSchema = z.object({ document_id: z.string().uuid(), page: z.number().int().positive().nullable(), evidence: z.string().trim().min(1).max(1500) }).strict();
 const selectionSchema = z.object({ sheet: z.string().min(1).max(240), range: z.string().max(40), operation: z.enum(['Antal', 'Summa','Unika','Unika trapphusplan','Avrunda upp per rad','Rum per rad']), equals: z.string().max(500).nullable(), divisor:z.number().positive().max(10000).nullable().optional(), room:z.enum(['Vardagsrum','Sovrum','Hall','Kök']).nullable().optional(), room_count_range:z.string().max(40).nullable().optional(), address_range:z.string().max(40).nullable().optional() }).strict();
@@ -25,11 +27,12 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   for (const i of raw.items) if (!i || !Array.isArray(i.terms) || i.terms.length > 200 || i.terms.some((t: { factors?: unknown }) => !Array.isArray(t.factors) || t.factors.length > 4)) throw new Error('Ogiltig mängdberäkning.');
   const rules = tenderQuantityRulesSchema.parse(raw);
   const recipes: RoomRecipes = rawRecipes ? roomRecipeSchema.parse(rawRecipes) : exampleRoomRecipes;
+  // Shared PDF-page / spreadsheet sheet-row check. A spreadsheet has no print page, so a model-supplied page is
+  // dropped rather than demoting a verified object-list count (and every post multiplied by it) to Låg.
   function verified(source: Source) {
-    const doc = documents.find(d => d.id === source.document_id);
-    if (!doc) return false;
-    if (doc.file_type === 'pdf' ? source.page === null || doc.page_count === null || source.page > doc.page_count : source.page !== null) return false;
-    return !(doc.text && !doc.text.replace(/\s+/g, ' ').includes(source.evidence.replace(/\s+/g, ' ')));
+    const checked = verifyTenderSource(documents, source);
+    if (checked) source.page = checked.page;
+    return !!checked;
   }
   // Flag, don't fail: a figure without a verifiable source becomes an assumption (Låg) marked for checking.
   const flag = (o: z.infer<typeof operandSchema>) => { o.basis = 'Antagande'; o.list_selection = null; if (!o.label.includes(UNSOURCED)) o.label = `${o.label} (${UNSOURCED})`; if (o.source && !verified(o.source)) o.source = null; };
@@ -51,7 +54,8 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   // editable recipe, not an invented bench length, while retaining the requirement and object-list source.
   const kitchenCount = rules.operands.find(o => o.basis === 'Lista' && o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')
     ?? rules.operands.find(o => o.basis !== 'Antagande' && /lägenhet/i.test(o.label) && (!o.list_selection || o.list_selection.operation === 'Antal' && (o.list_selection.equals === null || /lägenhet/i.test(o.list_selection.equals))));
-  const kitchenSocket = (s: string) => /kök|bänk|hörnbox/i.test(s) && /uttag|hörnbox/i.test(s) && !/lamputtag|takuttag|belysningsuttag|diskmaskin|kyl|frys|ugn|spiskåpa|spishäll|perilex/i.test(s);
+  // Negated mentions ("exkl. diskmaskin") describe what a post leaves out, not what it is.
+  const kitchenSocket = (raw: string) => { const s = withoutNegatedTerms(raw); return /kök|bänk|hörnbox/i.test(s) && /uttag|hörnbox/i.test(s) && !/lamputtag|takuttag|belysningsuttag|diskmaskin|kyl|frys|ugn|spiskåpa|spishäll|perilex/i.test(s); };
   const standardRoom = (o: z.infer<typeof operandSchema>) => o.basis === 'Antagande' && o.value === '1' && /(?:kök|badrum|vardagsrum|hall)/i.test(o.label) && /per lägenhet/i.test(o.label) && !o.label.includes(UNSOURCED);
   const missingBench = (s: string) => /bänk|1000\s*mm|hörnbox/i.test(s) && /saknas|framgår ej|utan|kan ej|okänd|saknad/i.test(s);
   if (kitchenCount && Number(kitchenCount.value) > 0) {

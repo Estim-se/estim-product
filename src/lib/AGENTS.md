@@ -13,3 +13,4 @@
 - Recalculate quantities and costs through a company-authorized private job scheduler using the existing analysis run; its two-step plan leaves classifications and insights untouched.
 - Cache physical PDF-page chunks and Office cell text by company/file hash/reading version, and cache step results by source/model/context/settings fingerprints; identical reruns reuse outputs while explicit rereading invalidates caches.
 - Keep the electrical coverage audit in a browser-safe pure helper shared by the tender page, PDF and Excel; proposals and unresolved counts cannot imply priced coverage.
+- Verify every Anbud source through `tender-source-verification.ts`: PDF by physical page, spreadsheets by file/sheet/row (model page dropped, location recorded); keyword matching of post names strips negated phrases via `tender-negation.ts` so exclusions never decide a post's meaning.
