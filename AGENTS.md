@@ -75,7 +75,7 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Bundle Anbud PDF, unchanged formula workbook and source-backed questions in a browser ZIP prepared before download; company logos use private company-scoped storage and authenticated branding reads, never cross-company or demo identity.
 
 - Keep tender room recipes and per-apartment quantity arithmetic in browser-safe pure helpers, and rerun quantities/calculation through the existing private job pipeline to preserve completed contract-analysis results.
-- Price explicitly supported tender estimates provisionally while keeping their low certainty and assumptions; unresolved measurements still require manual input, so known object counts are not confused with missing quantities.
+- Every Låg tender row (estimates included) stays outside the total until its quantity is confirmed; a post whose every figure is documented is not an estimate. Sanity bounds (0–6 bedrooms per apartment, at most 20 pieces per apartment for recipe/per-apartment posts) flag violations as Låg instead of summing them.
 - Merge tender risks by issue while retaining all citations; index-linked questions enforce clarification coverage, and a private risk-only job preserves the existing analysis run and cost data.
 - Persist low-quantity confirmation on calculation bindings and mirror exclusion gates in editable Excel formulas; certainty remains unchanged after confirmation.
 - Keep Anbud file/result caches company-scoped and versioned; only approved catalog types enter totals, with unmatched proposals and shared scope-audit output preventing silent omissions.
