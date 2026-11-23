@@ -24,7 +24,7 @@ export function normalizeRoomTotalFactors(rules:TenderQuantityRules){
 
 // Counts of objects or rooms ("Antal lägenheter", "Kök per lägenhet", "Sovrum totalt") are operands, not cost rows.
 // A post is an intermediate only when it names objects/rooms and no work or equipment at all.
-const OBJECT_WORDS = /lägenhet|lgh|lokal|kök|vardagsrum|hall|sovrum|\brum\b|rok\b|trapphus|våningsplan|\bplan\b|badrum|förråd|källare|fastighet|byggnad|huskropp|objekt|bostad|adress/i;
+const OBJECT_WORDS = /lägenhet|lgh|lokal|kök|vardagsrum|hall|sovrum|halvrum|\brum\b|rok\b|trapphus|våningsplan|\bplan\b|badrum|förråd|källare|fastighet|byggnad|huskropp|objekt|bostad|adress/i;
 const WORK_WORDS = /uttag|armatur|belysning|central|rivning|riv\b|ledning|kabel|brytare|dimmer|givare|detektor|sensor|spot|lamp|anslutning|mätare|varnare|ladd|installation|montage|apparat|matning|stigar|data|tele|golvvärme|handdukstork|fläkt|spis|perilex|kanalisation|dosa|säkring|potential|jord|nödljus|skylt|porttelefon|passage|larm|tavla|elsystem|el-|\bel\b/i;
 export function isQuantityHelperPost(post: string) {
  return OBJECT_WORDS.test(post) && !WORK_WORDS.test(post);

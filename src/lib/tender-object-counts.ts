@@ -1,6 +1,6 @@
-import { roomsFromArea, exampleRoomRecipes, type RoomRecipes } from './tender-room-recipes';
+import { roomsFromArea, exampleRoomRecipes, type RecipeRoom, type RoomRecipes } from './tender-room-recipes';
 // Resolve model-selected spreadsheet ranges against the original extracted cells.
-export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Unika trapphusplan' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: 'Vardagsrum'|'Sovrum'|'Hall'|'Kök'|null|undefined; room_count_range?: string | null | undefined; address_range?: string | null | undefined };
+export type ObjectSelection = { sheet: string; range: string; operation: 'Antal' | 'Summa' | 'Unika' | 'Unika trapphusplan' | 'Avrunda upp per rad' | 'Rum per rad'; equals: string | null; divisor?: number | null | undefined; room?: RecipeRoom|null|undefined; room_count_range?: string | null | undefined; address_range?: string | null | undefined };
 export function decodeCellText(value: string) { return value.replace(/&#(x[0-9a-f]+|\d+);/gi, (_, n: string) => String.fromCodePoint(n.startsWith('x') ? parseInt(n.slice(1),16) : Number(n))).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"); }
 export function objectSelectionEvidence(text: string, selection: ObjectSelection): string {
   const range = selection.range.match(/^([A-Z]+)(\d+):[A-Z]+(\d+)$/);
@@ -78,9 +78,10 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
       // A column headed "sovrum" already states bedrooms; any other room column states rooms excluding the kitchen.
       if(roomMatch && selection.room==='Sovrum' && bedroomColumn(cells,roomMatch[1]!,start) && /^\d+(?:[.,]0+)?$/.test(countCell.trim())){ result += BigInt(plausibleBedrooms(Number(countCell.trim().replace(',','.')), row))*1_000_000n; continue; }
       const rok=roomCountFromLabel(countCell) ?? roomCountFromLabel(value, false) ?? roomsFromArea(Number(value.replace(',','.')),recipes);
-      // "3 rok" is three rooms and a kitchen: one living room, so rok-1 bedrooms. A half room ("3.5 rum") is not a
-      // bedroom: 3.5 rum = vardagsrum + 2 sovrum + halvrum. Implausible counts (e.g. an object number) are rejected.
-      result += BigInt(selection.room==='Sovrum'?plausibleBedrooms(Math.max(0,Math.floor(rok)-1), row):1)*1_000_000n;
+      // "3 rok" is three rooms and a kitchen: one living room, so rok-1 bedrooms. A half room is counted separately:
+      // 3.5 rum = vardagsrum + 2 sovrum + 1 halvrum. Implausible counts (e.g. an object number) are rejected.
+      const bedrooms=plausibleBedrooms(Math.max(0,Math.floor(rok)-1), row);
+      result += BigInt(selection.room==='Sovrum'?bedrooms:selection.room==='Halvrum'?(rok%1===0?0:1):1)*1_000_000n;
     }
     else if (selection.operation === 'Avrunda upp per rad') {
       const area=Number(value.replace(',','.')), divisor=selection.divisor;

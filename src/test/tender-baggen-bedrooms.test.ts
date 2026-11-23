@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { ImplausibleObjectCount, resolveObjectCount, roomCountFromLabel } from '@/lib/tender-object-counts';
 import { calculateTenderQuantities, type TenderQuantityRules } from '@/lib/tender-quantities';
 import { calculateTenderCost, type CalculationSettings } from '@/lib/tender-calculation';
+import { exampleRoomRecipes, roomRecipeSchema } from '@/lib/tender-room-recipes';
 
 // Synthetic object list with the same structure as a large residential tender: object number, type text
 // ("4 rum o kök", "3.5 rum" …), area, stairwell address and floor, plus premises (lokaler) in the same list.
 const xlsx = '00000000-0000-4000-8000-000000000001', pdf = '00000000-0000-4000-8000-000000000002';
-const types = [...Array(30).fill('4 rum o kök'), ...Array(10).fill('3.5 rum'), ...Array(20).fill('3 rok'), ...Array(19).fill('2 rum och kök'), ...Array(3).fill('1 rok')] as string[];
+// 82 apartments: 25 × 3 + 10 × 2 + 20 × 2 + 24 × 1 = 159 bedrooms and 10 half rooms; together 169.
+const types = [...Array(25).fill('4 rum o kök'), ...Array(10).fill('3.5 rum'), ...Array(20).fill('3 rok'), ...Array(24).fill('2 rum och kök'), ...Array(3).fill('1 rok')] as string[];
 const area: Record<string, number> = { '4 rum o kök': 98, '3.5 rum': 84, '3 rok': 74, '2 rum och kök': 58, '1 rok': 36 };
 const lines = ['Blad: Objektlista', 'A1: Objektnr\tB1: Typ\tC1: Area\tD1: Adress\tE1: Plan'];
 let row = 2;
 types.forEach((type, i) => {
   lines.push(`A${row}: ${101 + i * 2}\tB${row}: ${type}\tC${row}: ${area[type]}\tD${row}: Storgatan ${i % 4 + 1}\tE${row}: ${Math.floor(i / 4) % 7 + 1}`); row++;
-  if (i % 30 === 29) { lines.push(`A${row}: L${row}\tB${row}: Lokal\tC${row}: 120\tD${row}: Storgatan 1\tE${row}: 1`); row++; }
+  if (i % 25 === 24) { lines.push(`A${row}: L${row}\tB${row}: Lokal\tC${row}: 120\tD${row}: Storgatan 1\tE${row}: 1`); row++; }
 });
 const last = row - 1, list = lines.join('\n');
 const range = (col: string) => `${col}2:${col}${last}`;
@@ -24,9 +26,21 @@ describe('bedrooms from type texts', () => {
   it('parses whole and half rooms', () => {
     expect(['4 rum o kök', '3.5 rum', '3,5 rok', '3½ rum', '2 rum och kök', '1 rok'].map(l => roomCountFromLabel(l))).toEqual([4, 3.5, 3.5, 3.5, 2, 1]);
   });
-  it('gives 169 bedrooms for 82 apartments and skips premises (3.5 rum = 2 sovrum + halvrum)', () => {
-    expect(resolveObjectCount(list, { sheet: 'Objektlista', range: range('C'), operation: 'Rum per rad', equals: null, room: 'Sovrum', room_count_range: range('B') })).toBe('169');
-    expect(resolveObjectCount(list, { sheet: 'Objektlista', range: range('C'), operation: 'Rum per rad', equals: null, room: 'Kök', room_count_range: range('B') })).toBe('82');
+  it('splits 169 rooms into 159 bedrooms and 10 half rooms for 82 apartments and skips 3 premises (3.5 rum = 2 sovrum + 1 halvrum)', () => {
+    const count = (room: 'Sovrum' | 'Halvrum' | 'Kök') => resolveObjectCount(list, { sheet: 'Objektlista', range: range('C'), operation: 'Rum per rad', equals: null, room, room_count_range: range('B') });
+    expect(list.match(/: Lokal\t/g)).toHaveLength(3);
+    expect(count('Sovrum')).toBe('159');
+    expect(count('Halvrum')).toBe('10');
+    expect(Number(count('Sovrum')) + Number(count('Halvrum'))).toBe(169);
+    expect(count('Kök')).toBe('82');
+  });
+  it('gives half rooms the editable Halvrum recipe (3 sockets, 1 lamp) marked Enligt typrecept', () => {
+    const rules: TenderQuantityRules = { operands: [listOperand('half', 'Halvrum per rad', { range: range('C'), operation: 'Rum per rad', room: 'Halvrum', room_count_range: range('B') }), { id: 'rec', label: 'Halvrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Halvrum', equipment: 'sockets' } }, { id: 'lamp', label: 'Halvrum', value: '0', basis: 'Antagande', source: null, recipe: { room: 'Halvrum', equipment: 'lamps' } }],
+      items: [{ post: 'Dubbla vägguttag halvrum', unit: 'st', rule: 'Per halvrum', terms: [{ factors: ['half', 'rec'] }], assumption: null }, { post: 'Lamputtag halvrum', unit: 'st', rule: 'Per halvrum', terms: [{ factors: ['half', 'lamp'] }], assumption: null }], assumptions: [] };
+    const q = calculateTenderQuantities(rules, documents, undefined, true);
+    expect(q.items.find(i => i.post === 'Dubbla vägguttag halvrum')).toMatchObject({ quantity: '30', certainty: 'Medel' });
+    expect(q.items.find(i => i.post === 'Lamputtag halvrum')).toMatchObject({ quantity: '10' });
+    expect(q.items.every(i => i.rule.startsWith('Enligt typrecept.'))).toBe(true);
   });
   it('rejects the object-number column as a room count instead of summing it', () => {
     expect(() => resolveObjectCount(list, { sheet: 'Objektlista', range: range('C'), operation: 'Rum per rad', equals: null, room: 'Sovrum', room_count_range: range('A') })).toThrow(ImplausibleObjectCount);
@@ -64,4 +78,13 @@ it('a post "per trapphus" counts 4 stairwells, not 28 stairwell × floor combina
   const q = calculateTenderQuantities(rules, documents, undefined, true);
   expect(q.rules.operands.find(o => o.id === 'plans')?.value).toBe('28');
   expect(q.items[0]).toMatchObject({ post: 'Städuttag per trapphus', quantity: '4', certainty: 'Hög' });
+});
+
+it('loads saved four-room recipes by adding an editable Halvrum line with example values', () => {
+  const saved = { rooms: [{ room: 'Vardagsrum', sockets: 5, lamps: 1 }, { room: 'Sovrum', sockets: 4, lamps: 2 }, { room: 'Hall', sockets: 1, lamps: 1 }, { room: 'Kök', sockets: 3, lamps: 0 }], area_bands: exampleRoomRecipes.area_bands };
+  const parsed = roomRecipeSchema.parse(saved);
+  expect(parsed.rooms.map(r => r.room)).toEqual(['Vardagsrum', 'Sovrum', 'Halvrum', 'Hall', 'Kök']);
+  expect(parsed.rooms.find(r => r.room === 'Halvrum')).toEqual({ room: 'Halvrum', sockets: 3, lamps: 1, example: true });
+  expect(roomRecipeSchema.parse(parsed)).toEqual(parsed);
+  expect(() => roomRecipeSchema.parse({ ...saved, rooms: [...parsed.rooms, { room: 'Halvrum', sockets: 1, lamps: 1 }] })).toThrow();
 });
