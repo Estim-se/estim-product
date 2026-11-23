@@ -15,6 +15,8 @@ const strings = (value:unknown):string[] => Array.isArray(value) ? value.filter(
 const rows = (value:unknown):string[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>row.map(String)) : [];
 const asks = (value:unknown):(string|number)[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>[String(row[0]??''),row[1]?1:0]) : [];
 export function emptyRealState(): EstimState { const s=initial(); return {...s, threads:[],drafts:{},sel:'',stats:{ai:0,sek:0},settings:[true,true,false,true,true,true,true]}; }
+const USER_MESSAGES=new Set(['Vänta tills AI:n är klar.','Jobbet kunde inte markeras som vunnet.','Jobbet kunde inte återställas.','Meddelandet kunde inte flyttas.','Kunderna kunde inte slås ihop.','Välj två olika kunder.']);
+
 export function workspaceState(data:WorkspaceData, previous:EstimState):EstimState {
   const drafts:Record<string,Draft>={};
   data.drafts.forEach(d=>{drafts[d.thread_id]={text:d.text,v:d.variant==='kort'||d.variant==='formell'?d.variant:'std',ch:d.channel,att:strings(d.attachments),edited:d.edited,warn:strings(d.warnings),review:d.needs_review&&strings(d.warnings).length>0};});
@@ -22,8 +24,8 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
     const c=data.customers.find(c=>c.id===t.customer_id);
     const q=data.quotes.find(q=>q.thread_id===t.id);
     const outgoing=data.messages.filter(m=>m.thread_id===t.id&&(m.from==='vv'||m.from==='ai')).at(-1);
-    const msgs=data.messages.filter(m=>m.thread_id===t.id&&(m.delivery_status==='sent'||data.documentDeliveries?.some(d=>d.message_id===m.id))).map(m=>({from:m.from,auto:m.from==='ai',ch:m.channel??t.channel,time:time(m.sent_at),text:m.delivery_status==='sent'?m.text:'Dokument skickat',att:strings(m.attachments),documents:data.documentDeliveries?.filter(d=>d.message_id===m.id).map(d=>({id:d.id,name:d.name}))??[],quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
-    return {deliveryError:outgoing?.channel==='wa'&&outgoing.delivery_status==='not_sent'?outgoing.delivery_error??'WhatsApp-svaret kunde inte skickas. Försök igen.':undefined,waSent:outgoing?.channel==='wa'&&outgoing.delivery_status==='sent'&&Boolean(outgoing.provider_message_id),id:t.id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.channel==='wa'?whatsappAutoReply(data.company?.whatsapp_auto_reply??false,t.whatsapp_auto_override):t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
+    const msgs=data.messages.filter(m=>m.thread_id===t.id&&(m.delivery_status==='sent'||data.documentDeliveries?.some(d=>d.message_id===m.id))).map(m=>({id:m.id,from:m.from,auto:m.from==='ai',ch:m.channel??t.channel,time:time(m.sent_at),text:m.delivery_status==='sent'?m.text:'Dokument skickat',att:strings(m.attachments),documents:data.documentDeliveries?.filter(d=>d.message_id===m.id).map(d=>({id:d.id,name:d.name}))??[],quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
+    return {deliveryError:outgoing?.channel==='wa'&&outgoing.delivery_status==='not_sent'?outgoing.delivery_error??'WhatsApp-svaret kunde inte skickas. Försök igen.':undefined,waSent:outgoing?.channel==='wa'&&outgoing.delivery_status==='sent'&&Boolean(outgoing.provider_message_id),id:t.id,customerId:t.customer_id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.channel==='wa'?whatsappAutoReply(data.company?.whatsapp_auto_reply??false,t.whatsapp_auto_override):t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
 }
@@ -58,13 +60,16 @@ export function createRealStore() {
   };
   let epoch=0;
   const dirtyQuotes=new Set<string>();
+  // Only known user-facing server messages are shown; anything else gets the generic text.
+  const serverMessage=(error:unknown)=>error instanceof Error&&USER_MESSAGES.has(error.message)?error.message:'Ändringen kunde inte sparas. Försök igen.';
   const update=(fn:(s:EstimState)=>void)=>{state=structuredClone(state);fn(state);listeners.forEach(l=>l());};
   const toast=(text:string)=>{clearTimeout(toastTimer);update(s=>{s.toast=text;});toastTimer=setTimeout(()=>update(s=>{s.toast='';}),3200);};
-  const persist=(input:RealMutation,refresh=false)=>{
+  // ownErrorToast: the caller shows its own (more specific) failure message.
+  const persist=(input:RealMutation,refresh=false,ownErrorToast=false)=>{
     const write=mutate,read=reload;
     const own=epoch;
-    const task=queue.then(async()=>{if(own!==epoch)return;if(!write)throw new Error('Ingen anslutning.');await write(input);if(own===epoch&&refresh&&read)await read();});
-    queue=task.then(()=>{writeError=false;}).catch(()=>{writeError=true;toast('Ändringen kunde inte sparas. Försök igen.');});return task;
+    const task=queue.then(async():Promise<unknown>=>{if(own!==epoch)return undefined;if(!write)throw new Error('Ingen anslutning.');const out=await write(input);if(own===epoch&&refresh&&read)await read();return out;});
+    queue=task.then(()=>{writeError=false;}).catch(()=>{writeError=true;if(!ownErrorToast)toast('Ändringen kunde inte sparas. Försök igen.');});return task;
   };
   const draftSave=(id:string)=>{const draft=state.drafts[id];if(draft)void persist({kind:'draft',id,draft:{...draft,ch:draft.ch==='sms'?'sms':draft.ch==='wa'?'wa':'email'}}).catch(()=>{});};
   // Quote fields are visit-local until the explicit drawer save succeeds.
@@ -95,7 +100,30 @@ export function createRealStore() {
     delL(index:number){changeQuote(q=>{q.lines.splice(index,1);});},
     addL(opt=false){changeQuote(q=>{q.lines.push({t:opt?'Nytt tillval':'Ny rad',typ:'arbete',q:1,u:'h',p:data?.company?.hourly_rate_ex_vat??0,rot:true,...(opt?{opt:true}:{})});});},
     setOwners(owners:number){changeQuote(q=>{q.owners=owners;});},setPriceForm(prisform:string){changeQuote(q=>{q.prisform=prisform;});},
-    openCustomer(_id:string,_preview?:boolean){toast('Kundens godkännande ansluts i ett senare steg.');},closeCustomer(){},toggleAddOn(id:string){dirtyQuotes.add(id);update(s=>{const q=s.threads.find(t=>t.id===id)?.q;if(q)q.addOn=!q.addOn;});},approveCustomer(){},submitCustomer(){},sendBrief(_id:string){toast('Överlämning är inte ansluten ännu.');},
+    openCustomer(_id:string,_preview?:boolean){toast('Kundens godkännande ansluts i ett senare steg.');},closeCustomer(){},
+    markWon(id:string){
+      const t=state.threads.find(t=>t.id===id);
+      if(!t)return;
+      const won=t.status!=='vunnen';
+      if(won&&t.status==='analys'){toast('Vänta tills AI:n är klar.');return;}
+      // The server decides the resulting status; the reload shows it only after a confirmed write.
+      void persist({kind:'won',id,won},true,true).then(()=>{toast(won?'Jobbet markerat som vunnet.':'Jobbet är återställt.');}).catch(error=>{toast(serverMessage(error));});
+    },
+    // Moves a customer message and everything after it to a new case for the same customer.
+    splitThread(id:string,messageId:string){
+      const t=state.threads.find(t=>t.id===id);
+      if(!t)return;
+      if(t.status==='analys'){toast('Vänta tills AI:n är klar.');return;}
+      void persist({kind:'split',id,message:messageId},true,true).then(result=>{
+        const next=result&&typeof result==='object'&&'id' in result&&typeof result.id==='string'?result.id:'';
+        if(next)actions.select(next);
+        toast('Meddelandet är flyttat till ett nytt ärende.');
+      }).catch(error=>{toast(serverMessage(error));});
+    },
+    // Joins two customer records; each conversation keeps its own channel.
+    mergeCustomers(keep:string,drop:string){
+      void persist({kind:'merge',keep,drop},true,true).then(()=>{toast('Kunderna är sammanslagna.');}).catch(error=>{toast(serverMessage(error));});
+    },toggleAddOn(id:string){dirtyQuotes.add(id);update(s=>{const q=s.threads.find(t=>t.id===id)?.q;if(q)q.addOn=!q.addOn;});},approveCustomer(){},submitCustomer(){},sendBrief(_id:string){toast('Överlämning är inte ansluten ännu.');},
     send(id:string,_options?:{silent?:boolean}){const d=state.drafts[id];if(!d?.text.trim()){toast('Skriv ett svar först.');return;}if(d.busy)return;update(s=>{const draft=s.drafts[id];if(draft)draft.busy=true;});void (async()=>{try{await queue;if(!delivery)throw new Error('Ingen anslutning.');const result=await delivery(id);await reload?.();if(result.sent){toast(d.ch==='wa'?'Svar skickat via WhatsApp.':'Svaret är sparat som skickat.');if(state.m.scr==='thread'&&state.m.id===id)actions.mobileGo('done',id);}else{const error=result.error??'WhatsApp-svaret kunde inte skickas. Försök igen.';update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.deliveryError=error;});toast(error);}}catch(error){const message=error instanceof Error?error.message:'Svaret kunde inte skickas.';if(d.ch==='wa')update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.deliveryError=message;});toast(message);}finally{update(s=>{const draft=s.drafts[id];if(draft)draft.busy=false;});}})();},
     simNew(){toast('Använd Ny förfrågan.');},
     openMobile(path?:string){update(s=>{if(path==='/'||path==='/offerter'||path==='/kanaler'||path==='/installningar')s.desktopPath=path as DesktopPath;s.view='mob';s.m={scr:'lock',id:null,editing:false};});},

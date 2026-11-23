@@ -30,4 +30,19 @@ describe('contained conversation scrolling', () => {
     await waitFor(() => expect(region.scrollTop).toBe(1400));
     expect(view.queryByRole('button')).toBeNull();
   });
+  it('offers a jump to the end only after scrolling well above it', () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    const thread = initialThreads()[0];
+    if (!thread) throw new Error('Missing demo thread');
+    const view = render(<Conversation thread={thread} contained />);
+    const region = view.getByRole('region', { name: 'Meddelanden' });
+    Object.defineProperties(region, { clientHeight: { value: 400 }, scrollHeight: { value: 1400 } });
+    region.scrollTop = 900;
+    fireEvent.scroll(region);
+    expect(view.queryByRole('button', { name: 'Till slutet av konversationen' })).toBeNull();
+    region.scrollTop = 200;
+    fireEvent.scroll(region);
+    fireEvent.click(view.getByRole('button', { name: 'Till slutet av konversationen' }));
+    expect(region.scrollTop).toBe(1400);
+  });
 });

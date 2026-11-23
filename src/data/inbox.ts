@@ -1,6 +1,7 @@
 import demo from './demo.json';
 
 export interface Message {
+  id?: string; // stored message id (real mode only)
   from: string;
   ch?: string;
   time: string;
@@ -18,7 +19,7 @@ export interface Thread {
   msgs: Message[]; asks: (string | number)[][]; facts: string[][];
   why: string; att: string[]; events: string[][];
   q: { nr: string; owners: number; addOn: boolean; prisform: string; lines: { t: string; typ: string; q: number; u: string; p: number; rot: boolean; opt?: boolean }[] } | null;
-  opened?: boolean; briefSent?: boolean; week?: string; stage2?: boolean; lastSent?: string; deliveryError?: string | undefined; waSent?: boolean;
+  customerId?: string; opened?: boolean; briefSent?: boolean; week?: string; stage2?: boolean; lastSent?: string; deliveryError?: string | undefined; waSent?: boolean;
 }
 export type InboxFilter = 'alla' | 'mig' | 'ai' | 'vunna';
 

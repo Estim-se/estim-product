@@ -75,6 +75,44 @@ export function createEstimStore() {
     setPriceForm(prisform: Quote['prisform']) { const id = state.drawer; if (!id) return; update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.prisform = prisform; }); actions.regen(id); },
     openCustomer(id: string, preview?: boolean) { customerVisit++; update(s => { s.cust = { step: 'view' }; s.modal = { type: 'cust', id, ...(preview === undefined ? {} : { preview }) }; }); },
     closeCustomer() { customerVisit++; update(s => { s.modal = null; }); },
+    markWon(id: string) {
+      update(s => {
+        const t = s.threads.find(t => t.id === id);
+        if (!t) return;
+        const nextStatus = t.status === 'vunnen' ? 'skickad' : 'vunnen';
+        t.status = nextStatus;
+        if (nextStatus === 'vunnen') {
+          t.week = t.week || 'v. 50';
+          ev(t, 'Jobbet markerat som vunnet');
+          notify(s, `${t.name.split(' ')[0]}: Jobbet markerat som vunnet`);
+        } else {
+          ev(t, 'Jobbet återställt till skickad');
+        }
+      });
+      toast('Status uppdaterad');
+    },
+    // Demo counterpart of the real split: messages have no ids here, so the key is "i:<index>".
+    splitThread(id: string, messageKey: string) {
+      const index = Number(messageKey.replace(/^i:/, ''));
+      const source = state.threads.find(t => t.id === id);
+      if (!source || !Number.isInteger(index) || index < 1 || source.msgs[index]?.from !== 'kund') return;
+      const nextId = `${id}-${Date.now().toString(36)}`;
+      update(s => {
+        const at = s.threads.findIndex(t => t.id === id), old = s.threads[at];
+        if (!old) return;
+        const moved = old.msgs.splice(index);
+        old.status = old.msgs.at(-1)?.from === 'kund' ? 'svar' : 'skickad';
+        ev(old, 'Meddelande flyttat till nytt ärende');
+        const fresh: Thread = { ...structuredClone(old), id: nextId, job: 'Nytt ärende', msgs: moved, status: 'svar', read: true, q: null,
+          asks: [], facts: [], why: '', att: [], events: [[now(), 'Utbrutet från tidigare ärende']] };
+        s.threads.splice(at + 1, 0, fresh);
+        delete s.drafts[id];
+        s.drafts[nextId] = { text: '', v: 'std', ch: fresh.ch === 'form' ? 'email' : fresh.ch, att: [], edited: false };
+        s.sel = nextId;
+      });
+      toast('Meddelandet är flyttat till ett nytt ärende.');
+    },
+    mergeCustomers(_keep: string, _drop: string) { toast('Sammanslagning av kunder finns i det riktiga läget.'); },
     toggleAddOn(id: string) { update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.addOn = !q.addOn; }); actions.regen(id); },
     approveCustomer() {
       const modal = state.modal; if (!modal || state.cust.step !== 'view') return;
