@@ -73,6 +73,21 @@ export const mutateWorkspace = createServerFn({ method: 'POST' }).middleware([re
     case 'approve': result=await db.rpc('estim_approve',{tid:data.id}); break;
     case 'draft': result=await db.from('drafts').update({text:data.draft.text,variant:data.draft.v,channel:data.draft.ch,attachments:data.draft.att,edited:data.draft.edited}).eq('thread_id',data.id).eq('company_id',cid); break;
     case 'thread': result=await db.from('threads').update({...(data.read !== undefined ? {read:data.read} : {}),...(data.autopilot !== undefined ? {autopilot:data.autopilot,whatsapp_auto_override:data.autopilot} : {}),...(data.status ? {status:data.status} : {})}).eq('id',data.id).eq('company_id',cid); break;
+    case 'won': {
+      // Manual win marking until customer approval is connected. Each write is conditioned on the
+      // current status and must return exactly one row, so no-op or denied writes cannot look saved.
+      // Unmarking restores a status derived from the stored conversation, never a client-chosen one.
+      let status: 'vunnen' | 'svar' | 'skickad' = 'vunnen';
+      if (!data.won) {
+        const last = await db.from('messages').select('from').eq('thread_id', data.id).eq('company_id', cid).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (last.error) throw new Error('Ändringen kunde inte sparas. Försök igen.');
+        status = last.data?.from === 'kund' ? 'svar' : 'skickad';
+      }
+      const base = db.from('threads').update({ status }).eq('id', data.id).eq('company_id', cid);
+      const won = await (data.won ? base.not('status', 'in', '(vunnen,analys)') : base.eq('status', 'vunnen')).select('id');
+      if (won.error || won.data?.length !== 1) throw new Error(data.won ? 'Jobbet kunde inte markeras som vunnet.' : 'Jobbet kunde inte återställas.');
+      return { id: data.id };
+    }
     case 'company': result=await db.from('companies').update({name:data.company.name,signature:data.company.signature,hourly_rate_ex_vat:data.company.hourly_rate_ex_vat,travel_fee:data.company.travel_fee,...(data.company.settings?{settings:data.company.settings}:{}),reply_to_email:data.company.reply_to_email || null}).eq('id',cid); break;
     case 'moment': {
       const {id,...moment}=data.moment;

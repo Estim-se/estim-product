@@ -75,6 +75,22 @@ export function createEstimStore() {
     setPriceForm(prisform: Quote['prisform']) { const id = state.drawer; if (!id) return; update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.prisform = prisform; }); actions.regen(id); },
     openCustomer(id: string, preview?: boolean) { customerVisit++; update(s => { s.cust = { step: 'view' }; s.modal = { type: 'cust', id, ...(preview === undefined ? {} : { preview }) }; }); },
     closeCustomer() { customerVisit++; update(s => { s.modal = null; }); },
+    markWon(id: string) {
+      update(s => {
+        const t = s.threads.find(t => t.id === id);
+        if (!t) return;
+        const nextStatus = t.status === 'vunnen' ? 'skickad' : 'vunnen';
+        t.status = nextStatus;
+        if (nextStatus === 'vunnen') {
+          t.week = t.week || 'v. 50';
+          ev(t, 'Jobbet markerat som vunnet');
+          notify(s, `${t.name.split(' ')[0]}: Jobbet markerat som vunnet`);
+        } else {
+          ev(t, 'Jobbet återställt till skickad');
+        }
+      });
+      toast('Status uppdaterad');
+    },
     toggleAddOn(id: string) { update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.addOn = !q.addOn; }); actions.regen(id); },
     approveCustomer() {
       const modal = state.modal; if (!modal || state.cust.step !== 'view') return;

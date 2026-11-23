@@ -36,4 +36,24 @@ describe('R1 real-mode rules',()=>{
   await store.saveQuote();expect(write).toHaveBeenCalledTimes(1);const input=write.mock.calls[0]?.[0];expect(input).toMatchObject({kind:'quote',quote:{owners:2,prisform:'ungefar'}});if(input?.kind!=='quote')throw new Error('Missing quote write');expect(input.quote.lines[0]).toMatchObject({p:750,q:3,rot:false});
   await store.saveQuote();expect(write).toHaveBeenCalledTimes(1);
  });
+ it('marks wins through the server and shows the status only from the reloaded data',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null),reload=vi.fn(async()=>{});store.connect(write,reload);
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,status:'skickad'}];});
+  store.actions.markWon(t.id);await store.flush();
+  expect(write).toHaveBeenLastCalledWith({kind:'won',id:t.id,won:true});expect(reload).toHaveBeenCalledTimes(1);
+  expect(store.getSnapshot().threads[0]?.status).toBe('skickad');
+  store.actions.update(s=>{const thread=s.threads[0];if(thread)thread.status='vunnen';});
+  store.actions.markWon(t.id);await store.flush();
+  expect(write).toHaveBeenLastCalledWith({kind:'won',id:t.id,won:false});
+ });
+ it('never shows a win when the write fails or the AI is still working',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>{throw new Error('denied');});store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,status:'skickad'}];});
+  store.actions.markWon(t.id);await expect(store.flush()).rejects.toThrow();
+  expect(store.getSnapshot().threads[0]?.status).toBe('skickad');expect(store.getSnapshot().toast).toBe('Ändringen kunde inte sparas. Försök igen.');
+  store.actions.update(s=>{const thread=s.threads[0];if(thread)thread.status='analys';});write.mockClear();
+  store.actions.markWon(t.id);expect(write).not.toHaveBeenCalled();expect(store.getSnapshot().toast).toBe('Vänta tills AI:n är klar.');
+ });
 });

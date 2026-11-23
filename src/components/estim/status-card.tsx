@@ -10,6 +10,7 @@ export function StatusCard({ thread: t }: { thread: Thread }) {
   const workspace=useWorkspace();
   if(workspace.mode==='real'&&t.status==='analys')return <div className="statuscard"><div className="row"><span className="spin" /><div><b>AI läser och skriver…</b><div className="small muted">Inget skickas utan ditt godkännande</div></div></div></div>;
   if(workspace.mode==='real'&&t.deliveryError)return <div className="statuscard" role="alert"><b>{t.deliveryError}</b></div>;
+  if(workspace.mode==='real'&&t.status==='vunnen')return t.q ? <Brief thread={t} /> : <div className="statuscard"><div><b>Vunnet jobb</b><div className="small muted">Detta jobb är markerat som vunnet. Nya meddelanden från kunden startar en ny förfrågan.</div></div></div>;
   if(workspace.mode==='real'&&t.status==='skickad'&&t.waSent)return <div className="statuscard"><div><b>Svar skickat</b><div className="small muted">Svaret har skickats via WhatsApp.</div></div></div>;
   if(workspace.mode==='real')return <div className="statuscard"><div><b>{t.status==='skickad'?'Sparat som skickat':'Ingen aktivitet'}</b><div className="small muted">{t.status==='skickad'?'Svaret är sparat. Ingen leverans har gjorts.':'Inga automatiska svar är aktiverade.'}</div></div></div>;
   const first = t.name.split(' ')[0];
