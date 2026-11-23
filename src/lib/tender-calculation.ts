@@ -59,10 +59,12 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     // checking); Saknar mängd stays outside until a quantity is entered; a post without catalog type is Saknar pris.
     const quantityLevelOfRow = quantityLevel(i);
     const needsQuantity = quantityLevelOfRow === 'Saknar mängd';
-    const level: RowLevel = !t ? 'Saknar pris' : quantityLevelOfRow;
+    // A catalog type with neither time nor price (e.g. a grid owner's fee awaiting a quote) has no price yet either.
+    const unpriced = !t || hoursPerUnit === 0 && listPrice === 0;
+    const level: RowLevel = unpriced ? 'Saknar pris' : quantityLevelOfRow;
     const awaitingConfirmation = needsQuantity && (b?.quantity_confirmed === false || b?.quantity_confirmed !== true && b?.manual_quantity == null);
     const manualQuantity = b?.manual_quantity ?? null;
-    if (hoursPerUnit === null || listPrice === null || awaitingConfirmation) return { ...i, level, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
+    if (hoursPerUnit === null || listPrice === null || unpriced || awaitingConfirmation) return { ...i, level, needs_quantity: needsQuantity, awaiting_confirmation: awaitingConfirmation, type_id: b?.type_id ?? null, hours_per_unit: hoursPerUnit, list_price: listPrice, hours: null, labor: null, material: null, total: null };
     // A manually entered quantity replaces a missing or assumed quantity.
     const quantity = (needsQuantity || quantityLevelOfRow === 'Antagen') && manualQuantity !== null ? String(manualQuantity) : i.quantity;
     const qty = fixed(quantity), hours = rounded(qty * fixed(hoursPerUnit), S);
