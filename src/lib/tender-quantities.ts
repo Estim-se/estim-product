@@ -20,14 +20,27 @@ type Source = z.infer<typeof sourceSchema>;
 // in the total and marked), Saknar mängd (cannot be calculated — shown, outside the total until filled in).
 export const QUANTITY_LEVELS = ['Bekräftad', 'Räknad', 'Antagen', 'Saknar mängd'] as const;
 export type QuantityLevel = typeof QUANTITY_LEVELS[number];
-export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined };
+// Count basis of a post counted from the object model (unit × per unit), so the Excel export can link the quantity to
+// the per-apartment sheet; the object model itself is stored with the quantities for the same sheet.
+export const COUNT_BASIS_UNITS = ['lägenhet', 'kök', 'badrum', 'wc', 'vardagsrum', 'hall', 'sovrum', 'halvrum', 'sovrum_och_halvrum', 'lokal', 'lägenhet_och_lokal', 'per_area'] as const;
+const countBasisSchema = z.object({ unit: z.enum(COUNT_BASIS_UNITS), per_unit: z.number().nonnegative().max(1000), area_divisor: z.number().positive().max(1000).nullable() }).strict();
+export type CountBasis = z.infer<typeof countBasisSchema>;
+const text = (max: number) => z.string().max(max).nullable();
+export const storedObjectModelSchema = z.object({
+  document_id: z.string().uuid(), sheet: z.string().max(240), premises: z.number().int().min(0).max(100000),
+  apartments: z.array(z.object({ row: z.number().int().positive(), number: text(80), address: text(240), floor: text(80), label: z.string().max(240), rooms: z.number().nonnegative().max(50), area: z.number().positive().max(10000).nullable(),
+    bedrooms: z.number().int().min(0).max(50), half_rooms: z.number().int().min(0).max(1), kitchens: z.number().int().min(0).max(20), bathrooms: z.number().int().min(0).max(20), wc: z.number().int().min(0).max(20),
+    basis: z.enum(['type code', 'default', 'area rule']), code: text(40) }).strict()).max(5000),
+}).strict();
+export type StoredObjectModel = z.infer<typeof storedObjectModelSchema>;
+export type QuantityItem = { post: string; unit: 'st' | 'm' | 'lgh'; quantity: string; calculation: string; rule: string; sources: Source[]; certainty: 'Hög' | 'Medel' | 'Låg'; estimated_quantity?: boolean | undefined; level?: QuantityLevel | undefined; section?: number | undefined; count_basis?: CountBasis | undefined };
 // Results saved before levels existed: Hög = Bekräftad, Medel = Räknad, a Låg estimate = Antagen, other Låg = Saknar mängd.
 export function quantityLevel(item: Pick<QuantityItem, 'certainty' | 'estimated_quantity' | 'level'>): QuantityLevel {
   return item.level ?? (item.certainty === 'Hög' ? 'Bekräftad' : item.certainty === 'Medel' ? 'Räknad' : item.estimated_quantity ? 'Antagen' : 'Saknar mängd');
 }
-export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[] };
-const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional() }).strict();
-export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()) }).strict();
+export type TenderQuantities = { rules: TenderQuantityRules; items: QuantityItem[]; assumptions: { description: string; sources: Source[]; item: QuantityItem | null; related_items?: QuantityItem[] | undefined }[]; object_model?: StoredObjectModel | undefined };
+const calculatedItemSchema = z.object({ post: z.string(), unit: z.enum(['st','m','lgh']), quantity: z.string().regex(/^\d+(\.\d+)?$/), calculation: z.string(), rule: z.string(), sources: z.array(sourceSchema), certainty: z.enum(['Hög','Medel','Låg']), estimated_quantity: z.boolean().optional(), level: z.enum(QUANTITY_LEVELS).optional(), section: z.number().int().min(1).max(9).optional(), count_basis: countBasisSchema.optional() }).strict();
+export const tenderQuantitiesSchema = z.object({ rules: tenderQuantityRulesSchema, items: z.array(calculatedItemSchema), assumptions: z.array(z.object({ description: z.string(), sources: z.array(sourceSchema), item: calculatedItemSchema.nullable(), related_items:z.array(calculatedItemSchema).optional() }).strict()), object_model: storedObjectModelSchema.optional() }).strict();
 
 export const UNSOURCED = 'Källa saknas – kontrollera';
 // Sanity bound for recipe and per-apartment posts (pieces per apartment).

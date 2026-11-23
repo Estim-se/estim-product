@@ -80,3 +80,4 @@ A notification mail (link only, no customer text) is sent when the AI job is don
 - Persist low-quantity confirmation on calculation bindings and mirror exclusion gates in editable Excel formulas; certainty remains unchanged after confirmation.
 - Keep Anbud file/result caches company-scoped and versioned; only approved catalog types enter totals, with unmatched proposals and shared scope-audit output preventing silent omissions.
 - Reconcile risk facts and quantity subspaces; flat risk/checklist lists use AF-code links and code-resolved citations, flagging missing sources without failing.
+- Store the object model with requirement-engine quantities and link Excel quantities to the Lägenheter sheet only when the sheet reproduces them exactly; the sheet is presentation and never changes calculated data.
