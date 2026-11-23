@@ -169,7 +169,7 @@ for (const s of [...new Set(rows.map(r => r.section))].sort((a, b) => a - b)) {
   for (const r of inSection) console.log(`  ${r.post} = ${r.quantity} ${r.unit} · ${r.level}${r.total === null ? ' (utanför totalen)' : ''}${r.type ? ` · ${r.type}` : ''}`);
 }
 if (fasit) console.log(`\nFasit ${fasit}: ${issues.length ? issues.join('; ') : 'OK'}`);
-const coverageCounts = (quantities.coverage ?? []).reduce<Record<string, number>>((m, c) => ({ ...m, [c.status]: (m[c.status] ?? 0) + 1 }), {});
-console.log(`Kravtäckning: ${(quantities.coverage ?? []).length} krav · ${Object.entries(coverageCounts).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+const coverageCounts = result.requirement_coverage.reduce<Record<string, number>>((m, c) => ({ ...m, [c.status]: (m[c.status] ?? 0) + 1 }), {});
+console.log(`Kravtäckning: ${result.requirement_coverage.length} krav · ${Object.entries(coverageCounts).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 console.log(`\nAI-anrop: ${calls.length}, in ${calls.reduce((s, c) => s + c.input + c.cache_write + c.cache_read, 0).toLocaleString('sv-SE')} tokens, ut ${calls.reduce((s, c) => s + c.output, 0).toLocaleString('sv-SE')} tokens, kostnad ${spent.toFixed(2)} USD, tid ${Math.round((Date.now() - started) / 1000)} s`);
-if (outPath) writeFileSync(outPath, JSON.stringify({ model: modelId, total: result.total, rows, fasit: issues, insights, quantities, matches, calls, cost_usd: spent, tool_outputs: toolOutputs, documents: documents.map(d => ({ id: d.id, file_name: d.file_name, file_type: d.file_type, page_count: d.page_count, doc_type: d.doc_type, text: d.text })) }, null, 1));
+if (outPath) writeFileSync(outPath, JSON.stringify({ model: modelId, total: result.total, rows, fasit: issues, insights, quantities: { ...quantities, coverage: result.requirement_coverage }, matches, calls, cost_usd: spent, tool_outputs: toolOutputs, documents: documents.map(d => ({ id: d.id, file_name: d.file_name, file_type: d.file_type, page_count: d.page_count, doc_type: d.doc_type, text: d.text })) }, null, 1));
