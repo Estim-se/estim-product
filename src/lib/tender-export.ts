@@ -1,3 +1,4 @@
+import { questionPosts } from './tender-question-links';
 import { calculateTenderCost, type CalculationMatches, type CalculationSettings } from './tender-calculation';
 import { insightSources } from './tender-risk-merging';
 import type { TenderInsights } from './tender-insights';
@@ -27,8 +28,8 @@ export function tenderExportData(input: TenderExportInput) {
     proposals: cost.proposals.map(r => [r.post, r.quantity, r.unit, quantitySource(r.sources), 'Godkänn en posttyp i Kalkylinställningar före prissättning']),
     rows: cost.rows.map(r => ({ ...r, source: quantitySource(r.sources) })),
     keyData: (input.insights?.key_data ?? []).map(k => [k.field, k.value, source(k.source)]),
-    risks: [...input.insights?.risks ?? []].sort((a,b) => severity[a.severity] - severity[b.severity]).map(r => [r.severity, r.title, r.description, insightSources(r).map(source).join("; "), r.deviation ?? '', r.consequence, r.suggestion]),
-    questions: (input.insights?.questions ?? []).map((q,i) => [String(i+1), q.question, insightSources(q).map(source).join("; ")]),
+    risks: [...input.insights?.risks ?? []].sort((a,b) => severity[a.severity] - severity[b.severity]).map(r => [r.severity, r.title, r.description, insightSources(r).map(source).join("; "), r.deviation ?? '', r.consequence, r.suggestion, r.impact ?? '']),
+    questions: (input.insights?.questions ?? []).map((q,i) => [String(i+1), q.question, insightSources(q).map(source).join("; "), questionPosts(q.question, cost.rows.map(r => r.post)).join('; ')]),
     assumptions: uniqueQuantityAssumptions(input.quantities.assumptions).map(a => [a.description, quantitySource(a.sources)]),
   };
 }
