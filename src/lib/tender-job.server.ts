@@ -11,7 +11,7 @@ type Job = { tender_id: string; company_id: string; analysis_run: string; status
 import { cacheDocumentKey, fromCacheForm, toCacheForm } from './tender-cache-keys';
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'levels-v11', calculation: 'levels-v11' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'room-types-v12', calculation: 'levels-v11' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
