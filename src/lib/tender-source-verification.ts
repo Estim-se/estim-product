@@ -81,7 +81,12 @@ export function verifyTenderSource<T extends TenderSourceRef>(documents: TenderS
       if (pageSupports(pages.size ? pages.get(source.page!) ?? '' : doc.text, evidence)) return source;
     }
     const found = [...pages].filter(([page, text]) => inRange(page) && pageSupports(text, evidence)).map(([page]) => page);
-    return found.length === 1 ? { ...source, page: found[0]! } : null;
+    if (found.length === 1) return { ...source, page: found[0]! };
+    if (found.length > 1) return null;
+    // A quote that runs over a page break starts on one page and continues on the next; the stated page wins.
+    const spanning = [...pages].filter(([page]) => inRange(page) && pages.has(page + 1) && pageSupports(`${pages.get(page)}\n${pages.get(page + 1)}`, evidence)).map(([page]) => page);
+    if (spanning.includes(source.page ?? -1)) return source;
+    return spanning.length === 1 ? { ...source, page: spanning[0]! } : null;
   }
   if (doc.file_type === 'xlsx') {
     if (!doc.text) return { ...source, page: null };
@@ -91,6 +96,12 @@ export function verifyTenderSource<T extends TenderSourceRef>(documents: TenderS
     const quote = evidence.replace(LOCATION_PREFIX, '').trim();
     return { ...source, page: null, evidence: `${spreadsheetLocationLabel(location)}: ${quote}`.slice(0, 1500) };
   }
-  if (source.page !== null) return null;
-  return !doc.text || collapse(doc.text).includes(collapse(evidence)) ? source : null;
+  // Word documents have no verifiable print pages either: the page is dropped and the quote is checked against the
+  // whole text with the same tolerance as a PDF page (case, punctuation, elision; every number must match).
+  if (!doc.text) return { ...source, page: null };
+  if (collapse(doc.text).includes(collapse(evidence)) || ` ${comparable(doc.text)} `.includes(` ${comparable(evidence)} `)) return { ...source, page: null };
+  // Word coverage is checked within a window of consecutive paragraphs, never across the whole document.
+  const lines = doc.text.split('\n').filter(l => l.trim());
+  for (let i = 0; i < lines.length; i++) if (pageSupports(lines.slice(i, i + 6).join('\n'), evidence)) return { ...source, page: null };
+  return null;
 }

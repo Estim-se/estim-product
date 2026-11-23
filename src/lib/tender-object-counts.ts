@@ -20,19 +20,29 @@ const sameCellText = (s: string) => s.replace(/\s+/g, ' ').trim().toLocaleLowerC
 const ROOM_WORDS: Record<string, number> = { en: 1, ett: 1, etta: 1, 'två': 2, 'tvåa': 2, tre: 3, trea: 3, fyra: 4, fem: 5, femma: 5, sex: 6, sexa: 6, sju: 7, sjua: 7 };
 // Rooms excluding the kitchen from a type label: "3 rok", "3 RoK", "4 rum och kök", "Typ B 2 r.o.k", "trea". Null when not stated.
 // A bare leading number is accepted only from a dedicated room-count column, never from an area column.
+// Half rooms are kept: "3.5 rum", "3,5 rok" and "3½ rum" return 3.5 (bedrooms then use the whole rooms only).
 export function roomCountFromLabel(label: string, bare = true): number | null {
-  const s = label.toLocaleLowerCase('sv').replace(/\s+/g, ' ').trim();
+  const s = label.toLocaleLowerCase('sv').replace(/\s+/g, ' ').replace(/(\d)\s*½/g, '$1.5').trim();
   if (!s) return null;
-  const digits = s.match(/(\d+)\s*(?:rok|r\.?\s*o\.?\s*k|rum|r\s*\+\s*k)(?![\p{L}])/u) ?? (bare ? s.match(/^(\d+)(?:[ ,.]|$)/) : null);
-  if (digits?.[1] && Number(digits[1]) > 0) return Number(digits[1]);
+  const digits = s.match(/(?<![\d.,])(\d+(?:[.,]5)?)\s*(?:rok|r\.?\s*o\.?\s*k|rum|r\s*\+\s*k)(?![\p{L}])/u) ?? (bare ? s.match(/^(\d+(?:[.,]5)?)(?:[ ,.]|$)/) : null);
+  if (digits?.[1] && Number(digits[1].replace(',', '.')) > 0) return Number(digits[1].replace(',', '.'));
   const word = s.match(/(?<![\p{L}])(en|ett|två|tre|fyra|fem|sex|sju)\s+(?:rum|rok)(?![\p{L}])/u)?.[1] ?? s.match(/(?<![\p{L}])(etta|tvåa|trea|fyra|femma|sexa|sjua)(?![\p{L}])/u)?.[1];
   return word ? ROOM_WORDS[word] ?? null : null;
 }
+// Sanity bounds: an apartment has 0–6 bedrooms. Anything else means a wrong column (object number, area, total row).
+export const MAX_BEDROOMS_PER_APARTMENT = 6;
+export const IMPLAUSIBLE = 'Orimligt värde i objektlistan – kontrollera';
+export class ImplausibleObjectCount extends Error {}
+function plausibleBedrooms(value: number, row: number) {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_BEDROOMS_PER_APARTMENT) throw new ImplausibleObjectCount(`${IMPLAUSIBLE}: ${value} sovrum på rad ${row}.`);
+  return value;
+}
+const NON_APARTMENT = /(?<![\p{L}])(?:lokal|lokaler|förråd|kontor|butik|garage|verksamhet|teknikrum|undercentral)(?![\p{L}])/iu;
 function bedroomColumn(cells: Map<string,string>, column: string, start: number) {
   for (let row = start - 1; row >= Math.max(1, start - 5); row--) { const header = cells.get(`${column}${row}`); if (header) return /sovrum|sov\.?rum|antal sov/i.test(header); }
   return false;
 }
-export function resolveObjectCount(text: string, selection: ObjectSelection, recipes: RoomRecipes = exampleRoomRecipes): string {
+export function resolveObjectCount(text: string, selection: ObjectSelection, recipes: RoomRecipes = exampleRoomRecipes, limits: { bedrooms?: boolean } = {}): string {
   const match = selection.range.match(/^([A-Z]{1,3})([1-9]\d*):([A-Z]{1,3})([1-9]\d*)$/);
   if (!match || match[1] !== match[3]) throw new Error('Objektlistan har ett ogiltigt cellområde.');
   const start = Number(match[2]), end = Number(match[4]);
@@ -63,11 +73,14 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
       if(selection.room_count_range && (!roomMatch || roomMatch[1]!==roomMatch[3] || Number(roomMatch[2])!==start || Number(roomMatch[4])!==end)) throw Error('Rumskolumnen matchar inte lägenhetsraderna.');
       if(!selection.room) throw Error('Rumstyp saknas.');
       const countCell=roomMatch ? cells.get(`${roomMatch[1]}${row}`) ?? '' : '';
+      // Premises (lokal, förråd, kontor …) in the same list are not apartments and have no apartment rooms.
+      if(NON_APARTMENT.test(countCell)||NON_APARTMENT.test(value)) continue;
       // A column headed "sovrum" already states bedrooms; any other room column states rooms excluding the kitchen.
-      if(roomMatch && selection.room==='Sovrum' && bedroomColumn(cells,roomMatch[1]!,start) && /^\d+(?:[.,]0+)?$/.test(countCell.trim())){ result += BigInt(Number(countCell.trim().replace(',','.')))*1_000_000n; continue; }
+      if(roomMatch && selection.room==='Sovrum' && bedroomColumn(cells,roomMatch[1]!,start) && /^\d+(?:[.,]0+)?$/.test(countCell.trim())){ result += BigInt(plausibleBedrooms(Number(countCell.trim().replace(',','.')), row))*1_000_000n; continue; }
       const rok=roomCountFromLabel(countCell) ?? roomCountFromLabel(value, false) ?? roomsFromArea(Number(value.replace(',','.')),recipes);
-      // "3 rok" is three rooms and a kitchen: one living room, so rok-1 bedrooms.
-      result += BigInt(selection.room==='Sovrum'?Math.max(0,rok-1):1)*1_000_000n;
+      // "3 rok" is three rooms and a kitchen: one living room, so rok-1 bedrooms. A half room ("3.5 rum") is not a
+      // bedroom: 3.5 rum = vardagsrum + 2 sovrum + halvrum. Implausible counts (e.g. an object number) are rejected.
+      result += BigInt(selection.room==='Sovrum'?plausibleBedrooms(Math.max(0,Math.floor(rok)-1), row):1)*1_000_000n;
     }
     else if (selection.operation === 'Avrunda upp per rad') {
       const area=Number(value.replace(',','.')), divisor=selection.divisor;
@@ -86,6 +99,8 @@ export function resolveObjectCount(text: string, selection: ObjectSelection, rec
     else {
       const number = value.replace(',', '.');
       if (!/^\d{1,9}(\.\d{1,6})?$/.test(number)) throw new Error('Objektlistan innehåller ett ogiltigt antal.');
+      // A bedroom sum must add bedroom counts per apartment, never object numbers or areas.
+      if (limits.bedrooms) plausibleBedrooms(Number(number), row);
       const [whole = '0', fraction = ''] = number.split('.'); result += BigInt(whole)*1_000_000n + BigInt(fraction.padEnd(6,'0'));
     }
   }
