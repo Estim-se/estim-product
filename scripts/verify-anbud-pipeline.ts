@@ -9,8 +9,10 @@ import { compareWithV2 } from '../src/test/helpers/v2-comparison';
 // - "same":  three analyses of the existing test tender (as before). Runs 2-3 reuse cached step results, so they
 //            prove repeatability of the pipeline, not of fresh model answers.
 // - "fresh": three brand-new tenders created from the same files through the app's own upload flow, as a signed-in
-//            user of the test company. Each gets new document ids and therefore fresh model answers, exactly like a
-//            new tender on app.estim.se. Requires VERIFY_EMAIL and VERIFY_PASSWORD (test-company user) and
+//            user of the test company, exactly like a
+//            new tender on app.estim.se. Step results are cached by file content, so fresh tenders reuse the results of
+//            the same files (this proves "same files, same figures"); start the dev server with a new ANBUD_CACHE_SALT to
+//            measure fresh model answers instead. Requires VERIFY_EMAIL and VERIFY_PASSWORD (test-company user) and
 //            SUPABASE_PUBLISHABLE_KEY. Pass --no-fresh to skip them. Fresh tenders are kept (named "… – verifiering").
 mkdirSync('/tmp/anbud-verification',{recursive:true});
 const url=process.env['SUPABASE_URL'],key=process.env['SUPABASE_SERVICE_ROLE_KEY'];

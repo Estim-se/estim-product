@@ -66,7 +66,7 @@ The seeded example catalog (ids `…001`–`…032`) lives in Lovable migrations
 
 ### Caches
 
-Caches are company-scoped and keyed by file hash/reading version, or by a source/model/context/settings fingerprint. `Läs om underlaget` explicitly invalidates reading and results. Cache reuse proves pipeline repeatability, not independent fresh-model repeatability.
+Caches are company-scoped and keyed by file hash/reading version, or by a source/model/context/settings fingerprint. Step results are keyed by **file content and document type, not document ids** (`tender-cache-keys.ts`): the same files give the same figures in a new tender; document ids in cached results are mapped to the reading tender. `ANBUD_CACHE_SALT` on the server forces fresh model answers (robustness measurements). `Läs om underlaget` explicitly invalidates reading and results. Cache reuse proves pipeline repeatability, not independent fresh-model repeatability.
 
 Current step versions are in `src/lib/tender-job.server.ts`:
 
