@@ -57,9 +57,9 @@ describe('spreadsheet sources are verified by file, sheet and row', () => {
     const again = validateTenderInsights({ key_data: first, risks: [], questions: [] }, documents, true).key_data.find(k => k.field === 'Etapper')?.source;
     expect(again).toEqual(etapper);
   });
-  it('keeps PDF checks unchanged', () => {
+  it('verifies PDF quotes by physical page and corrects an impossible page to the page that holds the quote', () => {
     expect(verifyTenderSource(documents, { document_id: pdf, page: 1, evidence: 'AFC.42 Tider' })).not.toBeNull();
-    expect(verifyTenderSource(documents, { document_id: pdf, page: 3, evidence: 'AFC.42 Tider' })).toBeNull();
+    expect(verifyTenderSource(documents, { document_id: pdf, page: 3, evidence: 'AFC.42 Tider' })?.page).toBe(1);
     expect(verifyTenderSource(documents, { document_id: pdf, page: 1, evidence: 'AFC.99' })).toBeNull();
   });
   it('a verified object-list count with a model-supplied page is not demoted to Låg', () => {

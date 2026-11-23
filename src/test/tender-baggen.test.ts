@@ -13,10 +13,11 @@ it('matches Gruppcentral i lägenhet by meaning',()=>expect(closestTenderPostTyp
 it('does not match an apartment panel to a building main panel',()=>expect(closestTenderPostType('Gruppcentral i lägenhet',{...settings,post_types:[{id:id(3),name:'Fastighetscentral',hours:24,list_price:25000}]})).toBeNull());
 it('uses the requested area bands',()=>expect([39,40,59,61,80,81].map(a=>roomsFromArea(a))).toEqual([1,2,2,3,3,4]));
 it('sums ceil(area/60) per apartment, not ceil(sum(area)/60)',()=>expect(resolveObjectCount('Blad: Lgh\nA2: 35\nA3: 65\nA4: 90',{sheet:'Lgh',range:'A2:A4',operation:'Avrunda upp per rad',equals:null,divisor:60})).toBe('5'));
+// "2 rok" = two rooms and a kitchen: one bedroom. The empty row falls back to the area band (90 m² → 4 rooms → 3 bedrooms).
 it('uses documented room counts before editable area estimates',()=>{
  const text='Blad: Lgh\nA2: 90\tB2: 2 rok\nA3: 90\tB3: ';
- expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'})).toBe('2');
- expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'},{...exampleRoomRecipes,area_bands:exampleRoomRecipes.area_bands.map((b,i)=>i===3?{...b,rooms:5}:b)})).toBe('3');
+ expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'})).toBe('4');
+ expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'},{...exampleRoomRecipes,area_bands:exampleRoomRecipes.area_bands.map((b,i)=>i===3?{...b,rooms:5}:b)})).toBe('5');
 });
 for(const [room,sockets,lamps] of [['Vardagsrum',4,1],['Sovrum',3,1],['Hall',1,1],['Kök',3,0]] as const)it(`uses the requested ${room} recipe`,()=>expect(exampleRoomRecipes.rooms.find(r=>r.room===room)).toEqual({room,sockets,lamps}));
 it('uses configured recipe values in code and marks them Medel with one assumption',()=>{

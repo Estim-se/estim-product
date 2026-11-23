@@ -37,6 +37,29 @@ export function spreadsheetEvidenceLocation(text: string, evidence: string): Spr
   return null;
 }
 
+// Extracted PDF text marks each physical page with "Fysisk sida: N".
+export function pdfPages(text: string) {
+  const pages = new Map<number, string>();
+  const parts = text.split(/^Fysisk sida: (\d+)\s*$/m);
+  for (let i = 1; i + 1 < parts.length; i += 2) pages.set(Number(parts[i]), `${pages.get(Number(parts[i])) ?? ''}\n${parts[i + 1]}`);
+  return pages;
+}
+// Comparable form: case, ligatures, dashes, quotes, bullets and line-break hyphenation do not matter.
+const comparable = (s: string) => s.normalize('NFKC').replace(/­/g, '').replace(/(\p{L})-\s*\n\s*(\p{L})/gu, '$1$2').toLocaleLowerCase('sv').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const words = (s: string) => comparable(s).split(' ').filter(Boolean);
+// The page supports the quote when it contains it in comparable form, contains each part of an elided quote
+// ("…"), or contains at least 70 % of its words and every number in it. Numbers must never be paraphrased.
+export function pageSupports(page: string, evidence: string) {
+  const text = comparable(page), quote = comparable(evidence);
+  if (!quote || !text) return false;
+  if (` ${text} `.includes(` ${quote} `)) return true;
+  const parts = evidence.split(/\s*(?:…|\.{3}|\[\.\.\.\])\s*/).map(comparable).filter(p => p.split(' ').length >= 3);
+  if (parts.length > 1 && parts.every(p => ` ${text} `.includes(` ${p} `))) return true;
+  const available = new Set(words(page)), quoted = words(evidence);
+  if (quoted.length < 4 || quoted.filter(w => /\d/.test(w)).some(w => !available.has(w))) return false;
+  return quoted.filter(w => available.has(w)).length / quoted.length >= 0.7;
+}
+
 export function spreadsheetLocationLabel(l: SpreadsheetLocation) {
   return `Blad ${l.sheet}, rad ${l.first_row}${l.last_row > l.first_row ? `–${l.last_row}` : ''}`;
 }
@@ -48,8 +71,17 @@ export function verifyTenderSource<T extends TenderSourceRef>(documents: TenderS
   const evidence = source.evidence.trim();
   if (!doc || !evidence) return null;
   if (doc.file_type === 'pdf') {
-    if (source.page === null || doc.page_count === null || source.page > doc.page_count) return null;
-    return !doc.text || collapse(doc.text).includes(collapse(evidence)) ? source : null;
+    const inRange = (page: number | null) => page !== null && doc.page_count !== null && page >= 1 && page <= doc.page_count;
+    if (!doc.text) return inRange(source.page) ? source : null;
+    const pages = pdfPages(doc.text);
+    // A paraphrased-but-faithful quote on the stated page is accepted; otherwise the physical page that
+    // demonstrably contains the quote replaces a missing or printed page number.
+    if (inRange(source.page)) {
+      if (collapse(doc.text).includes(collapse(evidence))) return source;
+      if (pageSupports(pages.size ? pages.get(source.page!) ?? '' : doc.text, evidence)) return source;
+    }
+    const found = [...pages].filter(([page, text]) => inRange(page) && pageSupports(text, evidence)).map(([page]) => page);
+    return found.length === 1 ? { ...source, page: found[0]! } : null;
   }
   if (doc.file_type === 'xlsx') {
     if (!doc.text) return { ...source, page: null };
