@@ -93,7 +93,7 @@ export function postMeaning(name:string) {
 // on their own to merge posts or to move a binding.
 // Catalog types of these meanings price one package per unit even when several posts are bound to them
 // ("Demontering och återmontering vid stambyte" per apartment): a generic meaning, but not different equipment.
-export const PACKAGE_MEANINGS = new Set(['demontering', 'tvattstuga', 'serviscentral']);
+export const PACKAGE_MEANINGS = new Set(['demontering', 'tvattstuga', 'serviscentral', 'wc']);
 // Categories without a catalog type of their own are priced with the type of this meaning (a lift feed with the
 // fire-safe feed type, a washing-machine supply with the IP44 outlet type).
 const PRICED_AS: Record<string, string> = { 'stigarledning': 'huvudledning-fastighet', 'matning-hiss': 'matning-fs', 'matning-ventilation': 'matning-fs', 'matning-fjarrvarme': 'matning-teknik', 'matning-markvarme': 'matning-teknik', 'kombimaskin': 'uttag-ip44' };

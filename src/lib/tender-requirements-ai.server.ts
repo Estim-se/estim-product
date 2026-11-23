@@ -72,6 +72,13 @@ export function missingDocumentedCategories(documents: { id: string; file_name: 
   }
   return [...found].slice(0, 30);
 }
+// Section groups whose own sections have at least THIN_ANSWER documented categories that no answer lists.
+const THIN_ANSWER = 4;
+export function thinSectionGroups(documents: Parameters<typeof missingDocumentedCategories>[0], answers: Requirements[], groups: readonly (readonly number[])[], catalog: CatalogType[]) {
+  const missing = missingDocumentedCategories(documents, combineRequirementAnswers(answers), catalog);
+  const sectionOf = (m: string) => { const t = catalogTypeFor(m, catalog); return sectionOfPost(t?.name ?? m, undefined, t?.section, postMeaning); };
+  return groups.filter(g => missing.filter(([m]) => g.includes(sectionOf(m))).length >= THIN_ANSWER);
+}
 const catalogTypeFor = (meaning: string, catalog: CatalogType[]) => catalog.find(t => postMeaning(t.name) === meaning) ?? catalog.find(t => postMeaning(t.name) === pricedAs(meaning)) ?? null;
 // A documented category the follow-up still leaves out is kept as a Saknar mängd row of its catalog type, outside the
 // total and flagged to be checked, so it never falls away between runs. Only a clear statement qualifies: a short line
@@ -130,6 +137,10 @@ export async function extractRequirementQuantities(documents: TenderInsightInput
   const answers = [await answer(first!), ...await Promise.all(rest.map(g => answer(g)))];
   // A section group can be empty (no apartments in a preschool); the answers together must list requirements.
   if (!answers.some(a => a.requirements.length)) throw new TenderIncompleteOutput('svaret saknar krav');
+  // A section answer that leaves several documented categories of its own sections unlisted is incomplete: that group
+  // is asked once more and both answers are kept (the requirement identity in code removes what they repeat).
+  const thin = thinSectionGroups(documents, answers, groups, catalog);
+  answers.push(...await Promise.all(thin.map(g => call(g))));
   const missing = missingDocumentedCategories(documents, combineRequirementAnswers(answers), catalog);
   const followUp = !missing.length ? null : await streamTenderTool({ key, model, system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: followUpInstruction(missing, new Map(documents.map(d => [d.id, d.file_name])), catalog) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade ingen uppföljning', decodeRequirements)
       .catch(() => ({ requirements: [], counts: [] }) as Requirements);

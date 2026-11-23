@@ -5,6 +5,7 @@ import type { RoomRecipes } from './tender-room-recipes';
 import { perApartmentArea, type ObjectModel } from './tender-object-model';
 import { roomsOfType, type RoomList } from './tender-room-list';
 import { closestTenderPostType, GENERIC_MEANINGS, PACKAGE_MEANINGS, postMeaning, pricedAs } from './tender-post-matching';
+import { sectionOfPost } from './tender-example-catalog';
 import type { CalculationSettings } from './tender-calculation';
 import { verifyTenderSource } from './tender-source-verification';
 import { withoutNegatedTerms } from './tender-negation';
@@ -223,6 +224,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
   // catalog alone, so the same delivery gets one identity and is priced once.
   // Work the catalog prices with another kind's type (a washing-machine supply with the IP44 outlet type) is bound to
   // that type, whichever type the model named.
+  const apartmentType = (type: string | null) => { const t = type ? canonical.types.find(x => x.id === type) : undefined; return !!t && sectionOfPost(t.name, undefined, t.section, postMeaning) <= 4; };
   const ownType = (type: string | null, post: string) => {
     const m = postMeaning(post);
     if (type && m && pricedAs(m) !== m && !canonical.types.some(t => postMeaning(t.name) === m)) {
@@ -236,7 +238,10 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const sources = [...(source ? [source] : [])];
     const type = ownType(typeOf(raw.type_id), raw.post), countUnit = model ? roomUnit(raw) : raw.unit_of_count, scope = requirementScope({ ...raw, unit_of_count: countUnit });
     const option = OPTION.test(`${raw.post} ${raw.note ?? ''}`);
-    const what = !type ? `utan-typ:${normalWords(raw.post)}` : coversSeveral(type) ? `${type}:${normalWords(raw.work || raw.post)}` : type;
+    // On a general type the delivery is told apart by the post's own specific meaning when the code finds one
+    // ("Uttag kombimaskin" and "Vägguttag för kombimaskin" are one delivery); the model's free-text work only otherwise.
+    const ownMeaning = postMeaning(raw.post), delivery = ownMeaning && !GENERIC_MEANINGS.has(ownMeaning) ? `betydelse:${ownMeaning}` : normalWords(raw.work || raw.post);
+    const what = !type ? `utan-typ:${normalWords(raw.post)}` : coversSeveral(type) ? `${type}:${delivery}` : type;
     const rid = stableRequirementId(`${option ? `option:${normalWords(raw.post)}|` : ''}${what}|${scope}|${typeFamily(countUnit)}|${raw.room_type ? normalWords(raw.room_type) : ''}`);
     const validation = [...(raw.type_id && !type ? [`okänd katalog-ID ${raw.type_id.slice(0, 40)}`] : []), ...(!raw.source ? ['källa saknas'] : !source ? ['källan kunde inte verifieras'] : [])];
     const cov: Coverage = { requirement_id: rid, post: raw.post.slice(0, 240), status: 'Kräver avklaring', row: null, reason: null, validation };
@@ -262,7 +267,9 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     }
     // An assumption that something is in every apartment, kitchen or bathroom needs a quote about the apartments; one
     // without ("förutsätts enligt allmänna krav", quoting the service central) is kept for checking, outside the total.
-    if (raw.assumed && model && ['lägenhet', 'kök', 'badrum'].includes(raw.unit_of_count) && !APARTMENT_WORDS.test(`${raw.source?.evidence ?? ''}`)) {
+    // A per-apartment count is grounded by a quote about the apartments, or by a catalog type for apartment work
+    // (sections 1–4 of the calculation: an outlet for the stove is in every kitchen), not by the model's own flag alone.
+    if (raw.assumed && model && ['lägenhet', 'kök', 'badrum'].includes(raw.unit_of_count) && !APARTMENT_WORDS.test(`${raw.source?.evidence ?? ''}`) && !apartmentType(type)) {
       add(raw.post, raw.section, raw.unit, null, '–', 'Antaget per lägenhet utan stöd i underlaget för lägenheterna – kontrollera och fyll i mängd.', 'Saknar mängd', sources, raw.note, undefined, { count_unit: raw.unit_of_count, type_id: type, ...ids }, cov);
       continue;
     }

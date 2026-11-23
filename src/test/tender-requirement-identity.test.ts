@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildObjectModel } from '@/lib/tender-object-model';
 import { buildRequirementQuantities, decodeRequirements, stableRequirementId, type Requirement } from '@/lib/tender-requirements';
-import { combineRequirementAnswers } from '@/lib/tender-requirements-ai.server';
+import { combineRequirementAnswers, REQUIREMENT_SECTION_GROUPS, thinSectionGroups } from '@/lib/tender-requirements-ai.server';
 import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
 
 // Synthetic tender (no customer data): 6 apartments, 2 premises, and a technical description with the quoted lines.
@@ -13,9 +13,9 @@ const documents = [{ id: xlsx, file_name: 'Objekt.xlsx', file_type: 'xlsx', page
   { id: pdf2, file_name: 'Rambeskrivning.pdf', file_type: 'pdf', page_count: 1, text: 'Fysisk sida: 1\nGolvvärme installeras i varje badrum.' }];
 const model = buildObjectModel(documents)!;
 const T = { feed: '00000000-0000-4000-8000-000000000501', riv: '00000000-0000-4000-8000-000000000502', golv: '00000000-0000-4000-8000-000000000503', perilex: '00000000-0000-4000-8000-000000000504',
-  ip44: '00000000-0000-4000-8000-000000000505', u16: '00000000-0000-4000-8000-000000000506', bygg: '00000000-0000-4000-8000-000000000507' };
+  ip44: '00000000-0000-4000-8000-000000000505', u16: '00000000-0000-4000-8000-000000000506', bygg: '00000000-0000-4000-8000-000000000507', wc: '00000000-0000-4000-8000-000000000508', spis: '00000000-0000-4000-8000-000000000509' };
 const catalog = [{ id: T.feed, name: 'Matning med funktionssäker kabel' }, { id: T.riv, name: 'Rivning per lägenhet' }, { id: T.golv, name: 'Anslutning golvvärme' }, { id: T.perilex, name: 'Perilexuttag' },
-  { id: T.ip44, name: 'Dubbelt uttag IP44' }, { id: T.u16, name: 'Vägguttag 16A' }, { id: T.bygg, name: 'Byggström per etapp' }];
+  { id: T.ip44, name: 'Dubbelt uttag IP44' }, { id: T.u16, name: 'Vägguttag 16A' }, { id: T.bygg, name: 'Byggström per etapp' }, { id: T.wc, name: 'Separat WC: belysning och spegelskåp' }, { id: T.spis, name: 'Anslutning spis' }];
 const src = (evidence: string, document_id = pdf) => ({ document_id, page: 1, evidence });
 const req = (post: string, unit_of_count: Requirement['unit_of_count'], per_unit: number | null, extra: Partial<Requirement> = {}): Requirement =>
   ({ post, section: 3, unit_of_count, per_unit, fixed_quantity: null, area_divisor: null, unit: 'st', assumed: false, note: null, source: null, ...extra });
@@ -106,6 +106,26 @@ describe('requirement identity and deduplication', () => {
       req('Vägguttag 16A för ugn', 'kök', 1, { type_id: T.u16, section: 2, source: src('Rivning i lägenheter.') })]);
     expect(rowsOf(q).find(i => /kombimaskin/.test(i.post))?.type_id).toBe(T.ip44);
     expect(rowsOf(q).filter(i => i.type_id === T.u16)).toHaveLength(1);
+  });
+  it('one delivery described twice in other words on a general or package type is one row (no double count across answers)', () => {
+    const q = build([req('Uttag kombimaskin badrum', 'badrum', 1, { type_id: T.ip44, work: 'uttag', section: 3, source: src('Elektrisk golvvärme i samtliga badrum.') }),
+      req('Vägguttag för kombimaskin i badrum', 'badrum', 1, { type_id: T.ip44, work: 'kombimaskin', section: 3, source: src('Elektrisk golvvärme i samtliga badrum.') }),
+      req('Separat WC: belysning', 'wc', 1, { type_id: T.wc, work: 'belysning', section: 3, source: src('Elektrisk golvvärme i samtliga badrum.') }),
+      req('Spegelskåp i separat wc', 'wc', 1, { type_id: T.wc, work: 'spegelskåp', section: 3, source: src('Elektrisk golvvärme i samtliga badrum.') })]);
+    expect(rowsOf(q).filter(i => i.type_id === T.ip44 && Number(i.quantity) > 0)).toHaveLength(1);
+    expect(rowsOf(q).filter(i => i.type_id === T.wc)).toHaveLength(1);
+  });
+  it('a per-apartment requirement on a catalog type for apartment work is counted, even when the model calls it assumed', () => {
+    const q = build([req('Anslutning spis/ugn', 'lägenhet', 1, { type_id: T.spis, assumed: true, section: 2, source: src('Matning till fläktar.') })]);
+    expect(rowsOf(q).find(i => /spis/.test(i.post))).toMatchObject({ quantity: '6', type_id: T.perilex });
+  });
+  it('a section answer that leaves several documented categories of its own sections unlisted is asked again', () => {
+    const tech = { id: pdf, file_name: 'El.pdf', file_type: 'pdf', page_count: 1, text: 'Fysisk sida: 1\nElektrisk golvvärme i samtliga badrum.\nElektrisk handdukstork i samtliga badrum.\nPerilexuttag för spis i köket.\nDiskmaskin ansluts i köket.\nDimmer i vardagsrum.' };
+    const fullCatalog = [...catalog, { id: '00000000-0000-4000-8000-000000000510', name: 'Handdukstork anslutning' }, { id: '00000000-0000-4000-8000-000000000511', name: 'Diskmaskin anslutning' }, { id: '00000000-0000-4000-8000-000000000512', name: 'Dimmer' }];
+    const empty = decodeRequirements({ requirements: [], counts: [] });
+    expect(thinSectionGroups([documents[0]!, tech], [empty, empty, empty], REQUIREMENT_SECTION_GROUPS, fullCatalog).map(g => g.join(','))).toEqual(['1,2,3,4']);
+    const listed = decodeRequirements({ requirements: [golvA, req('Handdukstork', 'badrum', 1, { section: 3 }), req('Perilexuttag spis', 'kök', 1, { section: 2 }), req('Diskmaskin', 'kök', 1, { section: 2 })], counts: [] });
+    expect(thinSectionGroups([documents[0]!, tech], [listed, empty, empty], REQUIREMENT_SECTION_GROUPS, fullCatalog)).toEqual([]);
   });
   it('the same delivery at property level is one row, whatever place the model names', () => {
     const q = build([req('Ny fastighetscentral', 'fastighet', null, { fixed_quantity: 2, type_id: T.riv, scope: 'fastighet', section: 7, source: src('Matning till hiss.') }),
