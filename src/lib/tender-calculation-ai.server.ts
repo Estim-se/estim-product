@@ -4,7 +4,7 @@ import { validateBindings, type CalculationSettings } from './tender-calculation
 import { z } from 'zod';
 import { assumptionItems } from './tender-quantity-display';
 import { streamTenderTool, tenderDocumentBlock } from './tender-tool-call.server';
-import { closestTenderPostType } from './tender-post-matching';
+import { closestTenderPostType, correctedScopeType } from './tender-post-matching';
 import { verifyTenderSource } from './tender-source-verification';
 const source = { type: 'object', additionalProperties: false, properties: { document_id: { type: 'string' }, page: { type: ['integer','null'] }, evidence: { type: 'string' } }, required: ['document_id','page','evidence'] };
 const wire = { type: 'object', additionalProperties: false, properties: { matches: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { post: {type:'string'}, type_id: {type:['string','null']} }, required:['post','type_id'] } }, demolition: { anyOf: [{ type:'null' }, { type:'object',additionalProperties:false,properties:{ source, apartment_operand_id:{type:'string'},type_id:{type:['string','null']} },required:['source','apartment_operand_id','type_id'] }] } }, required:['matches','demolition'] };
@@ -31,7 +31,7 @@ export async function matchTenderCost(quantities: TenderQuantities, settings: Ca
   // Every quantity post gets exactly one binding; unknown posts or catalog ids become "Saknar tid – ange manuellt".
   const known=[...quantities.items.map(i=>i.post),...quantities.assumptions.flatMap(a=>assumptionItems(a).map(i=>i.post))];
   const seen=new Set<string>();const bindings:{post:string;type_id:string|null;manual_hours:null;manual_list_price:null}[]=[];
-  for(const b of raw.matches){if(!known.includes(b.post)||seen.has(b.post)||(b.post==='Rivning per lägenhet'&&!quantities.items.some(i=>i.post===b.post)&&!quantities.assumptions.some(a=>assumptionItems(a).some(i=>i.post===b.post))))continue;seen.add(b.post);bindings.push({post:b.post,type_id:b.type_id&&settings.post_types.some(t=>t.id===b.type_id)?b.type_id:closestTenderPostType(b.post,settings),manual_hours:null,manual_list_price:null});}
+  for(const b of raw.matches){if(!known.includes(b.post)||seen.has(b.post)||(b.post==='Rivning per lägenhet'&&!quantities.items.some(i=>i.post===b.post)&&!quantities.assumptions.some(a=>assumptionItems(a).some(i=>i.post===b.post))))continue;seen.add(b.post);bindings.push({post:b.post,type_id:b.type_id&&settings.post_types.some(t=>t.id===b.type_id)?correctedScopeType(b.post,b.type_id,settings):closestTenderPostType(b.post,settings),manual_hours:null,manual_list_price:null});}
   for(const post of known)if(!seen.has(post)){seen.add(post);bindings.push({post,type_id:closestTenderPostType(post,settings),manual_hours:null,manual_list_price:null});}
   const demolitionPost=!!demolition&&!known.some(post=>/rivning/i.test(post));
   if(demolition&&demolitionPost)bindings.push({post:'Rivning per lägenhet',type_id:demolition.type_id&&settings.post_types.some(t=>t.id===demolition.type_id)?demolition.type_id:closestTenderPostType('Rivning per lägenhet',settings),manual_hours:null,manual_list_price:null});

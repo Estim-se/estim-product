@@ -28,6 +28,8 @@ const RULES: Rule[] = [
   [/rivning/, 'rivning'],
   [/huvudledning/, n => /lagenhet/.test(n) ? 'huvudledning-lgh' : /lokal/.test(n) ? 'huvudledning-lokal' : /fastighet|huvudcentral/.test(n) ? 'huvudledning-fastighet' : null],
   [/provning/, n => /allmanna|funktionsprovning|samordnad/.test(n) ? 'provning-allm' : 'provning-lgh'],
+  // Insulation measurement and RCD tests are the installation test per apartment, not an earthing post.
+  [/isolationsmatning|jordfelsbrytar\w*(?: ?test|prov)/, 'provning-lgh'],
   [/kvalitetsplan|egenkontroll/, 'kvalitetsplan'],
   [/relationshandling/, 'relationshandling'],
   // Training of operating staff is its own post, also when the staff is called "drift- och underhållspersonal".
@@ -68,6 +70,14 @@ export function postMeaning(name:string) {
   const n=normalize(withoutNegatedTerms(name));
   for (const [pattern, meaning] of RULES) if (pattern.test(n)) return typeof meaning === 'string' ? meaning : meaning(n);
   return null;
+}
+// A binding of the right kind but the wrong scope (apartment vs common parts/premises: provning, central, huvudledning)
+// moves to the catalog type of the post's own scope when the catalog has one; otherwise the binding is kept.
+export function correctedScopeType(post: string, typeId: string | null, settings: CalculationSettings) {
+  const type = settings.post_types.find(t => t.id === typeId);
+  const own = postMeaning(post), bound = type ? postMeaning(type.name) : null;
+  if (!own || !bound || own === bound || own.split('-')[0] !== bound.split('-')[0]) return typeId;
+  return settings.post_types.find(t => postMeaning(t.name) === own)?.id ?? typeId;
 }
 // Deterministic fallback handles semantic equivalents, never inventing a catalog type or price.
 export function closestTenderPostType(post:string, settings:CalculationSettings) {

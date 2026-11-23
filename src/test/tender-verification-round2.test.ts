@@ -4,7 +4,7 @@ import { buildObjectModel } from '@/lib/tender-object-model';
 import { buildRequirementQuantities, decodeRequirements, type Requirement } from '@/lib/tender-requirements';
 import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
 import { calculateTenderCost, emptyCalculationSettings } from '@/lib/tender-calculation';
-import { postMeaning } from '@/lib/tender-post-matching';
+import { correctedScopeType, postMeaning } from '@/lib/tender-post-matching';
 
 // Synthetic object list (no customer data): 12 apartments over 2 addresses, 2 premises.
 const xlsx = '00000000-0000-4000-8000-000000000001', pdf = '00000000-0000-4000-8000-000000000002';
@@ -59,11 +59,22 @@ describe('verification round 2', () => {
     expect(priced.rows.find(r => r.post === 'Option timer på handdukstork')?.total).toBeGreaterThan(0);
   });
   it('one-off posts bound to the same catalog type count once; a per-apartment catalog type counts apartments', () => {
-    const q = build([req('Samordnad funktionsprovning', 'post', 1, { section: 9 }), req('Isolationsmätning och jordfelsbrytartest', 'post', 1, { section: 9 }), req('Håltagning och tätning', 'post', 1, { section: 8 })]);
+    const q = build([req('Relationshandlingar el', 'post', 1, { section: 9 }), req('Relationsritningar el', 'post', 1, { section: 9 }), req('Håltagning och tätning', 'post', 1, { section: 8 })]);
     const bindings = all(q).map(i => ({ post: i.post, type_id: /håltagning/i.test(i.post) ? ids.hal : ids.provning, manual_hours: null, manual_list_price: null }));
     const rows = calculateTenderCost(q, settings, { bindings, demolition: null }).rows;
-    expect(rows.find(r => r.post === 'Samordnad funktionsprovning')?.quantity).toBe('1');
-    expect(rows.find(r => r.post === 'Isolationsmätning och jordfelsbrytartest')).toMatchObject({ quantity: '0', total: 0, rule: expect.stringContaining('Ingår i Samordnad funktionsprovning') });
+    expect(rows.find(r => r.post === 'Relationshandlingar el')?.quantity).toBe('1');
+    expect(rows.find(r => r.post === 'Relationsritningar el')).toMatchObject({ quantity: '0', total: 0, rule: expect.stringContaining('Ingår i Relationshandlingar el') });
     expect(rows.find(r => r.post === 'Håltagning och tätning')).toMatchObject({ quantity: '12', level: 'Räknad' });
+  });
+  it('insulation measurement is the test per apartment (reference 9.3), never merged into the common-parts test', () => {
+    expect(postMeaning('Isolationsmätning, jordning och jordfelsbrytartest')).toBe('provning-lgh');
+    const q = build([req('Samordnad funktionsprovning', 'post', 1, { section: 9 }), req('Isolationsmätning, jordning och jordfelsbrytartest', 'post', 1, { section: 9 })]);
+    expect(quantity(q, 'Samordnad funktionsprovning')).toBe('1');
+    expect(all(q).find(i => i.post.startsWith('Isolationsmätning'))).toMatchObject({ quantity: '12', count_unit: 'lägenhet' });
+    // A binding of the right kind but the wrong scope moves to the catalog type of the post's own scope.
+    const catalog = { ...settings, post_types: [...settings.post_types, { id: '00000000-0000-4000-8000-000000000014', name: 'Provning och protokoll per lägenhet', hours: 1, list_price: 0 }] };
+    expect(correctedScopeType('Isolationsmätning, jordning och jordfelsbrytartest', ids.provning, catalog)).toBe('00000000-0000-4000-8000-000000000014');
+    expect(correctedScopeType('Samordnad funktionsprovning', ids.provning, catalog)).toBe(ids.provning);
+    expect(correctedScopeType('Isolationsmätning', ids.provning, settings)).toBe(ids.provning);
   });
 });

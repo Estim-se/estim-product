@@ -68,9 +68,13 @@ const KITCHEN = /kök|spis|perilex|\bugn|diskmaskin|mikro|\bkyl|\bfrys|köksflä
 const BATHROOM = /badrum|våtrum|golvvärme|handdukstork|spegelskåp/;
 // An apartment has one washing machine however many bathrooms it has: its supply is counted per apartment.
 const PER_APARTMENT_EQUIPMENT = /kombimaskin|tvättmaskin|tvättpelare|torktumlare/;
+// The installation test of each apartment (insulation measurement, RCD test, test protocol per apartment) is counted
+// per apartment, also when the requirement names it as a one-off post (reference calculation: 1 per apartment).
+const PER_APARTMENT_TEST = /isolationsmätning|jordfelsbrytar\p{L}*(?: ?test|prov)|provning\p{L}* (?:och protokoll )?per lägenhet/u;
 function roomUnit(r: Requirement): Requirement['unit_of_count'] {
   const t = withoutNegatedTerms(`${r.post} ${r.note ?? ''}`).toLocaleLowerCase('sv');
   if (r.unit_of_count === 'badrum' && PER_APARTMENT_EQUIPMENT.test(t)) return 'lägenhet';
+  if (r.unit_of_count === 'post' && PER_APARTMENT_TEST.test(t)) return 'lägenhet';
   if (r.unit_of_count !== 'lägenhet') return r.unit_of_count;
   if (r.section === 2 && KITCHEN.test(t) && !BATHROOM.test(t)) return 'kök';
   if (r.section === 3 && BATHROOM.test(t) && !KITCHEN.test(t)) return 'badrum';
@@ -142,7 +146,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const perArea = raw.area_divisor !== null && raw.unit_of_count === 'lägenhet';
     const unit = perArea ? 'per_area' : model ? roomUnit(raw) : raw.unit_of_count;
     const r = unit === raw.unit_of_count ? raw : { ...raw, unit_of_count: unit };
-    const moved = r === raw || perArea ? '' : raw.unit_of_count === 'lägenhet' ? ` Angivet per lägenhet; posten gäller ${unit} och räknas per ${unit}.` : ` Angivet per ${raw.unit_of_count}; en per lägenhet oavsett antal ${raw.unit_of_count}.`;
+    const moved = r === raw || perArea ? '' : raw.unit_of_count === 'lägenhet' ? ` Angivet per lägenhet; posten gäller ${unit} och räknas per ${unit}.` : raw.unit_of_count === 'post' ? ' Angivet som engångspost; provningen görs i varje lägenhet och räknas per lägenhet.' : ` Angivet per ${raw.unit_of_count}; en per lägenhet oavsett antal ${raw.unit_of_count}.`;
     const option = OPTION.test(`${raw.post} ${raw.note ?? ''}`);
     const optionRule = option ? ' Option enligt underlaget: egen rad som prissätts separat och inte ingår i totalen.' : '';
     // A stated fixed quantity is always used, whatever unit the requirement names.
