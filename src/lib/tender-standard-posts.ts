@@ -73,8 +73,10 @@ function sheetCells(text: string) {
   return sheets;
 }
 const numeric = (v: string) => /^\d{1,4}(?:[.,]\d+)?$/.test(v.trim());
-// The object list: prefer the model's own per-row room selection; otherwise find a column of room-type texts.
+// The object list: the model's own per-row room selection or a detected column of room-type texts, whichever covers
+// the most rows. A model selection over a single cell (or a few rows) never becomes the room count for the whole list.
 function findBase(rules: Rules, documents: InsightDocument[]): Base | null {
+  const candidates: { base: Base; rows: number }[] = [];
   const sheets = (d: InsightDocument) => d.file_type === 'xlsx' && d.text ? sheetCells(d.text) : null;
   for (const o of rules.operands) {
     const s = o.list_selection, d = documents.find(x => x.id === o.source?.document_id);
@@ -83,8 +85,15 @@ function findBase(rules: Rules, documents: InsightDocument[]): Base | null {
     if (!col || !cols) continue;
     const values = [...(cols.get(col[1]!) ?? new Map()).entries()].filter(([r]) => r >= Number(col[2]) && r <= Number(col[3])).map(([, v]) => v).filter(Boolean);
     const isArea = values.filter(numeric).length >= values.length * 0.6;
-    return { doc: d as Base['doc'], sheet: s.sheet, area: isArea ? s.range : null, type: s.room_count_range ?? (isArea ? null : s.range), source: { ...o.source, page: null } };
+    candidates.push({ base: { doc: d as Base['doc'], sheet: s.sheet, area: isArea ? s.range : null, type: s.room_count_range ?? (isArea ? null : s.range), source: { ...o.source, page: null } }, rows: values.length });
   }
+  const detected = detectBase(documents, sheets);
+  if (detected) candidates.push(detected);
+  // Stable sort: on equal coverage the model's selection (listed first) is kept.
+  return candidates.sort((a, b) => b.rows - a.rows)[0]?.base ?? null;
+}
+function detectBase(documents: InsightDocument[], sheets: (d: InsightDocument) => ReturnType<typeof sheetCells> | null): { base: Base; rows: number } | null {
+  let found: { base: Base; rows: number } | null = null;
   for (const d of documents) {
     for (const [sheet, cols] of sheets(d) ?? []) {
       let best: { col: string; rows: number[] } | null = null;
@@ -105,10 +114,10 @@ function findBase(rules: Rules, documents: InsightDocument[]): Base | null {
         if (plausible && /area|yta|boa|kvm|m2|m²/i.test(header)) { area = `${col}${first}:${col}${last}`; break; }
         if (plausible && !area && !/nr|nummer|id|våning|plan/i.test(header)) area = `${col}${first}:${col}${last}`;
       }
-      return { doc: d as Base['doc'], sheet, area, type: typeRange, source: { document_id: d.id, page: null, evidence: `${best.col}${first}: ${cols.get(best.col)?.get(first) ?? ''}` } };
+      if (best.rows.length > (found?.rows ?? 0)) found = { base: { doc: d as Base['doc'], sheet, area, type: typeRange, source: { document_id: d.id, page: null, evidence: `${best.col}${first}: ${cols.get(best.col)?.get(first) ?? ''}` } }, rows: best.rows.length };
     }
   }
-  return null;
+  return found;
 }
 
 // Finds a documented sentence and its physical page (PDF) for a citation.

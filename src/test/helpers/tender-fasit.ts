@@ -5,7 +5,7 @@ import { assumptionItems } from '@/lib/tender-quantity-display';
 import { withoutNegatedTerms } from '@/lib/tender-negation';
 export type FasitSnapshot = { insights: TenderInsights; quantities: TenderQuantities; documents: {id:string;file_name:string;doc_type:string|null}[] };
 type QuantityExpectation = { name:string; pattern:RegExp; exclude?:RegExp; value:number };
-export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken',QuantityExpectation[]> = {
+export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken'|'Baggen',QuantityExpectation[]> = {
  'Testlärkan':[
   {name:'Lägenhetscentral',pattern:/lägenhetscentral|gruppcentral.*lägenhet/i,value:54},
   {name:'Dubbla vägguttag',pattern:/vägguttag|dubb(?:la|elt).*uttag/i,exclude:/ip44|badrum|diskmaskin|kyl|frys/i,value:540},
@@ -35,6 +35,17 @@ export const tenderQuantityExpectations: Record<'Testlärkan'|'Provbänken',Quan
   {name:'Huvudcentral',pattern:/huvudcentral|fastighetscentral/i,value:1},
   {name:'Nödbelysning',pattern:/nöd.*belysning|nöd.*armatur/i,value:10},
   {name:'Fasadarmaturer',pattern:/fasad.*armatur|armatur.*fasad/i,value:4},
+ ],
+ // Baggen: reference calculation v2 and the verified nine-run result after PR #11 (142 sovrum + 27 halvrum).
+ 'Baggen':[
+  {name:'Vägguttag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*uttag)/i,exclude:/lamp|takuttag|belysning/i,value:507},
+  {name:'Lamputtag sovrum + halvrum',pattern:/^(?=.*(?:sovrum|halvrum))(?=.*(?:lamputtag|takuttag|belysning))/i,value:169},
+  {name:'Bänkuttag kök',pattern:/^(?=.*(?:kök|bänk))(?=.*(?:uttag|hörnbox))/i,exclude:/lamp|takuttag|belysning|diskmaskin|kyl|frys|spis|perilex|ugn/i,value:246},
+  {name:'Brandvarnare',pattern:/brandvarnare/i,value:150},
+  {name:'Golvvärme',pattern:/golvvärme/i,value:82},
+  {name:'Armatur L2 kök',pattern:/^(?=.*armatur)(?=.*(?:\bL2\b|arbetsbänk))/i,value:82},
+  {name:'Centraler i lokaler',pattern:/^(?=.*central)(?=.*lokal)/i,exclude:/huvudledning|rivning/i,value:9},
+  {name:'Rivning per lokal',pattern:/^(?=.*rivning)(?=.*lokal)/i,value:9},
  ]
 };
 const commonKeys: Record<string,Record<string,RegExp>> = {
@@ -49,7 +60,7 @@ const additionalKeys:Record<string,Record<string,RegExp[]>>={
  'Testlärkan':{'Objekt':[/54/,/1962/,/källar/i,/tre|3/i,/sex|6/i],'Entreprenadform':[/utförande/i,/sidoentreprenad/i],'Etapper':[/tre|3/i,/trapphus/i,/6|sex/i],'Vite':[/1\s*%/,/arbetsdag/i,/(?:inte|ej) begränsat|utan tak|obegräns/i],'Säkerhet':[/10\s*%/,/5\s*%/],'ÄTA-regler':[/skrift/i,/5\s*%/],'Försäkring':[/5\s*000\s*000|5\s*MSEK/i]},
  'Provbänken':{'Objekt':[/1988/,/900/,/två|2/i,/förskola/i,/sex|6/i],'Entreprenadform':[/totalentreprenad/i,/delad/i],'Etapper':[/plan\s*1/i,/plan\s*2/i,/överlapp/i],'Vite':[/10\s*000/,/kalenderdag/i,/20\s*%/],'Säkerhet':[/20\s*%/,/garantitid/i],'ÄTA-regler':[/50\s*000/,/inte|ej/i,/inget påslag|0\s*%/i],'Försäkring':[/20\s*000\s*000|20\s*MSEK/i,/entreprenadförsäkring/i]},
 };
-export function checkTenderFasit(name:'Testlärkan'|'Provbänken',snapshot:FasitSnapshot):string[]{
+export function checkTenderFasit(name:'Testlärkan'|'Provbänken'|'Baggen',snapshot:FasitSnapshot):string[]{
  const issues:string[]=[];
  const items=[...snapshot.quantities.items,...snapshot.quantities.assumptions.flatMap(assumptionItems)].filter((r,i,all)=>all.findIndex(x=>x.post===r.post&&x.unit===r.unit)===i);
  // Match on what a post includes: negated phrases ("exkl. diskmaskin", "ej lägenhetsunderlag") describe exclusions.

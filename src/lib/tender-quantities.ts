@@ -109,8 +109,10 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
   function decimal(value: bigint, digits: number) { const s = value.toString().padStart(digits + 1, '0'); return `${s.slice(0, -digits)}.${s.slice(-digits)}`.replace(/\.?0+$/, ''); }
   const result: TenderQuantities = { rules, items: [], assumptions: rules.assumptions.map(a => ({ description: a.description, sources: a.source && verified(a.source) ? [a.source] : [], item: null })) };
   for (const note of standardNotes) result.assumptions.push({ description: note.description, sources: note.sources, item: null });
-  // Verified apartment counts used by the per-apartment sanity bound (largest list count of apartments or kitchens).
-  const apartmentOperands = new Set(rules.operands.filter(o => o.basis === 'Lista' && (o.list_selection?.operation === 'Antal' && /lägenhet|lgh/i.test(o.label) && !/lokal/i.test(o.label) || o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')));
+  // Verified apartment counts used by the per-apartment sanity bounds (largest list count of apartments or kitchens,
+  // or a sourced text figure labelled as the number of apartments).
+  const apartmentOperands = new Set(rules.operands.filter(o => o.basis === 'Lista' && (o.list_selection?.operation === 'Antal' && /lägenhet|lgh/i.test(o.label) && !/lokal/i.test(o.label) || o.list_selection?.operation === 'Rum per rad' && o.list_selection.room === 'Kök')
+    || o.basis === 'Text' && !!o.source && /antal\s+(?:lägenheter|lgh|bostäder)|^\s*lägenheter\s*$/i.test(o.label) && !o.label.includes(UNSOURCED)));
   const apartments = [...apartmentOperands].reduce((max, o) => { const n = BigInt(Math.floor(Number(o.value))); return n > max ? n : max; }, 0n);
   // A post "per trapphus" counts stairwells. A "Unika trapphusplan" selection counts stairwell × floor combinations,
   // so for such posts it is replaced by the distinct addresses/stairwells of the same rows.
@@ -166,6 +168,22 @@ export function calculateTenderQuantities(raw: unknown, documents: InsightDocume
     if (missingSource && !item.rule.includes(UNSOURCED)) item.rule = `${UNSOURCED}. ${item.rule}`;
     const badValue = used.find(o => o.label.includes(IMPLAUSIBLE));
     if (badValue && !item.rule.includes(IMPLAUSIBLE)) item.rule = `${IMPLAUSIBLE}. ${item.rule}`;
+    // No silent fallback: a recipe term must be multiplied by a verified room/object count from the object list or the
+    // documents. Without one (missing, flagged, or a placeholder) the post is flagged Låg and stays outside the total.
+    const countFor = (term: { factors: string[] }) => term.factors.map(id => operands.get(id)).some(o => !!o && !o.recipe && o.basis !== 'Antagande' && !!o.source && Number(o.value) > 0 && !o.label.includes(UNSOURCED) && !o.label.includes(IMPLAUSIBLE) && (o.basis === 'Lista' || /antal|lägenhet|lgh|kök|rum|hall|lokal|totalt|per rad/i.test(o.label)));
+    const uncounted = i.terms.some(t => t.factors.some(id => operands.get(id)?.recipe) && !countFor(t));
+    // Lower bound: a room type that exists in every apartment (vardagsrum, hall, kök) cannot have fewer posts than apartments.
+    const everyApartmentRoom = used.find(o => o.recipe && ['Vardagsrum', 'Hall', 'Kök'].includes(o.recipe.room) || o.list_selection?.operation === 'Rum per rad' && ['Vardagsrum', 'Hall', 'Kök'].includes(o.list_selection.room ?? ''));
+    const belowApartments = !!everyApartmentRoom && apartments > 0n && total < apartments * scale ** 4n;
+    if (uncounted || belowApartments) {
+      const reason = uncounted
+        ? 'Rumsantal saknas – typreceptet kan inte räknas utan antal rum från objektlistan'
+        : `Mängden ${item.quantity.replace('.', ',')} är lägre än antalet lägenheter (${apartments}) för ett rum som finns i varje lägenhet`;
+      item.certainty = 'Låg';
+      item.rule = `${reason} – kontrollera. ${item.rule}`;
+      result.assumptions.push({ description: `${i.post}: ${reason}. Posten räknas inte in i totalen förrän mängden kontrollerats.`, sources: item.sources, item });
+      continue;
+    }
     // Sanity bound: a recipe or per-apartment post above the limit per apartment is flagged Låg (outside the total).
     const perApartment = apartments > 0n && i.unit !== 'm' && (recipeBased || standardBased || used.some(o => apartmentOperands.has(o)) || /per lägenhet|typrecept/i.test(`${i.post} ${i.rule}`));
     if (perApartment && total > apartments * BigInt(MAX_PER_APARTMENT) * scale ** 4n) {
