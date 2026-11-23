@@ -7,7 +7,7 @@ import type { CountBasis, StoredObjectModel } from './tender-quantities';
 // object model, and a quantity is linked only when the sheet reproduces it exactly.
 export const APARTMENT_SHEET = 'Lägenheter';
 const HEADERS = ['Rad i objektlistan', 'Lägenhetsnr', 'Adress', 'Våning', 'Typ', 'Rum', 'Yta (m²)', 'Sovrum', 'Halvrum', 'Kök', 'Badrum', 'WC', 'Underlag', 'Typkod'];
-const BASIS_TEXT = { 'type code': 'Typkod på ritning', default: 'Standard (1 kök, 1 badrum)', 'area rule': 'Separat WC enligt ytgräns (antagen)' } as const;
+const BASIS_TEXT = { 'type code': 'Typkod på ritning', 'rooms and floor': 'Typkod via rumsantal och plan (antagen)', default: 'Standard (1 kök, 1 badrum)', 'area rule': 'Separat WC enligt ytgräns (antagen)' } as const;
 const column = (n: number) => { let s = ''; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; };
 
 // The divisors used by "per started area" posts, each with its own formula column after the fixed columns.

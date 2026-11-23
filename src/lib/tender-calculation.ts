@@ -52,20 +52,23 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     if (!operand || operand.basis !== 'Lista' || !/lägenhet/i.test(operand.label) || operand.list_selection?.operation !== 'Antal' || operand.list_selection.equals !== null) throw Error('Rivningen saknar verifierat lägenhetsantal.');
     items.push({ post: m.demolition.post, unit: 'lgh', quantity: operand.value, calculation: operand.value, rule: m.demolition.flag ? `Rivning per lägenhet. ${m.demolition.flag}.` : 'Rivning enligt underlaget, per lägenhet.', sources: [m.demolition.source], certainty: m.demolition.flag ? 'Låg' : 'Hög' });
   }
-  // One-off posts bound to the same catalog type are one post (e.g. "Projektering" and "Bygghandlingar"): the first
-  // carries the quantity, the others are kept visible at quantity 0 with a note.
+  // One post per catalog type where the type covers the whole thing: one-off posts on the same type ("Projektering" and
+  // "Bygghandlingar"), and posts in the same unit on a complete-package type ("Tvättstuga komplett elinstallation" for
+  // its lighting, machines and timer outlet). The first carries the quantity, the others stay visible at 0 with a note.
   const bindingOf = (post: string) => m.bindings.find(b => b.post === post);
-  const firstOneOff = new Map<string, string>();
-  for (const i of items) { const type = bindingOf(i.post)?.type_id; if (type && i.count_unit === 'post' && !i.option && !firstOneOff.has(type)) firstOneOff.set(type, i.post); }
+  const packageKey = (i: { count_unit?: string | undefined; option?: boolean | undefined }, t: { id: string; name: string } | undefined) =>
+    !t || i.option ? null : i.count_unit === 'post' ? `${t.id}|post` : /\bkomplett\b/i.test(t.name) && i.count_unit ? `${t.id}|${i.count_unit}` : null;
+  const firstOfPackage = new Map<string, string>();
+  for (const i of items) { const k = packageKey(i, s.post_types.find(t => t.id === bindingOf(i.post)?.type_id)); if (k && !firstOfPackage.has(k)) firstOfPackage.set(k, i.post); }
   const apartments = q.object_model?.apartments.length ?? 0;
   const rows = items.map(item => {
     const b = bindingOf(item.post), t = s.post_types.find(t => t.id === b?.type_id);
-    const mergedInto = t && item.count_unit === 'post' && !item.option ? firstOneOff.get(t.id) : undefined;
+    const packaged = packageKey(item, t), mergedInto = packaged ? firstOfPackage.get(packaged) : undefined;
     // A one-off post bound to a catalog type priced per apartment ("Håltagning och brandtätning per lägenhet") is counted
-    // per apartment of the object list.
+    // per apartment of the object list: an assumption from the catalog type, not a documented count.
     const perApartment = t && item.count_unit === 'post' && apartments > 0 && /\bper\s+(?:lägenhet|lgh)\b/i.test(t.name);
-    const i = mergedInto && mergedInto !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${mergedInto} (samma katalogtyp).` }
-      : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Katalogtypen gäller per lägenhet: ${apartments} lägenheter i objektlistan.`, level: 'Räknad' as const, certainty: 'Medel' as const }
+    const i = mergedInto && mergedInto !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${mergedInto} (samma katalogtyp${packaged?.endsWith('|post') ? '' : ', komplett per enhet'}).` }
+      : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Antaget: katalogtypen gäller per lägenhet, ${apartments} lägenheter i objektlistan.`, level: 'Antagen' as const, certainty: 'Låg' as const }
       : item;
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
     // Levels as in the reference calculation: Bekräftad, Räknad and Antagen are in the total (Antagen is marked for

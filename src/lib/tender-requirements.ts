@@ -56,6 +56,7 @@ export function decodeRequirements(raw: unknown): Requirements {
 const ROOM_UNITS: Record<string, keyof ObjectModel['counts'] | null> = { 'lägenhet': 'apartments', 'kök': 'kitchens', 'badrum': 'bathrooms', 'wc': 'wc', 'vardagsrum': 'vardagsrum', 'sovrum': 'sovrum', 'halvrum': 'halvrum', 'hall': 'hall', 'lokal': 'premises', 'trapphusplan': 'stairwell_floors' };
 const levelCertainty: Record<QuantityLevel, QuantityItem['certainty']> = { 'Bekräftad': 'Hög', 'Räknad': 'Medel', 'Antagen': 'Låg', 'Saknar mängd': 'Låg' };
 const UNSOURCED = 'Källa saknas – kontrollera';
+const DERIVED_LABEL = ' (inklusive kök, badrum eller WC enligt ritningarnas typkoder – antaget, se Antaganden)';
 const equipment = (post: string) => { const t = withoutNegatedTerms(post).toLocaleLowerCase('sv'); return /lamputtag|takuttag|belysningsuttag|\bdcl\b/.test(t) ? 'lamps' : /uttag|hörnbox/.test(t) && !/diskmaskin|kyl|frys|spis|perilex|ugn|mikro|data|ip44|tvätt|städ|fasad|utomhus|cee|ladd/.test(t) ? 'sockets' : null; };
 
 // Sockets stated per counter length or per worktop ("1 uttag per 1000 mm bänk", "hörnbox per arbetsbänk") cannot be
@@ -69,12 +70,15 @@ const BATHROOM = /badrum|våtrum|golvvärme|handdukstork|spegelskåp/;
 // An apartment has one washing machine however many bathrooms it has: its supply is counted per apartment.
 const PER_APARTMENT_EQUIPMENT = /kombimaskin|tvättmaskin|tvättpelare|torktumlare/;
 // The installation test of each apartment (insulation measurement, RCD test, test protocol per apartment) is counted
-// per apartment, also when the requirement names it as a one-off post (reference calculation: 1 per apartment).
+// per apartment, also when the requirement names it as a one-off post. Only the post's own name decides: a note that
+// lists what a common test includes ("Samordnad funktionsprovning … inkluderar isolationsmätning") never makes the
+// common-parts test a per-apartment post.
 const PER_APARTMENT_TEST = /isolationsmätning|jordfelsbrytar\p{L}*(?: ?test|prov)|provning\p{L}* (?:och protokoll )?per lägenhet/u;
 function roomUnit(r: Requirement): Requirement['unit_of_count'] {
   const t = withoutNegatedTerms(`${r.post} ${r.note ?? ''}`).toLocaleLowerCase('sv');
+  const name = withoutNegatedTerms(r.post).toLocaleLowerCase('sv');
   if (r.unit_of_count === 'badrum' && PER_APARTMENT_EQUIPMENT.test(t)) return 'lägenhet';
-  if (r.unit_of_count === 'post' && PER_APARTMENT_TEST.test(t)) return 'lägenhet';
+  if (r.unit_of_count === 'post' && PER_APARTMENT_TEST.test(name) && postMeaning(r.post) !== 'provning-allm') return 'lägenhet';
   if (r.unit_of_count !== 'lägenhet') return r.unit_of_count;
   if (r.section === 2 && KITCHEN.test(t) && !BATHROOM.test(t)) return 'kök';
   if (r.section === 3 && BATHROOM.test(t) && !KITCHEN.test(t)) return 'badrum';
@@ -104,6 +108,10 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
   const listSource: Source | null = model ? { document_id: model.document_id, page: null, evidence: model.evidence } : null;
   const roomSource: Source | null = roomList ? { document_id: roomList.document_id, page: null, evidence: roomList.evidence } : null;
   const textCount = (name: string) => input.counts.find(c => c.name === name && verifyTenderSource(documents, c.source)) ?? null;
+  // Kitchens, bathrooms and WC that differ from the list's default because of drawing codes (read from transcribed
+  // plans, or linked by room count and floor) are assumptions: the posts counted from them are Antagen, with the reason.
+  const drawingDerived = (key: keyof ObjectModel['counts']) => !!model && (key === 'kitchens' || key === 'bathrooms' || key === 'wc') && model.apartments.some(a =>
+    (a.basis === 'type code' || a.basis === 'rooms and floor') && (key === 'kitchens' ? a.kitchens !== 1 : key === 'bathrooms' ? a.bathrooms !== 1 : a.wc !== 0));
   // Unit counts: code from the object model first; text figures only for what the object list cannot show.
   // basis: the unit is counted from the object model alone, so the Excel export can link it to the apartment sheet.
   function unitCount(r: Requirement): { value: number; label: string; level: QuantityLevel; source: Source | null; basis?: CountBasis['unit'] } | null {
@@ -113,7 +121,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     }
     const key = ROOM_UNITS[r.unit_of_count];
     const linked = r.unit_of_count === 'trapphusplan' ? undefined : r.unit_of_count as CountBasis['unit'];
-    if (key && model && (model.counts[key] > 0 || r.unit_of_count === 'halvrum' || r.unit_of_count === 'wc')) return { value: model.counts[key], label: `${r.unit_of_count} i objektlistan`, level: r.unit_of_count === 'lägenhet' || r.unit_of_count === 'lokal' ? 'Bekräftad' : 'Räknad', source: listSource, ...(linked ? { basis: linked } : {}) };
+    if (key && model && (model.counts[key] > 0 || r.unit_of_count === 'halvrum' || r.unit_of_count === 'wc')) return { value: model.counts[key], label: `${r.unit_of_count} i objektlistan${drawingDerived(key) ? DERIVED_LABEL : ''}`, level: r.unit_of_count === 'lägenhet' || r.unit_of_count === 'lokal' ? 'Bekräftad' : drawingDerived(key) ? 'Antagen' : 'Räknad', source: listSource, ...(linked ? { basis: linked } : {}) };
     if (r.unit_of_count === 'sovrum_och_halvrum' && model) return { value: model.counts.sovrum + model.counts.halvrum, label: 'sovrum och halvrum i objektlistan', level: 'Räknad', source: listSource, basis: 'sovrum_och_halvrum' };
     if (r.unit_of_count === 'lägenhet_och_lokal' && model) { const text = model.counts.premises ? null : textCount('lokal')?.value ?? null; return { value: model.counts.apartments + (model.counts.premises || text || 0), label: 'lägenheter och lokaler', level: 'Bekräftad', source: listSource, ...(text === null ? { basis: 'lägenhet_och_lokal' as const } : {}) }; }
     if (r.unit_of_count === 'per_area' && model && r.area_divisor) return { value: perApartmentArea(model, r.area_divisor), label: `påbörjade ${r.area_divisor} m² per lägenhet`, level: 'Räknad', source: listSource, basis: 'per_area' };
@@ -192,10 +200,14 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     }
   }
   // How kitchens and bathrooms were counted, so a missing or unmatched drawing reading is visible in the result.
-  if (model) assumptions.push({ description: model.code_matches
-    ? `Kök, badrum och WC: typkoder från ritningarna kopplade till ${model.code_matches} av ${model.counts.apartments} lägenheter (${model.codes_found} typkoder lästa); övriga räknas som 1 kök och 1 badrum.`
-    : `Kök, badrum och WC: ${model.codes_found ? `${model.codes_found} typkoder lästes från ritningarna men ingen kunde kopplas till lägenhetslistan (nummer eller yta)` : 'inga typkoder lästes från ritningarna'}. Varje lägenhet räknas som 1 kök och 1 badrum – kontrollera mot ritningarna.`
-    + (model.unmatched_codes.length ? ` Ej kopplade: ${model.unmatched_codes.join('; ')}.` : ''), sources: listSource ? [listSource] : [], item: null });
+  if (model) {
+    const linked = model.code_matches + model.rooms_floor_matches;
+    assumptions.push({ description: (linked
+      ? `Kök, badrum och WC: ${model.codes_found} typkoder lästa från ritningarna (siffrorna efter K/B/W/T är typnummer; antalet kök/badrum/WC är antalet K-, B- och W-led). ${model.code_matches ? `${model.code_matches} lägenheter kopplade via nummer eller yta. ` : ''}${model.rooms_floor_matches ? `${model.rooms_floor_matches} lägenheter kopplade via rumsantal och den plan ritningen anger – antaget, kontrollera mot ritningarna. ` : ''}Övriga räknas som 1 kök och 1 badrum.`
+      : `Kök, badrum och WC: ${model.codes_found ? `${model.codes_found} typkoder lästes från ritningarna men ingen kunde kopplas till lägenhetslistan (nummer, yta eller rumsantal och plan)` : 'inga typkoder lästes från ritningarna'}. Varje lägenhet räknas som 1 kök och 1 badrum – kontrollera mot ritningarna.`)
+      + (model.ambiguous_codes.length ? ` Ej kopplade eftersom typkoderna för samma rumsantal skiljer sig: ${model.ambiguous_codes.join('; ')}.` : '')
+      + (!linked && model.unmatched_codes.length ? ` Ej kopplade: ${model.unmatched_codes.join('; ')}.` : ''), sources: listSource ? [listSource] : [], item: null });
+  }
   mergeOverlaps(items, assumptions, ruleItems);
   if (!model && !roomList) assumptions.push({ description: 'Kontroll av omfattning: ingen objektlista med lägenhetstyper eller rumsförteckning hittades. Poster per lägenhet, kök, badrum och rum kan inte räknas – fyll i mängderna.', sources: [], item: null });
   return { rules: { operands, items: ruleItems, assumptions: [] }, items, assumptions, ...(model ? { object_model: storedObjectModel(model) } : {}) };

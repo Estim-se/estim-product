@@ -8,13 +8,15 @@ import type { TypeCode } from './tender-type-codes';
 export type Apartment = {
   row: number; number: string | null; address: string | null; floor: string | null; label: string; rooms: number; area: number | null;
   bedrooms: number; half_rooms: number; kitchens: number; bathrooms: number; wc: number;
-  basis: 'type code' | 'default' | 'area rule'; code: string | null;
+  basis: 'type code' | 'rooms and floor' | 'default' | 'area rule'; code: string | null;
 };
 export type ObjectModel = {
   document_id: string; sheet: string; type_column: string; first_row: number; last_row: number;
   apartments: Apartment[]; premises: number;
   counts: { apartments: number; premises: number; kitchens: number; bathrooms: number; wc: number; vardagsrum: number; hall: number; sovrum: number; halvrum: number; stairwells: number; stairwell_floors: number };
   code_matches: number; codes_found: number; unmatched_codes: string[]; evidence: string;
+  // Apartments linked to drawing codes by room count and floor (assumed), and room/floor groups whose codes disagree.
+  rooms_floor_matches: number; ambiguous_codes: string[];
 };
 type Doc = { id: string; file_type: string; text?: string | null };
 
@@ -75,10 +77,28 @@ export function buildObjectModel(documents: Doc[], typeCodes: TypeCode[] = [], w
         const common = [...candidates].sort((x, y) => candidates.filter(c => key(c) === key(y)).length - candidates.filter(c => key(c) === key(x)).length)[0]!;
         Object.assign(a, { kitchens: common.kitchens, bathrooms: common.bathrooms, wc: common.wc, basis: 'type code', code: common.code }); code_matches++;
       }
+      // Without a number or area next to the codes (transcribed plans often show the code alone), an apartment takes the
+      // codes of the drawing that states its floor and has the same room count ("L4" = 4 rum, "+U" not counted): only
+      // when all those codes agree on kitchens, bathrooms and WC. The result is an assumption (basis 'rooms and floor').
+      const floors = apartments.map(a => Number(a.floor)).filter(Number.isInteger), top = floors.length ? Math.max(...floors) : null;
+      const covers = (c: TypeCode, floor: number) => c.floors === 'top' ? floor === top : !!c.floors && floor >= c.floors.from && floor <= c.floors.to;
+      const ambiguous = new Map<string, string>();
+      let rooms_floor_matches = 0;
+      for (const a of apartments) {
+        const floor = Number(a.floor);
+        if (a.basis !== 'default' || !Number.isInteger(floor)) continue;
+        const same = typeCodes.filter(c => c.rooms !== null && c.rooms === a.rooms && covers(c, floor));
+        const combos = [...new Set(same.map(c => `${c.kitchens}|${c.bathrooms}|${c.wc}`))];
+        if (combos.length === 1) {
+          const c = same[0]!;
+          Object.assign(a, { kitchens: c.kitchens, bathrooms: c.bathrooms, wc: c.wc, basis: 'rooms and floor', code: [...new Set(same.map(x => x.code))].join('/').slice(0, 40) }); rooms_floor_matches++;
+        } else if (combos.length > 1) ambiguous.set(`${String(a.rooms).replace('.', ',')} rum`, [...new Set(same.map(x => x.code))].join(', '));
+      }
       if (wcMinArea !== null) for (const a of apartments) if (a.basis === 'default' && a.area !== null && a.area >= wcMinArea) { a.wc = 1; a.basis = 'area rule'; }
       const sum = (f: (a: Apartment) => number) => apartments.reduce((s, a) => s + f(a), 0);
       const model: ObjectModel = {
         document_id: d.id, sheet, type_column: typeColumn.c, first_row: firstData, last_row: Math.max(...dataRows.map(([n]) => n)), apartments, premises, code_matches, codes_found: typeCodes.length,
+        rooms_floor_matches, ambiguous_codes: [...ambiguous].map(([rooms, codes]) => `${rooms}: ${codes}`),
         unmatched_codes: resolved.filter(r => r.number === null && r.area === null).slice(0, 5).map(r => `${r.c.code} (nr ${r.c.apartments?.join('/') || r.c.apartment || '–'}, yta ${r.c.areas?.join('/') || r.c.area || '–'})`),
         evidence: `${typeColumn.c}${apartments[0]?.row ?? firstData}: ${apartments[0]?.label ?? ''}`,
         counts: { apartments: apartments.length, premises, kitchens: sum(a => a.kitchens), bathrooms: sum(a => a.bathrooms), wc: sum(a => a.wc), vardagsrum: apartments.length, hall: apartments.length,

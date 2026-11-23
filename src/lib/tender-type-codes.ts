@@ -1,7 +1,18 @@
 // Apartment type codes on plan drawings, e.g. "L4-K2-B4-W1" or "L4+U-K14-B12-W2-K16-B13": the first segment is the
 // layout (rooms, "½" for a half room, "+U" for an extra room), then one token per kitchen (K), bathroom (B), WC (W) and
 // laundry (T). The digits after the letters are type numbers, not counts: two B tokens mean two bathrooms.
-export type TypeCode = { code: string; rooms: number | null; kitchens: number; bathrooms: number; wc: number; laundry: number; apartment: string | null; area: number | null; apartments?: string[] | undefined; areas?: number[] | undefined };
+export type TypeCode = { code: string; rooms: number | null; kitchens: number; bathrooms: number; wc: number; laundry: number; apartment: string | null; area: number | null; apartments?: string[] | undefined; areas?: number[] | undefined;
+  // The floors the drawing page states it shows ("Våningsplan 1-6 TR" = 1–6, a loft/attic plan = the top floor).
+  floors?: FloorScope | undefined };
+export type FloorScope = { from: number; to: number } | 'top' | null;
+// The floors a drawing page states it shows. Only explicit statements count; a drawing number ("Plan 5") is not a floor.
+export function floorScope(page: string): FloorScope {
+  const range = page.match(/våningsplan\s*(\d{1,2})\s*(?:-|–|till)\s*(\d{1,2})/i);
+  if (range) return { from: Number(range[1]), to: Number(range[2]) };
+  const single = page.match(/våningsplan\s*(\d{1,2})\b(?!\s*(?:-|–|till))/i);
+  if (single) return { from: Number(single[1]), to: Number(single[1]) };
+  return /\bvind(?:splan)?\b|\bplan\s+vind\b/i.test(page) ? 'top' : null;
+}
 
 const CODE = /(?<![\p{L}\d])((?:L?\d(?:[.,]5|½)?|D|L)(?:\+U)?(?:-(?:K|B|W|T|U)\d{1,2}){2,})(?![\p{L}\d])/gu;
 const AREA = /(\d{2,3}(?:[.,]\d)?)\s*(?:m²|m2|m\^2|kvm)|(?:boa|bostadsyta)\s*:?\s*(\d{2,3}(?:[.,]\d)?)(?![\d.,])/i;
@@ -44,6 +55,11 @@ function lineCandidates(line: string, at: number | null = null, length = 0) {
 export function typeCodesInText(text: string): TypeCode[] {
   const lines = text.split('\n').map(normaliseTypeCodeText);
   const found: TypeCode[] = [];
+  // Floor scope per physical page (a document may hold several drawings).
+  const pageOf: FloorScope[] = []; let start = 0;
+  const close = (end: number) => { const scope = floorScope(lines.slice(start, end).join('\n')); for (let k = start; k < end; k++) pageOf[k] = scope; };
+  lines.forEach((line, i) => { if (i > start && /^Fysisk sida:/.test(line)) { close(i); start = i; } });
+  close(lines.length);
   lines.forEach((line, i) => {
     const codes = [...line.matchAll(CODE)];
     for (const m of codes) {
@@ -60,7 +76,7 @@ export function typeCodesInText(text: string): TypeCode[] {
       for (const dir of [1, -1]) for (let k = 1; k <= 3; k++) { const l = lines[i + dir * k]; if (l === undefined || hasCode(l)) break; near[dir === 1 ? (k - 1) * 2 : (k - 1) * 2 + 1] = l; }
       const ordered = [lineCandidates(leftText + ' '.repeat(m[0].length) + rightText, leftText.length, m[0].length), ...near.filter((l): l is string => l !== undefined).map(l => lineCandidates(l))];
       const areas = [...new Set(ordered.flatMap(c => c.areas))], apartments = [...new Set(ordered.flatMap(c => c.apartments))];
-      found.push({ ...parsed, apartment: apartments[0] ?? null, area: areas[0] ?? null, apartments, areas });
+      found.push({ ...parsed, apartment: apartments[0] ?? null, area: areas[0] ?? null, apartments, areas, floors: pageOf[i] ?? null });
     }
   });
   return found.filter((c, i, all) => all.findIndex(x => x.code === c.code && x.apartment === c.apartment && x.area === c.area) === i);

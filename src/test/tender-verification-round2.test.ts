@@ -64,7 +64,7 @@ describe('verification round 2', () => {
     const rows = calculateTenderCost(q, settings, { bindings, demolition: null }).rows;
     expect(rows.find(r => r.post === 'Relationshandlingar el')?.quantity).toBe('1');
     expect(rows.find(r => r.post === 'Relationsritningar el')).toMatchObject({ quantity: '0', total: 0, rule: expect.stringContaining('Ingår i Relationshandlingar el') });
-    expect(rows.find(r => r.post === 'Håltagning och tätning')).toMatchObject({ quantity: '12', level: 'Räknad' });
+    expect(rows.find(r => r.post === 'Håltagning och tätning')).toMatchObject({ quantity: '12', level: 'Antagen' });
   });
   it('insulation measurement is the test per apartment (reference 9.3), never merged into the common-parts test', () => {
     expect(postMeaning('Isolationsmätning, jordning och jordfelsbrytartest')).toBe('provning-lgh');
