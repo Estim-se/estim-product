@@ -838,3 +838,48 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .tender-panel table thead th{color:var(--foreground)}
 .tender-panel table th{font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 .tender-panel table tbody th{text-transform:none;letter-spacing:0;font-size:14px}
+
+/* Tender workspace: list on the left, selected tender on the right */
+.tender-workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;margin-top:16px;align-items:start}
+.tender-aside{position:sticky;top:16px;display:flex;flex-direction:column;padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--card);max-height:calc(100vh - 32px);overflow:auto}
+.tender-aside .tender-toolbar{gap:8px}
+.tender-aside .tender-toolbar .btn{padding-inline:12px}
+.tender-aside .tender-list{display:flex;flex-direction:column;gap:2px}
+.tender-aside .tender-file-item{gap:0}
+.tender-aside .tender-file-item>.btn-sm{display:none}
+.tender-aside .tender-file-item:hover>.btn-sm,.tender-aside .tender-file-item:focus-within>.btn-sm{display:inline-flex}
+.tender-aside .tender-list-row{border-radius:10px;padding:8px 10px}
+.tender-aside .tender-list-row svg{width:18px;height:18px}
+.tender-aside .tender-list-row .chip{font-size:11px}
+.tender-list-row.on{background:color-mix(in oklab,var(--foreground) 7%,transparent)}
+.tender-main{min-width:0}
+.tender-main .tender-empty{padding:64px 0}
+.tender-hero{align-items:flex-start;gap:8px}
+.tender-more{position:relative}
+.tender-more summary{list-style:none;cursor:pointer}
+.tender-more summary::-webkit-details-marker{display:none}
+.tender-more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:flex;flex-direction:column;gap:2px;min-width:260px;padding:6px;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:0 12px 30px -12px color-mix(in oklab,var(--foreground) 30%,transparent)}
+.tender-more-menu .btn{justify-content:flex-start;border:0;width:100%}
+.tender-body{display:grid;grid-template-columns:180px minmax(0,1fr);gap:24px;align-items:start}
+.tender-subnav{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px}
+.tender-subnav-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:10px;font-size:14px;font-weight:500;color:var(--muted-foreground);background:transparent;cursor:pointer;text-align:left}
+.tender-subnav-item:hover{color:var(--foreground);background:color-mix(in oklab,var(--foreground) 4%,transparent)}
+.tender-subnav-item.on{color:var(--foreground);background:color-mix(in oklab,var(--foreground) 7%,transparent)}
+.tender-subnav-count{font-size:11px;color:var(--muted-foreground)}
+.tender-content{min-width:0}
+.tender-content>.tender-panel{padding-top:0}
+.tender-todo{padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
+.tender-todo h2{font-size:16px}
+.tender-todo ul{margin-top:8px;display:flex;flex-direction:column}
+.tender-todo-item{display:flex;align-items:center;gap:10px;width:100%;padding:10px 4px;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;text-align:left}
+.tender-todo li:last-child .tender-todo-item{border-bottom:0}
+.tender-dot{width:8px;height:8px;border-radius:50%;flex:none;background:oklch(0.8 0.12 75)}
+.tender-dot.high{background:var(--destructive)}
+button.tender-kpi{text-align:left;cursor:pointer}
+button.tender-kpi:hover{border-color:var(--foreground)}
+@media (max-width:1024px){.tender-workspace{grid-template-columns:1fr}.tender-aside{position:static;max-height:none}.tender-body{grid-template-columns:1fr}.tender-subnav{position:static;flex-direction:row;overflow-x:auto}.tender-subnav-item{white-space:nowrap;gap:6px}}
+.tender-risk-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 8px;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;text-align:left}
+.tender-risk-row:hover{background:color-mix(in oklab,var(--foreground) 4%,transparent)}
+.tender-risk-row .grow{min-width:0;display:flex;flex-direction:column;gap:2px}
+.tender-risk-sub{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.tender-sheet{position:fixed;top:0;right:0;bottom:0;z-index:60;width:min(520px,100vw);overflow:auto;background:var(--card);border-left:1px solid var(--border);box-shadow:-20px 0 40px -20px color-mix(in oklab,var(--foreground) 30%,transparent)}
