@@ -22,7 +22,7 @@ it('the Bekräfta checkbox updates the displayed calculation totals',()=>{
 });
 it('Excel gates low-quantity formulas on an editable confirmation cell',async()=>{
  const book=await createTenderWorkbook({name:'Baggen',quantities,settings,matches,insights:null,documents:[]});const sheet=book.getWorksheet('Kalkyl');
- expect(sheet?.getCell('M2').value).toBe(0);expect(sheet?.getCell('E2').value).toBe(2);expect(sheet?.getCell('F2').value).toBe(1500);expect(sheet?.getCell('H2').formula).toBe('IF(OR(M2=0,COUNT(B2,E2,F2)<3),"",ROUND(B2*E2,6))');
+ expect(sheet?.getCell('N5').value).toBe(0);expect(sheet?.getCell('F5').value).toBe(2);expect(sheet?.getCell('G5').value).toBe(1500);expect(sheet?.getCell('H5').formula).toBe('IF(OR(N5=0,COUNT(C5,F5,G5)<3),"",ROUND(C5*F5,6))');
 });
 it('a proposal contributes nothing until an existing catalog type and low quantity are both approved',()=>{
  function Table(){const [m,set]=useState<CalculationMatches>({...matches,bindings:matches.bindings.map(b=>({...b,type_id:null}))});return <TenderCostTable quantities={quantities} settings={settings} matches={m} onChange={set}/>;}

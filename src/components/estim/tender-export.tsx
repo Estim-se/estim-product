@@ -21,7 +21,7 @@ export function TenderExportDownloads({ name, prepare, branding, loadBranding }:
     try {
       const [input, currentBranding] = await Promise.all([prepare(), loadBranding ? loadBranding() : Promise.resolve(branding)]);
       const [{ generateTenderXlsx }, { generateTenderPdf }] = await Promise.all([import('@/lib/tender-export-xlsx'), import('@/lib/tender-export-pdf')]);
-      const [xlsx, pdf] = await Promise.all([generateTenderXlsx(input), generateTenderPdf(input, currentBranding)]);
+      const [xlsx, pdf] = await Promise.all([generateTenderXlsx(input, currentBranding), generateTenderPdf(input, currentBranding)]);
       const zip = await generateTenderZip(input, { xlsx, pdf });
       if (current === run.current) setFiles(zip);
     } catch { if (current === run.current) setError('Exporten kunde inte skapas. Försök igen.'); }
