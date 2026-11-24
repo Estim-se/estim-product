@@ -1,16 +1,18 @@
 import type ExcelJS from 'exceljs';
 import type { CountBasis, StoredObjectModel } from './tender-quantities';
 
-// Per-apartment sheet ("Lägenheter") in the Excel export: one editable row per apartment from the object list, with
-// bedrooms, half rooms and started-area units as formulas. Calculation quantities counted from the object model refer
-// to the column sums, so changing an apartment changes the calculation. Presentation only: the values are the stored
-// object model, and a quantity is linked only when the sheet reproduces it exactly.
+// Per-apartment sheet ("Lägenheter") in the Excel export, laid out as the reference calculation: a summary at the top
+// (apartments, bedrooms + half rooms, started-area units, kitchens, bathrooms, separate WC, premises) and one editable
+// row per apartment from the object list. Calculation quantities counted from the object model refer to the summary
+// cells, so changing an apartment changes the calculation. Presentation only: the values are the stored object model,
+// and a quantity is linked only when the sheet reproduces it exactly.
 export const APARTMENT_SHEET = 'Lägenheter';
-const HEADERS = ['Rad i objektlistan', 'Lägenhetsnr', 'Adress', 'Våning', 'Typ', 'Rum', 'Yta (m²)', 'Sovrum', 'Halvrum', 'Kök', 'Badrum', 'WC', 'Underlag', 'Typkod'];
-const BASIS_TEXT = { 'type code': 'Typkod på ritning', 'rooms and floor': 'Typkod via rumsantal och plan (antagen)', default: 'Standard (1 kök, 1 badrum)', 'area rule': 'Separat WC enligt ytgräns (antagen)' } as const;
+const BASIS_TEXT = { 'type code': 'Typkod på ritning', 'rooms and floor': 'Antagen: typkod via rumsantal och plan', default: 'Antagen: ritning saknas, 1 kök och 1 badrum', 'area rule': 'Antagen: separat WC enligt ytgräns' } as const;
 const column = (n: number) => { let s = ''; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; };
+export const SHEET_STYLE = { tile: 'F3F6F9', heading: 'D9E2EC', assumed: 'FCE4D6', input: 'FFF2CC', inputInk: '0000FF', note: '595959' };
+const NF0 = '#,##0;-#,##0;"-"';
 
-// The divisors used by "per started area" posts, each with its own formula column after the fixed columns.
+// The divisors used by "per started area" posts, each with its own formula column.
 export function areaDivisors(bases: (CountBasis | undefined)[]) {
   return [...new Set(bases.flatMap(b => b?.unit === 'per_area' && b.area_divisor ? [b.area_divisor] : []))].sort((a, b) => a - b);
 }
@@ -33,50 +35,90 @@ export function sheetUnitCount(model: StoredObjectModel, basis: CountBasis): num
 export function sheetQuantity(model: StoredObjectModel, basis: CountBasis) {
   return Math.round(sheetUnitCount(model, basis) * basis.per_unit * 1000) / 1000;
 }
+// Bedrooms and half rooms follow the room count formula ("3,5 rum" = 2 bedrooms + 1 half room) for every apartment;
+// otherwise (a bedroom column in the list) the sheet shows the values and posts per bedroom are not linked.
+const roomsFormulaHolds = (model: StoredObjectModel) => model.apartments.every(a => {
+  const rooms = a.rooms ?? 0; return a.bedrooms === Math.max(Math.trunc(rooms) - 1, 0) && a.half_rooms === (rooms > Math.trunc(rooms) ? 1 : 0);
+});
 
-export type ApartmentSheet = { last: number; premisesCell: string; divisorColumns: Map<number, string> };
-export function addApartmentSheet(book: ExcelJS.Workbook, model: StoredObjectModel, divisors: number[], style: { heading: string; input: (c: ExcelJS.Cell, note: string) => void }): ApartmentSheet {
-  const ws = book.addWorksheet(APARTMENT_SHEET, { views: [{ state: 'frozen', ySplit: 1 }], pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-  const divisorColumns = new Map(divisors.map((d, i) => [d, column(HEADERS.length + 1 + i)]));
-  ws.addRow([...HEADERS, ...divisors.map(d => `Påbörjade ${d} m²`)]);
-  [10, 14, 30, 10, 22, 8, 10, 10, 10, 8, 8, 8, 30, 12, ...divisors.map(() => 16)].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-  ws.getRow(1).font = { name: 'Arial', bold: true };
-  ws.getRow(1).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.heading } }; });
-  for (const a of model.apartments) {
-    const row = ws.addRow([a.row, a.number, a.address, a.floor, a.label, a.rooms, a.area, null, null, a.kitchens, a.bathrooms, a.wc, BASIS_TEXT[a.basis], a.code]), n = row.number;
-    style.input(row.getCell(6), 'Antal rum enligt objektlistan (t.ex. 3,5 = tre rum och ett halvrum). Ändra vid behov.');
-    if (a.area !== null) style.input(row.getCell(7), 'Bostadsyta enligt objektlistan.');
-    for (const c of [10, 11, 12]) style.input(row.getCell(c), a.basis === 'type code' ? `Enligt typkod ${a.code ?? ''} på ritning.` : a.basis === 'area rule' && c === 12 ? 'Antagen: separat WC enligt företagets ytgräns, ingen ritning visar planlösningen.' : 'Standard: 1 kök, 1 badrum, ingen separat WC när ingen ritning visar planlösningen.');
-    row.getCell(8).value = { formula: `MAX(INT(F${n})-1,0)`, result: a.bedrooms };
-    row.getCell(9).value = { formula: `IF(F${n}>INT(F${n}),1,0)`, result: a.half_rooms };
-    for (const [d, col] of divisorColumns) ws.getCell(`${col}${n}`).value = { formula: `IF(N(G${n})>0,ROUNDUP(G${n}/${d},0),1)`, result: a.area ? Math.ceil(a.area / d) : 1 };
-    [6, 7].forEach(c => { row.getCell(c).numFmt = '0.0'; }); [10, 11, 12].forEach(c => { row.getCell(c).numFmt = '0'; });
-  }
-  const last = Math.max(ws.rowCount, 2);
-  if (!model.apartments.length) ws.addRow([]);
-  const total = ws.addRow(['Summa']); total.font = { name: 'Arial', bold: true };
-  total.getCell(5).value = { formula: `COUNTA(E2:E${last})`, result: model.apartments.length };
-  for (const [c, key] of [[8, 'bedrooms'], [9, 'half_rooms'], [10, 'kitchens'], [11, 'bathrooms'], [12, 'wc']] as const) total.getCell(c).value = { formula: `SUM(${column(c)}2:${column(c)}${last})`, result: model.apartments.reduce((s, a) => s + a[key], 0) };
-  for (const [d, col] of divisorColumns) ws.getCell(`${col}${total.number}`).value = { formula: `SUM(${col}2:${col}${last})`, result: model.apartments.reduce((s, a) => s + (a.area ? Math.ceil(a.area / d) : 1), 0) };
-  ws.addRow([]);
-  const premises = ws.addRow(['Lokaler', model.premises]); premises.font = { name: 'Arial', bold: true };
-  style.input(premises.getCell(2), 'Antal lokaler i objektlistan.');
-  ws.addRow([]);
-  ws.addRow(['Gula celler kan ändras. Sovrum, halvrum och påbörjade ytor räknas med formler; kalkylposter som räknats från lägenhetslistan följer kolumnsummorna.']);
-  return { last, premisesCell: `$B$${premises.number}`, divisorColumns };
+export type ApartmentSheet = { first: number; last: number; cells: { apartments: string; bedroomsAndHalf: string; bedrooms: string; halfRooms: string; kitchens: string; bathrooms: string; wc: string; premises: string }; divisorCells: Map<number, string> };
+export function addApartmentSheet(book: ExcelJS.Workbook, model: StoredObjectModel, divisors: number[], style: { input: (c: ExcelJS.Cell, note: string) => void }): ApartmentSheet {
+  const ws = book.addWorksheet(APARTMENT_SHEET, { pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+  const fill = (c: ExcelJS.Cell, argb: string) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } }; };
+  const font = (c: ExcelJS.Cell, f: Partial<ExcelJS.Font>) => { c.font = { name: 'Arial', size: 10, ...f }; };
+  const roomsFormula = roomsFormulaHolds(model);
+  // Columns: B Rad, C Adress, D Plan, E Lgh nr, F Typ, G Rum, H Area, I Sovrum, J Halvrum, K Sovrum + halvrum, then one
+  // column per started area, then Kök, Badrum, Separat WC, Typkod, Källa.
+  const divisorCol = new Map(divisors.map((d, i) => [d, column(12 + i)]));
+  const kCol = column(12 + divisors.length), bCol = column(13 + divisors.length), wCol = column(14 + divisors.length), codeCol = column(15 + divisors.length), srcCol = column(16 + divisors.length);
+  const widths: [string, number][] = [['A', 2], ['B', 15], ['C', 18], ['D', 8], ['E', 10], ['F', 24], ['G', 8], ['H', 10], ['I', 9], ['J', 9], ['K', 12], ...divisors.map(d => [divisorCol.get(d)!, 12] as [string, number]), [kCol, 8], [bCol, 9], [wCol, 11], [codeCol, 24], [srcCol, 42]];
+  for (const [c, w] of widths) ws.getColumn(c).width = w;
+  font(ws.getCell('B1'), { bold: true, size: 16 }); ws.getCell('B1').value = 'Lägenheter: mängdunderlag';
+  ws.getCell('B2').value = 'Kök, badrum och WC per lägenhet. Ändra en siffra här så följer kalkylen med.';
+  // Summary rows (4 …), then the apartment table two rows below.
+  const summary: { label: string; key: string; note: string }[] = [
+    { label: 'Lägenheter', key: 'apartments', note: 'Objektlistan.' },
+    { label: 'Sovrum och halvrum', key: 'bedroomsAndHalf', note: "'4 rum och kök' = vardagsrum + 3 sovrum. Halvrum räknas som eget rum." },
+    { label: 'varav sovrum', key: 'bedrooms', note: 'Hela rum minus vardagsrummet.' },
+    { label: 'varav halvrum', key: 'halfRooms', note: "'3,5 rum' ger ett halvrum." },
+    ...divisors.map(d => ({ label: `Påbörjade ${d} m²`, key: `area${d}`, note: `En per påbörjad ${d} m² per lägenhet (t.ex. brandvarnare).` })),
+    { label: 'Kök', key: 'kitchens', note: 'Från ritningarnas typkoder (K) där de finns, annars ett per lägenhet.' },
+    { label: 'Badrum', key: 'bathrooms', note: 'Från ritningarnas typkoder (B) där de finns, annars ett per lägenhet.' },
+    { label: 'Separata WC', key: 'wc', note: 'Från ritningarnas typkoder (W) eller ytgränsen i typrecepten.' },
+    { label: 'Lokaler', key: 'premises', note: 'Antal lokaler i objektlistan. Ändra här när det är besvarat.' },
+  ];
+  const headerRow = 4 + summary.length + 2, first = headerRow + 1, last = Math.max(first, headerRow + model.apartments.length);
+  const range = (col: string) => `${col}${first}:${col}${last}`;
+  const cells: Record<string, string> = {};
+  summary.forEach((s, i) => {
+    const r = 4 + i, label = ws.getCell(`B${r}`), value = ws.getCell(`D${r}`), note = ws.getCell(`F${r}`);
+    label.value = s.label; fill(label, SHEET_STYLE.tile); font(label, { bold: true }); fill(ws.getCell(`C${r}`), SHEET_STYLE.tile);
+    const sumOf = (key: string): number => key === 'apartments' ? model.apartments.length : key === 'bedroomsAndHalf' ? model.apartments.reduce((t, a) => t + a.bedrooms + a.half_rooms, 0)
+      : key === 'bedrooms' ? model.apartments.reduce((t, a) => t + a.bedrooms, 0) : key === 'halfRooms' ? model.apartments.reduce((t, a) => t + a.half_rooms, 0)
+      : key === 'kitchens' ? model.apartments.reduce((t, a) => t + a.kitchens, 0) : key === 'bathrooms' ? model.apartments.reduce((t, a) => t + a.bathrooms, 0) : key === 'wc' ? model.apartments.reduce((t, a) => t + a.wc, 0)
+      : model.apartments.reduce((t, a) => t + (a.area ? Math.ceil(a.area / Number(key.slice(4))) : 1), 0);
+    if (s.key === 'premises') { value.value = model.premises; style.input(value, 'Antal lokaler i objektlistan.'); }
+    else {
+      const formula = s.key === 'apartments' ? `COUNTA(${range('E')})` : s.key === 'bedroomsAndHalf' ? `SUM(${range('K')})` : s.key === 'bedrooms' ? `SUM(${range('I')})` : s.key === 'halfRooms' ? `SUM(${range('J')})` : s.key === 'kitchens' ? `SUM(${range(kCol)})` : s.key === 'bathrooms' ? `SUM(${range(bCol)})` : s.key === 'wc' ? `SUM(${range(wCol)})` : `SUM(${range(divisorCol.get(Number(s.key.slice(4)))!)})`;
+      value.value = { formula, result: sumOf(s.key) }; fill(value, SHEET_STYLE.tile); font(value, { bold: true });
+    }
+    value.numFmt = NF0; cells[s.key] = `$D$${r}`;
+    note.value = s.note; font(note, { size: 9 }); ws.mergeCells(`F${r}:${srcCol}${r}`);
+  });
+  const legend = ws.getCell(`B${4 + summary.length}`); legend.value = 'Orange = antaget, ritning saknas för den lägenheten. Gula celler kan ändras.'; font(legend, { size: 9 });
+  const headers = ['Rad i objektlistan', 'Adress', 'Plan', 'Lgh nr', 'Typ', 'Rum', 'Area m²', 'Sovrum', 'Halvrum', 'Sovrum + halvrum', ...divisors.map(d => `Påbörjade ${d} m²`), 'Kök', 'Badrum', 'Separat WC', 'Typkod på ritning', 'Källa för kök, badrum och WC'];
+  headers.forEach((h, i) => { const c = ws.getRow(headerRow).getCell(i + 2); c.value = h; fill(c, SHEET_STYLE.heading); font(c, { bold: true }); c.alignment = { wrapText: true, vertical: 'top' }; });
+  model.apartments.forEach((a, i) => {
+    const n = first + i, row = ws.getRow(n);
+    [a.row, a.address, a.floor, a.number, a.label].forEach((v, j) => { row.getCell(j + 2).value = v; });
+    row.getCell(7).value = a.rooms; style.input(row.getCell(7), 'Antal rum enligt objektlistan (t.ex. 3,5 = tre rum och ett halvrum).');
+    row.getCell(8).value = a.area; if (a.area !== null) style.input(row.getCell(8), 'Bostadsyta enligt objektlistan.');
+    row.getCell(9).value = roomsFormula ? { formula: `MAX(INT(G${n})-1,0)`, result: a.bedrooms } : a.bedrooms;
+    row.getCell(10).value = roomsFormula ? { formula: `IF(G${n}>INT(G${n}),1,0)`, result: a.half_rooms } : a.half_rooms;
+    row.getCell(11).value = { formula: `I${n}+J${n}`, result: a.bedrooms + a.half_rooms };
+    for (const [d, col] of divisorCol) ws.getCell(`${col}${n}`).value = { formula: `IF(AND(ISNUMBER(H${n}),H${n}>0),ROUNDUP(H${n}/${d},0),1)`, result: a.area ? Math.ceil(a.area / d) : 1 };
+    const assumed = a.basis !== 'type code';
+    for (const [col, v] of [[kCol, a.kitchens], [bCol, a.bathrooms], [wCol, a.wc]] as const) {
+      const c = ws.getCell(`${col}${n}`); c.value = v; style.input(c, assumed ? `${BASIS_TEXT[a.basis]}.` : `Enligt typkod ${a.code ?? ''} på ritning.`);
+      if (assumed) fill(c, SHEET_STYLE.assumed);
+    }
+    ws.getCell(`${codeCol}${n}`).value = a.code; const src = ws.getCell(`${srcCol}${n}`); src.value = BASIS_TEXT[a.basis]; font(src, { size: 9 });
+    row.eachCell({ includeEmpty: true }, c => { if (Number(c.col) >= 2) { c.border = { bottom: { style: 'thin', color: { argb: 'D9D9D9' } } }; if (!c.font) font(c, {}); if (typeof c.value === 'number' || (c.value && typeof c.value === 'object' && 'formula' in c.value)) c.numFmt = Number(c.col) === 7 ? '0.0' : NF0; } });
+  });
+  ws.views = [{ state: 'frozen', xSplit: 1, ySplit: headerRow, showGridLines: false }];
+  return { first, last, cells: cells as ApartmentSheet['cells'], divisorCells: new Map(divisors.map(d => [d, cells[`area${d}`]!])) };
 }
 
-// The Kalkyl quantity formula for a post with a count basis.
+// The Kalkyl quantity formula for a post with a count basis, or null when the sheet cannot reproduce it.
 export function apartmentQuantityFormula(sheet: ApartmentSheet, basis: CountBasis): string | null {
-  const ref = (col: string) => `'${APARTMENT_SHEET}'!$${col}$2:$${col}$${sheet.last}`;
-  const apartments = `COUNTA(${ref('E')})`, premises = `'${APARTMENT_SHEET}'!${sheet.premisesCell}`;
-  const sums: Record<string, string> = { kök: 'J', badrum: 'K', wc: 'L', sovrum: 'H', halvrum: 'I' };
-  const area = basis.area_divisor ? sheet.divisorColumns.get(basis.area_divisor) : undefined;
-  const count = basis.unit === 'lägenhet' || basis.unit === 'vardagsrum' || basis.unit === 'hall' ? apartments
-    : sums[basis.unit] ? `SUM(${ref(sums[basis.unit]!)})`
-    : basis.unit === 'sovrum_och_halvrum' ? `SUM(${ref('H')})+SUM(${ref('I')})`
-    : basis.unit === 'lokal' ? premises
-    : basis.unit === 'lägenhet_och_lokal' ? `${apartments}+${premises}`
-    : basis.unit === 'per_area' && area ? `SUM(${ref(area)})` : null;
-  return count === null ? null : `ROUND((${count})*${basis.per_unit},3)`;
+  const at = (cell: string) => `'${APARTMENT_SHEET}'!${cell}`;
+  const count = basis.unit === 'lägenhet' || basis.unit === 'vardagsrum' || basis.unit === 'hall' ? at(sheet.cells.apartments)
+    : basis.unit === 'kök' ? at(sheet.cells.kitchens) : basis.unit === 'badrum' ? at(sheet.cells.bathrooms) : basis.unit === 'wc' ? at(sheet.cells.wc)
+    : basis.unit === 'sovrum' ? at(sheet.cells.bedrooms)
+    : basis.unit === 'halvrum' ? at(sheet.cells.halfRooms)
+    : basis.unit === 'sovrum_och_halvrum' ? at(sheet.cells.bedroomsAndHalf)
+    : basis.unit === 'lokal' ? at(sheet.cells.premises)
+    : basis.unit === 'lägenhet_och_lokal' ? `${at(sheet.cells.apartments)}+${at(sheet.cells.premises)}`
+    : basis.unit === 'per_area' && basis.area_divisor && sheet.divisorCells.get(basis.area_divisor) ? at(sheet.divisorCells.get(basis.area_divisor)!) : null;
+  return count === null ? null : `(${count})`;
 }

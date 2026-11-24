@@ -45,16 +45,19 @@ describe('apartment sheet', () => {
     const names = book.worksheets.map(w => w.name);
     expect(names.indexOf('Lägenheter')).toBe(names.indexOf('Kalkyl') + 1);
     const sheet = book.getWorksheet('Lägenheter')!, kalkyl = book.getWorksheet('Kalkyl')!;
-    expect(sheet.getCell('H5').value).toMatchObject({ formula: 'MAX(INT(F5)-1,0)', result: 2 });
-    expect(sheet.getCell('I5').value).toMatchObject({ formula: 'IF(F5>INT(F5),1,0)', result: 1 });
-    expect(sheet.getCell('O2').value).toMatchObject({ formula: 'IF(N(G2)>0,ROUNDUP(G2/60,0),1)', result: 1 });
-    expect(sheet.getCell('F2').fill).toMatchObject({ fgColor: { argb: 'FFFF00' } });
-    const quantityOf = (post: string) => { let v: ExcelJS.CellValue = null; kalkyl.eachRow(r => { if (r.getCell(1).value === post) v = r.getCell(2).value; }); return v as ExcelJS.CellValue; };
-    expect(quantityOf('Elektrisk golvvärme')).toEqual({ formula: "ROUND((SUM('Lägenheter'!$K$2:$K$13))*1,3)", result: 14 });
-    expect(quantityOf('Gruppcentral')).toEqual({ formula: "ROUND((COUNTA('Lägenheter'!$E$2:$E$13)+'Lägenheter'!$B$16)*1,3)", result: 13 });
+    // Summary at the top (as the reference), then one row per apartment from row 16.
+    expect(sheet.getCell('B4').value).toBe('Lägenheter'); expect(sheet.getCell('D4').value).toEqual({ formula: 'COUNTA(E16:E27)', result: 12 });
+    expect(sheet.getCell('B12').value).toBe('Lokaler'); expect(sheet.getCell('D12').value).toBe(1);
+    expect(sheet.getCell('I19').value).toMatchObject({ formula: 'MAX(INT(G19)-1,0)', result: 2 });
+    expect(sheet.getCell('J19').value).toMatchObject({ formula: 'IF(G19>INT(G19),1,0)', result: 1 });
+    expect(sheet.getCell('L16').value).toMatchObject({ formula: 'IF(AND(ISNUMBER(H16),H16>0),ROUNDUP(H16/60,0),1)', result: 1 });
+    expect(sheet.getCell('G16').fill).toMatchObject({ fgColor: { argb: 'FFF2CC' } });
+    const quantityOf = (post: string) => { let v: ExcelJS.CellValue = null; kalkyl.eachRow(r => { if (r.getCell(2).value === post) v = r.getCell(3).value; }); return v as ExcelJS.CellValue; };
+    expect(quantityOf('Elektrisk golvvärme')).toEqual({ formula: "ROUND(('Lägenheter'!$D$10)*1,3)", result: 14 });
+    expect(quantityOf('Gruppcentral')).toEqual({ formula: "ROUND(('Lägenheter'!$D$4+'Lägenheter'!$D$12)*1,3)", result: 13 });
     // Not reproduced (stairwell floors) or an assumed quantity changed by hand: the value stays as it is.
     expect(typeof quantityOf('Belysning trapphus')).toBe('number');
-    expect(quantityOf('Brandvarnare')).toMatchObject({ formula: "ROUND((SUM('Lägenheter'!$O$2:$O$13))*1,3)" });
+    expect(quantityOf('Brandvarnare')).toMatchObject({ formula: "ROUND(('Lägenheter'!$D$8)*1,3)" });
     expect(quantityOf(bedroomSockets)).toBe(99);
     const reloaded = new ExcelJS.Workbook(); await reloaded.xlsx.load(await book.xlsx.writeBuffer());
     expect(reloaded.getWorksheet('Lägenheter')?.rowCount).toBeGreaterThan(13);
