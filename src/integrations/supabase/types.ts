@@ -1412,6 +1412,116 @@ export type Database = {
           },
         ]
       }
+      tender_watch_hits: {
+        Row: {
+          buyer: string
+          city: string | null
+          company_id: string
+          cpv: string[]
+          created_at: string
+          currency: string | null
+          deadline: string | null
+          documents_url: string | null
+          framework: boolean
+          id: string
+          kind: string
+          notice_url: string
+          places: string[]
+          publication_number: string
+          published: string
+          status: string
+          tender_id: string | null
+          title: string
+          value: number | null
+        }
+        Insert: {
+          buyer: string
+          city?: string | null
+          company_id?: string
+          cpv?: string[]
+          created_at?: string
+          currency?: string | null
+          deadline?: string | null
+          documents_url?: string | null
+          framework?: boolean
+          id?: string
+          kind: string
+          notice_url: string
+          places?: string[]
+          publication_number: string
+          published: string
+          status?: string
+          tender_id?: string | null
+          title: string
+          value?: number | null
+        }
+        Update: {
+          buyer?: string
+          city?: string | null
+          company_id?: string
+          cpv?: string[]
+          created_at?: string
+          currency?: string | null
+          deadline?: string | null
+          documents_url?: string | null
+          framework?: boolean
+          id?: string
+          kind?: string
+          notice_url?: string
+          places?: string[]
+          publication_number?: string
+          published?: string
+          status?: string
+          tender_id?: string | null
+          title?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_watch_hits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_watch_hits_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_watch_profiles: {
+        Row: {
+          company_id: string
+          last_fetched_at: string | null
+          regions: string[]
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string
+          last_fetched_at?: string | null
+          regions?: string[]
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          last_fetched_at?: string | null
+          regions?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_watch_profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenders: {
         Row: {
           analysis_run: string | null
