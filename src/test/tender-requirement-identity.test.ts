@@ -51,10 +51,30 @@ describe('requirement identity and deduplication', () => {
     expect(status(q, 'Säkerhetsdörr')?.status).toBe('Saknar pris');
     expect(rowsOf(q).find(i => i.post === 'Laddbox')?.type_id).toBeNull();
   });
-  it('a missing quantity is Saknar mängd and a missing source is flagged', () => {
-    const q = build([req('Belysning källare', 'fastighet', null, { type_id: T.feed, work: 'belysning källare', section: 6, source: src('Matning till fläktar.') }), req('Golvvärme', 'badrum', 1, { type_id: T.golv })]);
-    expect(status(q, 'Belysning källare')?.status).toBe('Saknar mängd');
+  it('"one per X" never becomes 0: a missing number per unit is at least one, a length is never guessed; a missing source is flagged', () => {
+    const q = build([req('Belysning källare', 'fastighet', null, { type_id: T.feed, work: 'belysning källare', section: 6, source: src('Matning till fläktar.') }),
+      req('Kabelstege', 'fastighet', null, { unit: 'm', type_id: T.feed, work: 'kabelstege', section: 6, source: src('Matning till fläktar.') }), req('Golvvärme', 'badrum', 1, { type_id: T.golv })]);
+    const row = (post: string) => rowsOf(q).find(i => i.post === post);
+    expect(row('Belysning källare')).toMatchObject({ quantity: '1', level: 'Antagen' }); expect(row('Belysning källare')?.rule).toMatch(/antaget minst 1 per fastighet/);
+    expect(status(q, 'Kabelstege')?.status).toBe('Saknar mängd');
     expect(status(q, 'Golvvärme')).toMatchObject({ status: 'Antagen', validation: ['källa saknas'] });
+  });
+  it('an unknown number of spaces is assumed from stairwells, buildings, apartments and floors, marked Antagen with the reason', () => {
+    // The synthetic object list has addresses (stairwells) but no stated entrances, floors 1 only, two buildings in the text.
+    const counts = [{ name: 'huskropp' as const, value: 2, source: src('Matning till hiss.') }];
+    const input = (r: Requirement[]) => buildRequirementQuantities(decodeRequirements({ requirements: r, counts }), model, documents, exampleRoomRecipes, null, catalog);
+    const q = input([req('Uttag källargångar', 'rumstyp', 1, { room_type: 'källargång', section: 6, source: src('Matning till fläktar.') }),
+      req('CEE-uttag teknikrum', 'rumstyp', 1, { room_type: 'teknikrum', section: 6, source: src('Matning till fläktar.') }),
+      req('Belysning lägenhetsförråd', 'rumstyp', 1, { room_type: 'lägenhetsförråd', section: 6, source: src('Matning till fläktar.') }),
+      req('Matning dörrautomatik', 'entré', 1, { type_id: T.feed, section: 7, source: src('Matning till hiss.') })]);
+    const row = (post: string) => [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])].find(i => i.post === post)!;
+    // No stairwells in this list: spaces per stairwell fall back to the two buildings stated in the text.
+    expect(model.counts.stairwells).toBe(0);
+    expect(row('Uttag källargångar')).toMatchObject({ level: 'Antagen', quantity: '2' }); expect(row('Uttag källargångar').rule).toMatch(/antaget en källargång per huskropp/);
+    expect(row('CEE-uttag teknikrum')).toMatchObject({ level: 'Antagen', quantity: '2' }); expect(row('CEE-uttag teknikrum').rule).toMatch(/antaget en teknikrum per huskropp/);
+    expect(row('Belysning lägenhetsförråd')).toMatchObject({ level: 'Antagen', quantity: '6' });
+    expect(row('Matning dörrautomatik')).toMatchObject({ level: 'Antagen', quantity: '2' });
+    expect([...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])].every(i => Number(i.quantity) > 0)).toBe(true);
   });
   it('different quantities for the same delivery are not hidden: the highest is used and the requirement needs clarification', () => {
     const q = build([golvA, { ...golvB, per_unit: 2 }]);

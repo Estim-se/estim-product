@@ -19,7 +19,7 @@ it('uses documented room counts before editable area estimates',()=>{
  expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'})).toBe('4');
  expect(resolveObjectCount(text,{sheet:'Lgh',range:'A2:A3',operation:'Rum per rad',equals:null,room:'Sovrum',room_count_range:'B2:B3'},{...exampleRoomRecipes,area_bands:exampleRoomRecipes.area_bands.map((b,i)=>i===3?{...b,rooms:5}:b)})).toBe('5');
 });
-for(const [room,sockets,lamps] of [['Vardagsrum',4,1],['Sovrum',3,1],['Hall',1,1],['Kök',3,0]] as const)it(`uses the requested ${room} recipe`,()=>expect(exampleRoomRecipes.rooms.find(r=>r.room===room)).toEqual({room,sockets,lamps}));
+for(const [room,sockets,lamps] of [['Vardagsrum',4,1],['Sovrum',3,1],['Hall',3,1],['Kök',3,0]] as const)it(`uses the requested ${room} recipe (example value)`,()=>expect(exampleRoomRecipes.rooms.find(r=>r.room===room)).toEqual({room,sockets,lamps,example:true}));
 it('uses configured recipe values in code and marks them Medel with one assumption',()=>{
  const source={document_id:id(5),page:1,evidence:'2 lägenheter'};
  const q=calculateTenderQuantities({operands:[{id:'n',label:'Lägenheter',value:'2',basis:'Text',source},{id:'r',label:'Recept',value:'999',basis:'Antagande',source:null,recipe:{room:'Vardagsrum',equipment:'sockets'}}],items:[{post:'Dubbla vägguttag',unit:'st',rule:'Vardagsrum',terms:[{factors:['n','r']}],assumption:'Typrecept'}],assumptions:[]},[{id:id(5),file_name:'Teknik.pdf',file_type:'pdf',page_count:1,text:null}]);

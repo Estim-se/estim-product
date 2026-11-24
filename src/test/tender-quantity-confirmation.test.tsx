@@ -20,6 +20,13 @@ it('the Bekräfta checkbox updates the displayed calculation totals',()=>{
  function Table(){const [m,set]=useState(matches);return <TenderCostTable quantities={quantities} settings={settings} matches={m} onChange={set}/>;}
  render(<Table/>);fireEvent.click(screen.getByRole('checkbox',{name:'Bekräfta Totalmätare'}));expect(screen.getByText('2 758,26 kr')).toBeTruthy();fireEvent.click(screen.getByRole('checkbox',{name:'Bekräfta Totalmätare'}));expect(screen.getAllByText('0,00 kr').length).toBeGreaterThan(0);
 });
+it('warns at the top of the calculation that the total is incomplete, with the posts, until the quantity is confirmed',()=>{
+ function Table(){const [m,set]=useState(matches);return <TenderCostTable quantities={quantities} settings={settings} matches={m} onChange={set}/>;}
+ render(<Table/>);
+ expect(screen.getByRole('alert').textContent).toMatch(/^1 post saknar mängd eller pris – totalen är ofullständig.*Totalmätare – saknar mängd/);
+ fireEvent.click(screen.getByRole('checkbox',{name:'Bekräfta Totalmätare'}));
+ expect(screen.queryByRole('alert')).toBeNull();
+});
 it('Excel gates low-quantity formulas on an editable confirmation cell',async()=>{
  const book=await createTenderWorkbook({name:'Baggen',quantities,settings,matches,insights:null,documents:[]});const sheet=book.getWorksheet('Kalkyl');
  expect(sheet?.getCell('N5').value).toBe(0);expect(sheet?.getCell('F5').value).toBe(2);expect(sheet?.getCell('G5').value).toBe(1500);expect(sheet?.getCell('H5').formula).toBe('IF(OR(N5=0,COUNT(C5,F5,G5)<3),"",ROUND(C5*F5,6))');
