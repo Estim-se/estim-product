@@ -104,15 +104,18 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     const apartmentRow = perApartmentOf(item) ? apartmentRowOf(item) : undefined;
     const perApartment = perApartmentOf(item) && !apartmentRow;
     // A post for apartments and premises together, when the type has its own apartment rows but no premises rows,
-    // counts the premises part ("i respektive lägenhet och lokaler": the 9 premises); with both it is covered.
+    // counts the premises part ("i respektive lägenhet och lokaler": the 9 premises), and with its own premises rows but
+    // no apartment rows the apartment part; with both it is covered. Each part is counted once.
     const combined = item.count_unit === 'lägenhet_och_lokal' && !!t;
     const covered = combined && apartmentTypes.has(t!.id) && premisesTypes.has(t!.id);
     const premisesPart = combined && !covered && apartmentTypes.has(t!.id) ? premisesCount : null;
-    const includedIn = carrier && carrier !== item.post ? carrier : covered || premisesPart === 0 ? 'postens egna rader för lägenheter och lokaler' : apartmentRow;
+    const apartmentPart = combined && !covered && premisesTypes.has(t!.id) ? apartments : null;
+    const includedIn = carrier && carrier !== item.post ? carrier : covered || premisesPart === 0 || apartmentPart === 0 ? 'postens egna rader för lägenheter och lokaler' : apartmentRow;
     if (includedIn) included.set(item.post, includedIn);
     const i = carrier && carrier !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${carrier} (samma katalogtyp och enhet).` }
       : covered ? { ...item, quantity: '0', rule: `${item.rule} Ingår i postens egna rader för lägenheter och lokaler (samma katalogtyp).` }
       : premisesPart !== null ? { ...item, quantity: String(premisesPart), calculation: `${premisesPart} lokaler`, rule: `${item.rule} Lokaldelen: ${premisesPart} lokaler i objektlistan; lägenheterna räknas på postens egen rad för lägenheter (samma katalogtyp).` }
+      : apartmentPart !== null ? { ...item, quantity: String(apartmentPart), calculation: `${apartmentPart} lägenheter`, rule: `${item.rule} Lägenhetsdelen: ${apartmentPart} lägenheter i objektlistan; lokalerna räknas på postens egen rad för lokaler (samma katalogtyp).` }
       : apartmentRow ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${apartmentRow} (samma katalogtyp, räknad per lägenhet).` }
       : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Antaget: katalogtypen gäller per lägenhet, ${apartments} lägenheter i objektlistan.`, level: 'Antagen' as const, certainty: 'Låg' as const }
       : item;

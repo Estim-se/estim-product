@@ -8,7 +8,7 @@ import { sectionOfPost, TENDER_SECTIONS } from './tender-example-catalog';
 import { GENERIC_MEANINGS, postMeaning, pricedAs } from './tender-post-matching';
 import { verifyTenderSource } from './tender-source-verification';
 import type { CatalogType, Requirement, Requirements } from './tender-requirements';
-import { buildRequirementQuantities, canonicalCatalog, decodeRequirements, requirementsWireSchema, REQUIREMENT_SCOPES, REQUIREMENT_UNITS } from './tender-requirements';
+import { buildRequirementQuantities, canonicalCatalog, decodeRequirements, placesOf, requirementsWireSchema, REQUIREMENT_SCOPES, REQUIREMENT_UNITS } from './tender-requirements';
 
 // Requirements engine, behind ANBUD_REQUIREMENTS_ENGINE: the model lists requirements, code counts and builds quantities.
 export const TENDER_REQUIREMENTS_PROMPT = `Du läser ett förfrågningsunderlag för elentreprenaden. Lista VARJE el-post som ska prissättas, som krav — räkna aldrig själv.
@@ -18,7 +18,8 @@ För varje post: post (kort, tydligt namn), type_id, scope, work, room_type, sec
 - Poster i kök anges per kök och poster i badrum per badrum (golvvärme, handdukstork, spegelskåp, belysning) — aldrig per lägenhet: koden räknar lägenheter med två kök eller badrum ur typkoderna.
 - Rumsförteckning med rumstyper (skola, förskola, kontor, lokaler): krav per rumstyp ("per lekrum: 4 dubbla vägguttag") anges med unit_of_count rumstyp, room_type = rumstypen exakt som i rumsförteckningen och per_unit = antal per rum. En post per rumstyp och utrustning, med rumstypen i postnamnet ("Dubbla vägguttag, lekrum"). room_type är null för alla andra enheter.
 - Uttag som anges per bänklängd eller arbetsbänk ("1 uttag per 1000 mm bänk", "hörnbox per arbetsbänk"): ett krav "Bänkuttag kök" med unit_of_count bänklängd; koden använder företagets typrecept per kök eftersom bänklängderna sällan framgår.
-- Totalentreprenörens eget ansvar (byggarbetsmiljösamordning BAS-P/BAS-U, arbetsmiljö, arbetsplatsorganisation) är inga elposter. Samordning och avbrottsplanering med verksamhet i drift är en elpost.
+- Totalentreprenörens eget ansvar (byggarbetsmiljösamordning BAS-P/BAS-U, arbetsmiljö, arbetsplatsorganisation) är inga elposter. Andra yrkesgruppers arbete (hatthyllor, hyllor, krokar, möbler, snickerier, målning, golv, kakel, VVS) är inga elposter och listas inte.
+- Belysning och uttag i allmänna utrymmen listas per utrymmestyp under sin egen rubrik (källargångar och lägenhetsförråd, tekniska utrymmen, tvättstuga, garage, trapphus): en post per utrymmestyp och utrustning, med utrymmet i postnamnet, även när samma armatur eller styrning finns i andra utrymmen. Samordning och avbrottsplanering med verksamhet i drift är en elpost.
 - "Lokal rivning", "lokalt" och "lokal demontering" betyder punktvis arbete, inte lokaler. Provning av enskilda installationer (t.ex. funktionsprovning brandvarnare) ingår i provningsposterna i section 9, ingen egen post.
 - unit_of_count per_area med area_divisor för regler per yta, t.ex. brandvarnare "en per påbörjade 60 m²" per lägenhet: unit_of_count per_area, area_divisor 60, per_unit 1.
 - unit_of_count fast_antal med fixed_quantity när underlaget anger ett totalt antal ("8 laddplatser", "en central i garage"); ett angivet fast antal används alltid.
@@ -50,27 +51,52 @@ function sectionInstruction(group: readonly number[]) {
 // Categories the documents name but the requirement answers left out, found by code: every document line is read with
 // the same post meanings as the catalog matching; a specific meaning with no requirement gets up to two quotes. The
 // model is then asked about exactly these, so a documented category cannot fall away between runs.
-type DocumentedLine = { document_id: string; page: number | null; line: string; quote: string; technical: boolean };
+type DocumentedLine = { document_id: string; page: number | null; line: string; quote: string; technical: boolean; place?: string | undefined };
+// The spaces a text names. A requirement under a space heading ("Lägenhetsförråd och källargångar" followed by "Nya
+// armaturer monteras i tak") is that space's own category: the same kind of work listed for another space (lighting in
+// the technical rooms) does not cover it.
+const PLACE_SCOPE: Record<string, Requirement['scope']> = { källare: 'källare', förråd: 'källare', teknik: 'tekniska_utrymmen', tvättstuga: 'tvättstuga', garage: 'garage', trapphus: 'trapphus', utomhus: 'fasad_utomhus' };
+// A space heading: a short line naming a space and nothing else (no work, no figures, no sentence).
+const spaceHeading = (line: string) => line.length <= 60 && !/^[-•*–]/.test(line) && !/[\d.:;]/.test(line) && line.split(/\s+/).length <= 6 && placesOf(line).size > 0 && !postMeaning(line);
 export function missingDocumentedCategories(documents: { id: string; file_name: string; doc_type?: string | null; text: string | null }[], listed: Requirements, catalog: CatalogType[] = []) {
-  // A category counts as listed when a requirement's name or its chosen catalog type has that meaning.
+  // A category counts as listed when a requirement's name or its chosen catalog type has that meaning; for a line under
+  // a space heading, a requirement of that meaning must also name one of its spaces (or name no space at all).
   const typeName = new Map(catalog.map(t => [t.id, t.name]));
-  const have = new Set(listed.requirements.flatMap(r => [postMeaning(r.post), r.type_id ? postMeaning(typeName.get(r.type_id) ?? '') : null]));
-  const found = new Map<string, DocumentedLine[]>();
-  for (const d of documents) {
-    // A list item is read with its lead line ("Nya gruppcentraler monteras i:" + "- Garage").
-    let lead = '', page: number | null = null;
-    for (const raw of (d.text ?? '').split('\n').map(l => l.trim())) {
-      const physical = raw.match(/^Fysisk sida: (\d+)/); if (physical) { page = Number(physical[1]); continue; }
-      const item = /^[-•*–]\s*/.test(raw);
-      if (!item) lead = /:$/.test(raw) ? raw : '';
-      const line = item && lead ? `${lead} ${raw.replace(/^[-•*–]\s*/, '')}` : raw;
-      if (line.length < 8 || line.length > 300) continue;
-      const m = postMeaning(line);
-      if (!m || GENERIC_MEANINGS.has(m) || have.has(m) || catalog.length && !catalogTypeFor(m, catalog)) continue;
-      const q = found.get(m) ?? []; if (q.length < 2) q.push({ document_id: d.id, page, line, quote: raw, technical: d.doc_type !== 'AF' }); found.set(m, q);
+  const have = new Map<string, Set<string> | 'all'>();
+  for (const r of listed.requirements) {
+    const places = placesOf(`${r.post} ${r.room_type ?? ''} ${r.scope ?? ''}`);
+    // A requirement priced with a catalog type covers that type's meaning: presence detectors for the basement lighting
+    // ("Närvarostyrning belysning källargångar") do not cover the basement luminaires themselves.
+    const typeMeaning = r.type_id ? postMeaning(typeName.get(r.type_id) ?? '') : null;
+    for (const m of typeMeaning ? [typeMeaning] : [postMeaning(r.post)]) {
+      if (!m) continue;
+      const prior = have.get(m);
+      have.set(m, prior === 'all' || !places.size ? 'all' : new Set([...prior ?? [], ...places]));
     }
   }
-  return [...found].slice(0, 30);
+  const listedAt = (m: string, places: Set<string>) => { const h = have.get(m); return h === 'all' || !!h && (!places.size || [...places].some(p => h.has(p))); };
+  const found = new Map<string, [string, DocumentedLine[]]>();
+  for (const d of documents) {
+    // A list item is read with its lead line ("Nya gruppcentraler monteras i:" + "- Garage"), and a line without a
+    // specific meaning or space of its own with the space heading above it on the same page.
+    let lead = '', heading = '', page: number | null = null;
+    for (const raw of (d.text ?? '').split('\n').map(l => l.trim())) {
+      const physical = raw.match(/^Fysisk sida: (\d+)/); if (physical) { page = Number(physical[1]); heading = ''; continue; }
+      if (spaceHeading(raw)) { heading = raw; lead = ''; continue; }
+      const item = /^[-•*–]\s*/.test(raw);
+      if (!item) lead = /:$/.test(raw) ? raw : '';
+      const own = item && lead ? `${lead} ${raw.replace(/^[-•*–]\s*/, '')}` : raw;
+      if (own.length < 8 || own.length > 300) continue;
+      const ownMeaning = postMeaning(own), underHeading = !!heading && (!ownMeaning || GENERIC_MEANINGS.has(ownMeaning)) && !placesOf(own).size;
+      const line = underHeading ? `${heading} ${own}` : own, m = underHeading ? postMeaning(line) : ownMeaning;
+      const places = underHeading ? placesOf(heading) : new Set<string>();
+      if (!m || GENERIC_MEANINGS.has(m) || listedAt(m, places) || catalog.length && !catalogTypeFor(m, catalog)) continue;
+      const key = `${m}|${[...places].sort().join(',')}`, entry = found.get(key) ?? [m, []];
+      if (entry[1].length < 2) entry[1].push({ document_id: d.id, page, line, quote: raw, technical: d.doc_type !== 'AF', place: underHeading ? heading : undefined });
+      found.set(key, entry);
+    }
+  }
+  return [...found.values()].slice(0, 30);
 }
 // Section groups whose own sections have at least THIN_ANSWER documented categories that no answer lists.
 const THIN_ANSWER = 4;
@@ -88,7 +114,9 @@ function documentedFillIn(meaning: string, lines: DocumentedLine[], catalog: Cat
   const type = catalogTypeFor(meaning, catalog);
   const l = lines.find(x => x.technical && x.quote.length <= 100 && !NOT_ELECTRICAL_WORK.test(x.line));
   if (!type || !l) return null;
-  return { post: type.name, type_id: type.id, section: Math.min(9, Math.max(1, type.section ?? sectionOfPost(type.name, undefined, undefined, postMeaning))), unit_of_count: 'fast_antal', per_unit: null, fixed_quantity: null, area_divisor: null, unit: 'st', assumed: false,
+  // A space's own category is named after its space and kept apart from the same work in other spaces.
+  const scope = l.place ? PLACE_SCOPE[[...placesOf(l.place)][0] ?? ''] : undefined;
+  return { post: l.place ? `${type.name}, ${l.place.toLocaleLowerCase('sv')}` : type.name, type_id: type.id, ...(scope ? { scope } : {}), section: Math.min(9, Math.max(1, type.section ?? sectionOfPost(type.name, undefined, undefined, postMeaning))), unit_of_count: 'fast_antal', per_unit: null, fixed_quantity: null, area_divisor: null, unit: 'st', assumed: false,
     note: `Nämns i underlaget men antal och omfattning framgår inte – kontrollera och fyll i mängd.`, source: { document_id: l.document_id, page: l.page, evidence: l.quote.slice(0, 1500) } };
 }
 function followUpInstruction(missing: [string, DocumentedLine[]][], names: Map<string, string>, catalog: CatalogType[]) {
