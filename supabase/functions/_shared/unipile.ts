@@ -1,0 +1,211 @@
+// Everything that talks to Unipile (API v2): hosted auth, accounts, reading and sending mail, webhook security.
+// Pure functions apart from fetch, so they can be unit tested without Deno permissions beyond --allow-env.
+// Rules (same as nylas.ts): never log mail content, addresses, subjects, headers, keys or Unipile response bodies.
+// Log short error codes only. Unipile account ids start with "acc_"; they are stored in email_connections.grant_id.
+
+import { env, type Addr, type NylasMessage } from "./nylas.ts";
+
+/** The provider-neutral message shape the inbound pipeline already uses. */
+export type MailMessage = NylasMessage;
+export type MailProvider = "google" | "microsoft" | "imap";
+
+const enc = new TextEncoder();
+const apiBase = () => (Deno.env.get("UNIPILE_API_URL")?.trim() || "https://api.unipile.com/v2").replace(/\/$/, "");
+
+/** True for a Unipile account id. Nylas grant ids are UUIDs, so the two never collide. */
+export function isUnipileAccount(id: string | null | undefined): boolean {
+  return typeof id === "string" && /^acc_[A-Za-z0-9_-]{1,200}$/.test(id);
+}
+
+/** One place for every Unipile call: API key header, JSON, hard timeout. */
+export async function unipileFetch(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
+  const { timeoutMs = 15_000, headers, ...rest } = init;
+  return await fetch(`${apiBase()}${path}`, {
+    ...rest,
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-KEY": env("UNIPILE_API_KEY"), ...(headers as Record<string, string> | undefined) },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
+/* ---------- Small validators ---------- */
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const str = (v: unknown, max: number): string | null => (typeof v === "string" ? v.slice(0, max) : null);
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const addrs = (v: unknown, max: number): Addr[] =>
+  Array.isArray(v) ? v.slice(0, max).filter(isObj).map((a) => ({ name: str(a.display_name, 200), email: (str(a.email, 320) ?? "").trim() })).filter((a) => a.email) : [];
+
+/* ---------- Webhook security ---------- */
+
+/**
+ * Unipile signs `${t}.${rawBody}` with HMAC-SHA256 and the endpoint secret: header `unipile-signature: t=<unix>,v0=<hex>`.
+ * Checked over the raw bytes BEFORE parsing. Old timestamps are refused so a captured request cannot be replayed later.
+ */
+export async function verifyUnipileSignature(raw: Uint8Array, header: string | null, secret: string, nowSeconds = Math.floor(Date.now() / 1000), toleranceSeconds = 300): Promise<boolean> {
+  if (!header || !secret) return false;
+  let t = "";
+  const candidates: string[] = [];
+  for (const part of header.split(",")) {
+    const [key, value] = part.split("=", 2).map((s) => s?.trim() ?? "");
+    if (key === "t") t = value ?? "";
+    else if (key === "v0" && value) candidates.push(value.toLowerCase());
+  }
+  if (!/^\d{9,11}$/.test(t) || Math.abs(nowSeconds - Number(t)) > toleranceSeconds) return false;
+  const signed = new Uint8Array(enc.encode(`${t}.`).length + raw.length);
+  signed.set(enc.encode(`${t}.`), 0);
+  signed.set(raw, enc.encode(`${t}.`).length);
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  for (const hex of candidates) {
+    if (!/^[0-9a-f]{64}$/.test(hex)) continue;
+    const signature = new Uint8Array(hex.match(/../g)!.map((h) => parseInt(h, 16)));
+    if (await crypto.subtle.verify("HMAC", key, signature, signed as BufferSource)) return true; // constant-time
+  }
+  return false;
+}
+
+export interface UnipileEvent { id: string; type: string; accountId: string | null; payload: Record<string, unknown> }
+/** Validates the envelope of a (verified) Unipile webhook event. Throws on anything unexpected. */
+export function parseEvent(json: unknown): UnipileEvent {
+  if (!isObj(json)) throw new Error("invalid_event");
+  const type = str(json.type, 100);
+  if (!type) throw new Error("invalid_type");
+  const accountId = str(json.account_id, 300);
+  return { id: str(json.id, 200) ?? "", type, accountId: isUnipileAccount(accountId) ? accountId : null, payload: isObj(json.payload) ? json.payload : {} };
+}
+
+/** The account inside account.add / account.reconnect, and the `state` we put in the auth link. */
+export function accountEventOf(payload: Record<string, unknown>): { accountId: string; state: string | null } | null {
+  const account = isObj(payload.account) ? payload.account : null;
+  const id = account ? str(account.id, 300) : null;
+  if (!isUnipileAccount(id)) return null;
+  const state = str(payload.state, 200);
+  return { accountId: id!, state: state && /^[0-9a-f]{64}$/.test(state) ? state : null };
+}
+
+/** The email id inside email.new. The webhook is only a pointer: the mail itself is fetched with our API key. */
+export function emailEventOf(payload: Record<string, unknown>): { emailId: string; folders: string[] } | null {
+  const email = isObj(payload.email) ? payload.email : null;
+  const id = email ? str(email.id, 300) : null;
+  if (!id) return null;
+  const folders = Array.isArray(email?.folders) ? email!.folders.filter((f): f is string => typeof f === "string").slice(0, 50) : [];
+  const folder = str(payload.folder_id, 200);
+  return { emailId: id, folders: folder ? [...folders, folder] : folders };
+}
+
+/** Gmail label ids for mail that is never a customer request. Outlook folder ids are opaque; the sender check covers sent mail there. */
+export function isNonInboxFolder(folders: string[]): boolean {
+  return folders.some((f) => /^(SENT|DRAFT|DRAFTS|SPAM|TRASH)$/i.test(f));
+}
+
+/* ---------- Accounts and hosted auth ---------- */
+
+export function mapProvider(value: unknown): MailProvider | null {
+  if (value === "google") return "google";
+  if (value === "outlook" || value === "microsoft") return "microsoft";
+  if (value === "imap") return "imap";
+  return null;
+}
+
+/** Creates a short-lived hosted auth link. With `reconnectAccountId` the same account id is re-authenticated. */
+export async function createAuthLink(args: { state: string; redirectUri: string; provider?: "google" | "microsoft" | undefined; reconnectAccountId?: string | undefined; minutes?: number }): Promise<string> {
+  const expires_on = new Date(Date.now() + (args.minutes ?? 30) * 60_000).toISOString();
+  const body = args.reconnectAccountId
+    ? { account_id: args.reconnectAccountId, redirect_uri: args.redirectUri, expires_on, state: args.state }
+    : { providers: args.provider === "google" ? "google" : args.provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: args.redirectUri, expires_on, state: args.state };
+  const res = await unipileFetch("/auth/link", { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`unipile_link_${res.status}`); // never log the body
+  const json = await res.json() as { link?: unknown };
+  if (typeof json.link !== "string" || !/^https:\/\//.test(json.link)) throw new Error("unipile_link_missing");
+  return json.link;
+}
+
+/** Provider and mailbox address of an account, from Unipile (never from the browser). */
+export function parseAccount(data: unknown): { email: string; provider: MailProvider; status: string } {
+  if (!isObj(data)) throw new Error("unipile_invalid_account");
+  const provider = mapProvider(data.provider);
+  // v2 has no dedicated address field: `name` is the public identifier, i.e. the address for mail accounts.
+  const email = (str(data.name, 320) ?? "").trim().toLowerCase();
+  if (!provider) throw new Error("unipile_unsupported_account");
+  if (!EMAIL_RE.test(email)) throw new Error("unipile_no_email");
+  return { email, provider, status: str(data.status, 40) ?? "" };
+}
+
+export async function getAccount(accountId: string): Promise<{ email: string; provider: MailProvider; status: string }> {
+  const res = await unipileFetch(`/accounts/${encodeURIComponent(accountId)}`);
+  if (!res.ok) throw new Error(`unipile_get_account_${res.status}`);
+  return parseAccount(await res.json());
+}
+
+export async function deleteAccount(accountId: string): Promise<void> {
+  await unipileFetch(`/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" }).catch(() => undefined); // best effort
+}
+
+/* ---------- Reading mail ---------- */
+
+export function parseEmail(data: unknown): MailMessage {
+  if (!isObj(data)) throw new Error("invalid_message");
+  const id = str(data.id, 300);
+  if (!id) throw new Error("invalid_id");
+  const headers = Array.isArray(data.headers)
+    ? data.headers.slice(0, 300).filter(isObj).map((h) => ({ name: str(h.name, 200) ?? "", value: str(h.value, 2000) ?? "" })).filter((h) => h.name)
+    : [];
+  const ms = typeof data.date === "string" ? Date.parse(data.date) : NaN;
+  const attachments = Array.isArray(data.attachments)
+    ? data.attachments.slice(0, 50).filter(isObj).filter((a) => a.type === "file" || a.type === "img").map((a) => {
+      const mime = str(a.mimetype, 100) ?? "";
+      const fallback = `bild.${(mime.split("/")[1] ?? "bin").replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`;
+      return { id: str(a.id, 300) ?? "", filename: str(a.filename, 200) ?? fallback, content_type: mime, size: typeof a.file_size === "number" ? a.file_size : 0, is_inline: a.is_inline === true };
+    }).filter((a) => a.id)
+    : [];
+  const html = str(data.body, 2_000_000), plain = str(data.body_plain, 2_000_000);
+  return {
+    id, thread_id: str(data.thread_id, 300), subject: str(data.subject, 1000),
+    from: addrs(data.from, 5), to: addrs(data.to, 100), cc: addrs(data.cc, 100),
+    date: Number.isFinite(ms) ? Math.floor(ms / 1000) : null,
+    snippet: str(data.snippet, 2000), body: html || plain, headers, attachments,
+  };
+}
+
+/** Always fetch the mail by id with our key: the webhook only points at it. */
+export async function getEmail(accountId: string, emailId: string): Promise<MailMessage> {
+  const res = await unipileFetch(`/${encodeURIComponent(accountId)}/emails/${encodeURIComponent(emailId)}`);
+  if (!res.ok) throw new Error(`unipile_get_email_${res.status}`);
+  return parseEmail(await res.json());
+}
+
+/** Downloads one attachment. The caller has already checked type and size. */
+export async function downloadAttachment(accountId: string, emailId: string, attachmentId: string): Promise<Uint8Array> {
+  const res = await unipileFetch(`/${encodeURIComponent(accountId)}/emails/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(attachmentId)}`, { timeoutMs: 30_000, headers: { Accept: "*/*" } });
+  if (!res.ok) throw new Error(`unipile_attachment_${res.status}`); // never log the body
+  // The response format is not documented: accept raw bytes, or JSON carrying base64 `content`.
+  if ((res.headers.get("content-type") ?? "").includes("application/json")) {
+    const json = await res.json() as { content?: unknown };
+    if (typeof json.content !== "string") throw new Error("unipile_attachment_format");
+    return Uint8Array.from(atob(json.content), (c) => c.charCodeAt(0));
+  }
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/* ---------- Sending mail ---------- */
+
+/** Sends a reply in the same thread. `html` must already be safe (see mail-format.ts renderHtml). Returns a non-empty id. */
+export async function sendEmail(args: {
+  accountId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToId?: string | null | undefined;
+}): Promise<string> {
+  const res = await unipileFetch(`/${encodeURIComponent(args.accountId)}/emails/send`, {
+    method: "POST", timeoutMs: 25_000,
+    body: JSON.stringify({
+      to: [{ email: args.to.email, ...(args.to.name ? { display_name: args.to.name.replace(/[\r\n]/g, " ").slice(0, 100) } : {}) }],
+      subject: args.subject.replace(/[\r\n]/g, " ").slice(0, 300),
+      html: args.html,
+      ...(args.replyToId ? { reply_to_provider_id: args.replyToId } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(`unipile_send_${res.status}`); // never log the body
+  const json = await res.json() as { id?: unknown; message_id?: unknown };
+  // `id` may be empty when the provider keeps no copy; fall back to the RFC id, then to a unique marker
+  // (provider_message_id is unique per company, and the app requires one to record the delivery).
+  if (typeof json.id === "string" && json.id) return json.id;
+  if (typeof json.message_id === "string" && json.message_id) return json.message_id.slice(0, 500);
+  return `unipile_${crypto.randomUUID()}`;
+}

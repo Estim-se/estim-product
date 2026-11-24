@@ -1,9 +1,10 @@
-// "Draft ready" mail to the craftsman, sent through the company's own connected mailbox (Nylas).
+// "Draft ready" mail to the craftsman, sent through the company's own connected mailbox (Nylas or Unipile).
 // The mail contains NO customer text, only a short note and a link into the app.
 // Deduplicated through audit_log: one notification per AI job. Needs APP_URL; NOTIFY_ENABLED=false turns it off.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
-import { errCode, sendReply } from "./nylas.ts";
+import { errCode } from "./nylas.ts";
+import { sendReply } from "./mail-provider.ts";
 import { escapeHtml } from "./mail-format.ts";
 
 export async function notifyDraftReady(db: SupabaseClient, companyId: string, threadId: string, key: string): Promise<void> {

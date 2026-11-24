@@ -73,6 +73,8 @@ Approved e-mail replies are delivered by deliverChannel -> the email-send edge f
 Received attachments (PDF/images, max 10 MB) are stored in the private bucket mail-attachments and referenced from messages.attachment_files.
 
 A notification mail (link only, no customer text) is sent when the AI job is done. Email drafts require human approval.
+
+Email (Unipile, API v2): EMAIL_PROVIDER=unipile sends new connections through Unipile; an existing connection keeps the provider that created it (Unipile account ids start with "acc_" and are stored in email_connections.grant_id), routed by _shared/mail-provider.ts. The existing nylas-connect and nylas-webhook functions serve both providers so no new edge function is needed. The account is bound to a company only by the signed account.add/account.reconnect webhook carrying our hashed single-use state, never by the browser redirect; the webhook (header unipile-signature, HMAC over `${t}.${rawBody}`, 5-minute tolerance) answers within Unipile's 5-second limit and processes afterwards with its own retries, re-fetching each mail by id.
 - Automatic WhatsApp sends inherit a default-off company setting unless a nullable thread override explicitly chooses on/off; bind jobs to incoming messages and atomically reserve one AI attempt per provider ID using the shared delivery adapter, so duplicates cannot trigger delivery and failed attempts preserve the draft.
 
 - Keep settings mounted; use form-linked save.
