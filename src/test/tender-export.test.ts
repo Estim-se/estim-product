@@ -45,6 +45,15 @@ it('retains unpriced posts with quantity and source and blank yellow time and pr
   expect(k.getCell(`F${n}`).value).toBe(2); expect(k.getCell(`G${n}`).value).toBe(100); expect(k.getCell(`N${n}`).value).toBe(0); expect(k.getCell(`N${n}`).fill).toMatchObject({fgColor:{argb:'FFF2CC'}});
   expect(String(k.getCell(`L${n}`).value)).toMatch(/inte bekräftad/); expect(k.getCell(`K${n}`).formula).toBe(`IF(H${n}="","",I${n}+J${n})`);
   expect(k.getCell(`H${n}`).formula).toBe(`IF(OR(N${n}=0,COUNT(C${n},F${n},G${n})<3),"",ROUND(C${n}*F${n},6))`);
+  // The total is incomplete: a clear warning with the list at the top of Översikt and of Kalkyl; the overview moves down.
+  const o=b.getWorksheet('Översikt')!;
+  expect(o.getCell('B3').value).toBe('1 post saknar mängd eller pris – totalen är ofullständig'); expect(o.getCell('B4').value).toBe(`${k.getCell(`A${n}`).value} Stigarledningar – saknar mängd`);
+  expect(o.getCell('B6').value).toBe('Totalt exkl. moms'); expect(String((o.getCell('B7').value as {formula:string}).formula)).toMatch(/^Kalkyl!K\d+$/);
+  expect(String(k.getCell('A2').value)).toMatch(/^1 post saknar mängd eller pris – totalen är ofullständig/);
+});
+it('shows no incompleteness warning when every post has a quantity and a price', async () => {
+  const b = await createTenderWorkbook(input), o = b.getWorksheet('Översikt')!;
+  expect(o.getCell('B3').value).toBe('Totalt exkl. moms'); expect(b.getWorksheet('Kalkyl')!.getCell('A2').value).toBeNull();
 });
 it('sorts high risks before medium/low and deduplicates assumptions without changing source data', () => {
   const source={document_id:'document',page:1,af_code:'AFC.13',evidence:'Källa'};

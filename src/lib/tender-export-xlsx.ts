@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { tenderExportData, type TenderExportInput } from './tender-export';
+import { incompleteCostPosts, incompleteWarning } from './tender-calculation';
 import { sectionOfPost, TENDER_SECTIONS } from './tender-example-catalog';
 import { postMeaning } from './tender-post-matching';
 import { questionPosts } from './tender-question-links';
@@ -159,12 +160,25 @@ export async function createTenderWorkbook(input: TenderExportInput, branding?: 
   const counted = postRows.length ? postRows.map(p => `K${p}`).join(',') : null;
   status.getCell(11).value = { formula: counted ? `IF(COUNT(${counted})<${postRows.length},"Ofullständig – endast kompletta poster summeras","Komplett")` : '"Inga kalkylposter"', result: !postRows.length ? 'Inga kalkylposter' : data.cost.complete ? 'Komplett' : 'Ofullständig – endast kompletta poster summeras' };
   const lastPostRow = Math.max(4, n);
+  // Posts outside the total because a quantity or a price is missing: a clear warning at the top of Översikt (with
+  // the list) and of Kalkyl.
+  const incomplete = incompleteCostPosts(data.cost);
+  if (incomplete.length) {
+    const w = calc.getCell('A2'); w.value = `${incompleteWarning(incomplete.length)} – se listan i Översikt.`; fill(w, C.level['Saknar mängd']!); font(w, { bold: true }); calc.mergeCells('A2:M2');
+  }
 
   // ---- Översikt ----------------------------------------------------------------------------------------------------
   [['A', 2], ['B', 46], ['C', 16], ['D', 17], ['E', 18], ['F', 18], ['G', 10]].forEach(([c, w]) => { overview.getColumn(c as string).width = w as number; });
   const head = overview.getCell('B1'); head.value = `${input.name} · Kalkyl el, utkast`; font(head, { bold: true, size: 16 });
   const objekt = input.insights?.key_data.find(k => k.field === 'Objekt')?.value, client = input.insights?.key_data.find(k => k.field === 'Beställare')?.value;
   const sub = overview.getCell('B2'); sub.value = [objekt, client ? `Beställare: ${client}` : null].filter(Boolean).join(' · ').slice(0, 250) || null; font(sub, { color: { argb: C.note } });
+  const SHOWN = 20, listed = incomplete.slice(0, SHOWN);
+  const W = incomplete.length ? 2 + listed.length + (incomplete.length > SHOWN ? 1 : 0) : 0;
+  if (incomplete.length) {
+    const w = overview.getCell('B3'); w.value = incompleteWarning(incomplete.length); fill(w, C.level['Saknar mängd']!); font(w, { bold: true, size: 12 }); overview.mergeCells('B3:G3'); overview.getRow(3).height = 21;
+    listed.forEach((x, i) => { const c = overview.getCell(`B${4 + i}`); c.value = `${numberOf.get(x.post) ? `${numberOf.get(x.post)} ` : ''}${x.post} – saknar ${x.missing}`; font(c, { size: 9 }); overview.mergeCells(`B${4 + i}:G${4 + i}`); });
+    if (incomplete.length > SHOWN) { const c = overview.getCell(`B${4 + SHOWN}`); c.value = `… och ${incomplete.length - SHOWN} till (se fliken Kalkyl).`; font(c, { size: 9 }); }
+  }
   const apartments = model?.apartments.length ?? 0, apartmentsCell = apartmentSheet ? `'Lägenheter'!${apartmentSheet.cells.apartments}` : null;
   const inApartments = subtotals.filter(t => t.s <= 4);
   const apartmentSum = (col: string) => inApartments.length ? inApartments.map(t => `Kalkyl!${col}${t.row}`).join('+') : '0';
@@ -178,14 +192,14 @@ export async function createTenderWorkbook(input: TenderExportInput, branding?: 
       ['Totalt per lgh', { formula: `Kalkyl!K${grandRow}/${apartmentsCell}`, result: data.cost.total / apartments }, KR],
     ] as [string, ExcelJS.CellValue, string][] : []),
   ];
-  overview.getRow(3).height = 24; overview.getRow(4).height = 27.75;
+  overview.getRow(3 + W).height = 24; overview.getRow(4 + W).height = 27.75;
   tiles.forEach(([label, value, fmt], i) => {
-    const l = overview.getRow(3).getCell(i + 2), v = overview.getRow(4).getCell(i + 2);
+    const l = overview.getRow(3 + W).getCell(i + 2), v = overview.getRow(4 + W).getCell(i + 2);
     l.value = label; fill(l, C.tile); font(l, { size: 9 }); v.value = value; fill(v, C.tile); font(v, { bold: true, size: 18 }); v.numFmt = fmt;
   });
-  if (apartmentsCell) { const note = overview.getCell('B5'); note.value = 'Per lägenhet räknas bara avsnitt 1-4 (arbete inne i lägenheterna).'; fill(note, C.tile); font(note, { size: 9 }); }
-  ['Avsnitt', 'Timmar', 'Arbete (kr)', 'Material (kr)', 'Summa (kr)', 'Andel'].forEach((h, i) => { const c = overview.getRow(7).getCell(i + 2); c.value = h; fill(c, C.heading); font(c, { bold: true }); });
-  const firstSection = 8, baseOverview = firstSection + subtotals.length;
+  if (apartmentsCell) { const note = overview.getCell(`B${5 + W}`); note.value = 'Per lägenhet räknas bara avsnitt 1-4 (arbete inne i lägenheterna).'; fill(note, C.tile); font(note, { size: 9 }); }
+  ['Avsnitt', 'Timmar', 'Arbete (kr)', 'Material (kr)', 'Summa (kr)', 'Andel'].forEach((h, i) => { const c = overview.getRow(7 + W).getCell(i + 2); c.value = h; fill(c, C.heading); font(c, { bold: true }); });
+  const firstSection = 8 + W, baseOverview = firstSection + subtotals.length;
   subtotals.forEach((t, i) => {
     const row = overview.getRow(firstSection + i), sum = (key: 'hours' | 'labor' | 'material' | 'total') => t.rows.reduce((u, y) => u + (y[key] ?? 0), 0);
     row.getCell(2).value = sectionLabel(t.s);
@@ -219,7 +233,7 @@ export async function createTenderWorkbook(input: TenderExportInput, branding?: 
   o++;
   const blind = overview.getCell(`B${o}`); blind.value = `Blindtest mot ${company ? `${company}s` : 'eget'} anbud`; font(blind, { bold: true }); rule(blind); o++;
   ['Estims kalkyl', `${company ?? 'Eget anbud'} (fyll i)`, 'Skillnad', 'Skillnad %'].forEach((h, i) => { const c = overview.getRow(o).getCell(i + 3); c.value = h; font(c, { bold: true }); }); o++;
-  for (const [label, ref, value] of [['Timmar', `C4`, data.cost.total_hours], ['Totalt exkl. moms (kr)', `B4`, data.cost.total]] as const) {
+  for (const [label, ref, value] of [['Timmar', `C${4 + W}`, data.cost.total_hours], ['Totalt exkl. moms (kr)', `B${4 + W}`, data.cost.total]] as const) {
     const row = overview.getRow(o);
     row.getCell(2).value = label; row.getCell(3).value = { formula: ref, result: value }; row.getCell(3).numFmt = NF0;
     yellow(row.getCell(4), `Fyll i ${company ? `${company}s` : 'er'} egen siffra först efter att estims siffra har visats.`); row.getCell(4).numFmt = NF0;

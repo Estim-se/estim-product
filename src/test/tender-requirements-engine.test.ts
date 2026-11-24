@@ -51,11 +51,11 @@ describe('requirements builder', () => {
     expect(all(q).find(i => i.post === 'Elektrisk golvvärme')).toMatchObject({ quantity: '14', level: 'Antagen', section: 3, rule: expect.stringContaining('typkoder') });
     expect(all(q).find(i => i.post === 'Perilexuttag')).toMatchObject({ quantity: '14', level: 'Antagen', section: 2 });
   });
-  it('an unsourced requirement is Antagen; a missing count per unit is Saknar mängd and outside the total', () => {
+  it('an unsourced requirement is Antagen; a fixed quantity without a number is Saknar mängd and outside the total; an unknown number of stages is at least one', () => {
     const q = build([req('Takbelysning badrum', 'badrum', 1), req('Belysning källare', 'fast_antal', null), req('Byggström per etapp', 'etapp', 1)]);
     expect(all(q).find(i => i.post === 'Takbelysning badrum')).toMatchObject({ quantity: '14', level: 'Antagen' });
     expect(all(q).find(i => i.post === 'Belysning källare')?.level).toBe('Saknar mängd');
-    expect(all(q).find(i => i.post === 'Byggström per etapp')?.level).toBe('Saknar mängd');
+    expect(all(q).find(i => i.post === 'Byggström per etapp')).toMatchObject({ level: 'Antagen', quantity: '1' });
     const settings = { ...emptyCalculationSettings, hourly_rate: 650, post_types: [{ id: '00000000-0000-4000-8000-000000000010', name: 'Armatur källare', hours: 1, list_price: 1200 }] };
     expect(calculateTenderCost(q, settings, { bindings: [{ post: 'Belysning källare', type_id: settings.post_types[0]!.id, manual_hours: null, manual_list_price: null }], demolition: null }).rows[0]?.total).toBeNull();
   });

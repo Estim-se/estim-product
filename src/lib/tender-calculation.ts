@@ -142,3 +142,10 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     ? { ...c, status: 'Ingår i annan post' as const, reason: `Prissätts i ${included.get(c.row)} (samma katalogtyp).` } : c);
   return { rows: catalogRows, proposals, complete, requirement_coverage, total_hours: rows.reduce((n, r) => n + Math.round((r.hours ?? 0) * 1000000), 0) / 1000000, labor: Number(labor) / 100, material: Number(material) / 100, establishment: Number(establishment) / 100, contingency: Number(contingency) / 100, total: Number(total) / 100 };
 }
+// Posts outside the total because a quantity or a price is missing (options are priced separately by definition and
+// are not counted). The app and the Excel export show them as one warning: the total is incomplete.
+export type IncompletePost = { post: string; missing: 'mängd' | 'pris' };
+export function incompleteCostPosts(cost: Pick<ReturnType<typeof calculateTenderCost>, 'rows' | 'proposals'>): IncompletePost[] {
+  return [...cost.rows, ...cost.proposals].filter(r => r.total === null && !r.option).map(r => ({ post: r.post, missing: r.awaiting_confirmation || r.level === 'Saknar mängd' ? 'mängd' as const : 'pris' as const }));
+}
+export const incompleteWarning = (n: number) => `${n} ${n === 1 ? 'post saknar' : 'poster saknar'} mängd eller pris – totalen är ofullständig`;

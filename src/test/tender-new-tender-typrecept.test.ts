@@ -59,7 +59,7 @@ describe('recipe posts on a fresh tender', () => {
   });
   it('correct whole-list posts are not affected by the lower bound', () => {
     const q = calculateTenderQuantities({ operands: [], items: [], assumptions: [] }, withList, undefined, true);
-    expect(q.items.find(i => i.post === 'Dubbla vägguttag hall enligt typrecept')).toMatchObject({ quantity: '82', certainty: 'Medel' });
+    expect(q.items.find(i => i.post === 'Dubbla vägguttag hall enligt typrecept')).toMatchObject({ quantity: '246', certainty: 'Medel' });
   });
 });
 

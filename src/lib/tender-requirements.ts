@@ -205,6 +205,34 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const text = (TEXT_COUNTS as readonly string[]).includes(r.unit_of_count) ? textCount(r.unit_of_count) : null;
     return text ? { value: text.value, label: `${r.unit_of_count} enligt underlaget`, level: 'Bekräftad', source: { document_id: text.source.document_id, page: text.source.page, evidence: text.source.evidence } } : null;
   }
+  // "One per X" where the number of X is not stated never becomes 0: the count is assumed from what is known (stairwells,
+  // buildings, apartments, floors), marked Antagen with the reason; at least one. Not for premises or apartment rooms
+  // (they come from the object list), and not for a room schedule that lacks the room type (then the type is absent).
+  const floors = model ? Math.max(1, ...model.apartments.map(a => Number.parseInt(String(a.floor ?? ''), 10)).filter(n => Number.isFinite(n) && n > 0 && n < 60)) : 1;
+  const stairwells = () => model && model.counts.stairwells > 0 ? model.counts.stairwells : textCount('trapphus')?.value ?? null;
+  const buildings = () => textCount('huskropp')?.value ?? textCount('fastighet')?.value ?? null;
+  function assumedUnitCount(r: Requirement): { value: number; label: string } | null {
+    const one = (what: string) => ({ value: 1, label: `minst 1 (antal ${what} anges inte)` });
+    const fromStairwells = (what: string) => { const n = stairwells(); return n ? { value: n, label: `trapphus – antaget en ${what} per trapphus` } : fromBuildings(what); };
+    const fromBuildings = (what: string) => { const n = buildings(); return n ? { value: n, label: `huskroppar – antaget en ${what} per huskropp` } : one(what); };
+    switch (r.unit_of_count) {
+      case 'entré': return fromStairwells('entré');
+      case 'trapphus': return fromBuildings('trapphus');
+      case 'trapphusplan': { const n = stairwells(); return n ? { value: n * floors, label: `${n} trapphus × ${floors} plan (högsta plan i objektlistan) – antaget` } : fromBuildings('trapphusplan'); }
+      case 'huskropp': { const n = textCount('fastighet')?.value; return n ? { value: n, label: 'fastigheter – antaget en huskropp per fastighet' } : one('huskroppar'); }
+      case 'fastighet': return one('fastigheter');
+      case 'etapp': return one('etapper');
+      case 'rumstyp': {
+        if (roomList) return null;
+        const what = `${r.room_type ?? ''} ${r.post}`.toLocaleLowerCase('sv'), name = r.room_type || 'utrymme';
+        if (/lägenhetsförråd|lgh.?förråd/.test(what) && model?.counts.apartments) return { value: model.counts.apartments, label: `lägenheter – antaget ett ${name} per lägenhet` };
+        if (/förråd|källar|kulvert|gång|soprum|miljörum|barnvagn|cykel/.test(what)) return fromStairwells(name);
+        if (/tekni|elrum|undercentral|fläktrum|apparatrum|pannrum|tvätt|garage/.test(what)) return fromBuildings(name);
+        return one(name);
+      }
+      default: return null;
+    }
+  }
   type Coverage = RequirementCoverage & { carrier?: QuantityItem };
   const coverage: Coverage[] = [], coverageOf = new Map<QuantityItem, Coverage[]>(), clarify = new Set<Coverage>();
   const add = (post: string, section: number, unit: QuantityItem['unit'], quantity: number | null, calculation: string, rule: string, level: QuantityLevel, sources: Source[], note: string | null, basis?: CountBasis, meta: Pick<QuantityItem, 'count_unit' | 'option' | 'type_id' | 'requirement_ids' | 'scope'> = {}, cov?: Coverage) => {
@@ -247,7 +275,11 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const option = OPTION.test(`${raw.post} ${raw.note ?? ''}`);
     // On a general type the delivery is told apart by the post's own specific meaning when the code finds one
     // ("Uttag kombimaskin" and "Vägguttag för kombimaskin" are one delivery); the model's free-text work only otherwise.
-    const ownMeaning = postMeaning(raw.post), delivery = ownMeaning && !GENERIC_MEANINGS.has(ownMeaning) ? `betydelse:${ownMeaning}` : normalWords(raw.work || raw.post);
+    // Otherwise the delivery words without the catalog type's own words: "matning dörrautomatik" and "dörrautomatik" on
+    // the type "Matning dörrautomatik" are both the type's own delivery, while "hiss" and "fläktar" stay apart.
+    const ownMeaning = postMeaning(raw.post), typeWords = new Set(normalWords(type ? typeName.get(type) ?? '' : '').split(' '));
+    const beyondType = (text: string) => normalWords(text.replace(/\([^)]*\)/g, ' ')).split(' ').filter(w => w && !typeWords.has(w)).join(' ');
+    const delivery = ownMeaning && !GENERIC_MEANINGS.has(ownMeaning) ? `betydelse:${ownMeaning}` : raw.work ? beyondType(raw.work) : beyondType(raw.post);
     const what = !type ? `utan-typ:${normalWords(raw.post)}` : coversSeveral(type) ? `${type}:${delivery}` : type;
     const rid = stableRequirementId(`${option ? `option:${normalWords(raw.post)}|` : ''}${what}|${scope}|${typeFamily(countUnit)}|${raw.room_type ? normalWords(raw.room_type) : ''}`);
     const validation = [...(raw.type_id && !type ? [`okänd katalog-ID ${raw.type_id.slice(0, 40)}`] : []), ...(!raw.source ? ['källa saknas'] : !source ? ['källan kunde inte verifieras'] : [])];
@@ -293,19 +325,25 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       continue;
     }
     const meta = { count_unit: r.unit_of_count === 'rumstyp' ? `rumstyp:${r.room_type ?? ''}` : r.unit_of_count, type_id: type, ...ids, ...(option ? { option } : {}) };
-    const count = unitCount(r);
+    const counted = unitCount(r), assumedCount = counted ? null : assumedUnitCount(r);
+    const count = counted ?? (assumedCount ? { value: assumedCount.value, label: assumedCount.label, level: 'Antagen' as QuantityLevel, source: null } : null);
+    // A piece count stated per unit without the number ("uttag i varje teknikrum") is at least one per unit (Antagen);
+    // a length (metres) is never guessed.
+    const assumedPer = count && r.per_unit === null && r.unit !== 'm';
     const rooms = r.unit_of_count === 'sovrum_och_halvrum' ? ['sovrum', 'halvrum'] : [r.unit_of_count];
     const eq = equipment(r.post); if (eq) for (const room of rooms) covered.add(`${room}|${eq}`);
-    if (!count || r.per_unit === null) {
+    if (!count || r.per_unit === null && !assumedPer) {
       const why = r.unit_of_count === 'rumstyp' ? !roomList ? 'Ingen rumsförteckning med rumstyper hittades' : r.room_type ? `Rumstypen ${r.room_type} finns inte i rumsförteckningen` : 'Rumstyp saknas'
         : !count ? `Antal ${r.unit_of_count} kan inte räknas ur objektlistan eller underlaget` : 'Antal per enhet saknas i underlaget';
       add(r.post, r.section, r.unit, null, '–', `${why} – fyll i mängd.${optionRule}`, 'Saknar mängd', sources, r.note, undefined, meta, cov);
       continue;
     }
-    const quantity = Math.round(count.value * r.per_unit * 1000) / 1000;
-    const level: QuantityLevel = r.assumed ? 'Antagen' : !source ? 'Antagen' : count.level;
+    const perUnit = r.per_unit ?? 1;
+    const quantity = Math.round(count.value * perUnit * 1000) / 1000;
+    const level: QuantityLevel = r.assumed || !source || assumedPer ? 'Antagen' : count.level;
     const per = r.unit_of_count === 'rumstyp' ? `rum av typen ${r.room_type}` : r.unit_of_count;
-    add(r.post, r.section, r.unit, quantity, `${count.value} × ${r.per_unit}`, `${source ? '' : `${UNSOURCED}. `}${r.per_unit} per ${per} × ${count.label}.${moved}${optionRule}`, level, [...sources, ...(count.source ? [count.source] : [])], r.note, count.basis ? { unit: count.basis, per_unit: r.per_unit, area_divisor: count.basis === 'per_area' ? r.area_divisor : null } : undefined, meta, cov);
+    const why = [assumedPer ? `Antal per ${per} anges inte: antaget minst 1 per ${per}.` : '', assumedCount ? `Antal ${per} anges inte: antaget utifrån det som är känt – kontrollera.` : ''].filter(Boolean).join(' ');
+    add(r.post, r.section, r.unit, quantity, `${count.value} × ${perUnit}`, `${source ? '' : `${UNSOURCED}. `}${perUnit} per ${per} × ${count.label}.${why ? ` ${why}` : ''}${moved}${optionRule}`, level, [...sources, ...(count.source ? [count.source] : [])], r.note, count.basis && !assumedPer ? { unit: count.basis, per_unit: perUnit, area_divisor: count.basis === 'per_area' ? r.area_divisor : null } : undefined, meta, cov);
   }
   // Counter sockets stated per length or worktop: one post from the kitchen recipe (Antagen), as in the reference
   // calculation; without an object list or recipe the posts stay Saknar mängd.
