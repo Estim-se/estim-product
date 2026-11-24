@@ -15,26 +15,50 @@ export const DEFAULT_WATCH_REGIONS = ['SE110', 'SE121', 'SE122'];
 export const TENDER_WATCH_FIELDS = ['publication-number', 'notice-title', 'buyer-name', 'buyer-city', 'place-of-performance', 'classification-cpv', 'deadline-receipt-tender-date-lot',
   'estimated-value-proc', 'estimated-value-cur-proc', 'estimated-value-lot', 'estimated-value-cur-lot', 'publication-date', 'notice-type', 'document-url-lot', 'framework-agreement-lot'] as const;
 
-// Classification by the main CPV (the first code of the notice):
-// el = electrical installation (4531…) or maintenance of electrical installations (50711…), or a notice whose main
-// code is something else but which states electrical installation work;
-// bygg_el = building or renovation that states electrical work; bygg_kontrollera = building or renovation without an
-// electrical code ("ingår el, kontrollera"). Civil engineering (roads, ground, water) and everything else is left out.
+// Classification by the main CPV (the first code of the notice), with the other codes and the tender's own title
+// where the main code is general:
+// el = electrical installation (4531…) or maintenance of electrical installations (50711…); a general installation
+// code with electrical work in the title ("Årsentreprenör … (EL)"); or another main code that states electrical work.
+// bygg_el = building or renovation that states electrical work; bygg_kontrollera = building or renovation without it
+// ("ingår el, kontrollera"). Left out: civil works (ground, asphalt, streets, parks, roads, water and sewage, district
+// heating), and other trades without electrical work (VVS, painting, roofing, carpentry, floors, machine hire …).
 export type WatchKind = 'el' | 'bygg_el' | 'bygg_kontrollera';
 export const WATCH_KIND_LABEL: Record<WatchKind, string> = { el: 'Elanbud', bygg_el: 'Bygg, el angiven', bygg_kontrollera: 'Bygg – ingår el, kontrollera' };
 const EL = ['4531', '50711'];
-const BUILDING = ['4521', '4520', '45453', '4526', '4540', '4541', '4542', '4543', '4544', '4545', '4530', '4533', '4535'];
-const CIVIL = ['4510', '4511', '4522', '4523', '4524', '4525'];
+// General main codes: the other codes and the title decide what the tender is.
+const GENERAL = ['45000000', '45200000', '45300000', '45400000'];
+const BUILDING = ['4521', '45453', '4545'];
+const CIVIL = ['4510', '4511', '4522', '4523', '4524', '4525', '4550', '773', '906', '9061'];
+const TRADE = ['4526', '4532', '4533', '4534', '4535', '4541', '4542', '4543', '4544', '455', '4511'];
+// Electrical words, also inside compounds ("Vägbelysning", "Elinstallationer").
+const EL_TITLE = /\b(el|elektri\w*)\b|\(el\)|belysning|elinstallation|elarbete|elentreprenad|eltjänst/i;
+const CIVIL_TITLE = /\b(mark(arbeten|entreprenad\w*)?|markarbete|asfalt\w*|beläggning\w*|gata|gator|gatu\w*|park|parker|parkmark|väg|vägar|vägarbeten|vägunderhåll|anläggningsentreprenad\w*|anläggningsarbeten|schakt\w*|grävning\w*|fjärrvärme\w*|fjärrkyla\w*|dagvatten\w*|vatten och avlopp|ledningsnät\w*|snöröjning|spår\w*|järnväg\w*|vattenintag\w*|vattenverk\w*|reningsverk\w*)\b/i;
+const WATER_TITLE = /\bVA\b/;
+const TRADE_TITLE = /\b(värme\w*|kyl\w*|sanitet\w*|vvs|vs|rör(arbeten|mokeri\w*)?|ventilation\w*|målning\w*|måleri\w*|sprutlackering|tak|takarbeten|takläggning|takplåt|plåtslageri\w*|fasad\w*|undertak|golv\w*|glas\w*|städ\w*|uthyrning|entreprenadmaskin\w*|grävmaskin\w*|lastbil\w*|sotning|isolering\w*|snickeri\w*|lås\w*|låstjänster|konstgräs\w*|vattenkonst\w*)\b/i;
+// A whole building or renovation contract that also names a trade ("Renovering av badrum och målning") stays.
+const BUILDING_TITLE = /\b(nybyggnad\w*|nybyggnation\w*|ombyggnad\w*|tillbyggnad\w*|renovering\w*|totalentreprenad\w*|rot|stambyte\w*|om- och nybyggnad)\b/i;
 const starts = (code: string, prefixes: string[]) => prefixes.some(p => code.startsWith(p));
-export function classifyWatchTender(cpv: string[]): WatchKind | null {
+export function classifyWatchTender(cpv: string[], title = ''): WatchKind | null {
   const [main = '', ...rest] = cpv;
-  const electrical = cpv.some(c => c.startsWith('4531'));
+  const elCode = cpv.some(c => c.startsWith('4531')), elTitle = EL_TITLE.test(title), electrical = elCode || elTitle;
   if (starts(main, EL)) return 'el';
   if (starts(main, CIVIL)) return null;
-  const building = starts(main, BUILDING) || main === '45000000' && rest.some(c => starts(c, BUILDING));
-  if (building || main === '45000000' && !rest.some(c => starts(c, CIVIL))) return electrical ? 'bygg_el' : 'bygg_kontrollera';
-  if (main === '45000000') return null;
-  return electrical ? 'el' : null;
+  // Another trade (VVS, painting, roofing, machine hire …) is not shown unless it states electrical work.
+  if (starts(main, TRADE)) return electrical ? 'bygg_el' : null;
+  const general = GENERAL.includes(main);
+  if (general || starts(main, BUILDING)) {
+    if (general) {
+      // A general code decides nothing: civil codes or civil words in the title, or another trade's title without
+      // electrical work, mean the tender is not for an electrical contractor.
+      const building = rest.some(c => starts(c, BUILDING));
+      if (!elCode && (rest.some(c => starts(c, CIVIL)) && !building || CIVIL_TITLE.test(title) || WATER_TITLE.test(title))) return null;
+      // Electrical work in the title of a general contract that names no building work is an electrical tender.
+      if (elTitle && (main === '45300000' || !building)) return 'el';
+    }
+    if (!electrical && TRADE_TITLE.test(title) && !BUILDING_TITLE.test(title)) return null;
+    return electrical ? 'bygg_el' : 'bygg_kontrollera';
+  }
+  return elCode ? 'el' : null;
 }
 
 // The TED expert query: Swedish buyers, CPV 45 (construction, which includes every electrical installation code) or
@@ -46,6 +70,8 @@ export function tenderWatchQuery(since: string) {
 // Calls for tenders only (not award notices or prior information without a call for competition).
 const COMPETITION = /^(cn-|pin-cfc|pin-rtl|qu-sy|subco)/;
 
+// Values below this are not real estimates (placeholders such as 1 or 70 kr on framework agreements): not stated.
+export const MIN_VALUE = 10000;
 export type WatchNotice = {
   publication_number: string; notice_type: string; title: string; buyer: string; city: string | null; places: string[]; cpv: string[];
   deadline: string | null; value: number | null; currency: string | null; published: string; documents_url: string | null; notice_url: string; framework: boolean;
@@ -53,11 +79,14 @@ export type WatchNotice = {
 const first = (v: unknown): string | null => v == null ? null : typeof v === 'string' ? v : typeof v === 'number' ? String(v) : Array.isArray(v) ? first(v[0])
   : typeof v === 'object' ? first((v as Record<string, unknown>)['swe'] ?? (v as Record<string, unknown>)['eng'] ?? Object.values(v as object)[0]) : null;
 const list = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'string' ? [v] : [];
+// TED titles sometimes carry HTML entities ("Fasad &amp; tak").
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'" };
+const decodeEntities = (s: string) => s.replace(/&(amp|lt|gt|quot|apos|#39);/g, (_, e: string) => ENTITIES[e] ?? _);
 export function normaliseWatchNotice(raw: Record<string, unknown>): WatchNotice | null {
   const id = first(raw['publication-number']);
   if (!id || !/^\d{1,8}-\d{4}$/.test(id)) return null;
   // TED titles start "Sverige – CPV-titel – egen titel"; the tender's own title is the last part.
-  const fullTitle = first(raw['notice-title']) ?? '';
+  const fullTitle = decodeEntities(first(raw['notice-title']) ?? '');
   const title = fullTitle.split(' – ').slice(2).join(' – ').trim() || fullTitle.trim();
   const value = Number(first(raw['estimated-value-proc']) ?? list(raw['estimated-value-lot']).reduce((s, v) => s + Number(v), 0));
   const deadlines = list(raw['deadline-receipt-tender-date-lot']).map(d => d.slice(0, 10)).sort();
@@ -65,7 +94,7 @@ export function normaliseWatchNotice(raw: Record<string, unknown>): WatchNotice 
   return {
     publication_number: id, notice_type: first(raw['notice-type']) ?? '', title: title.slice(0, 500), buyer: (first(raw['buyer-name']) ?? '').slice(0, 300), city: first(raw['buyer-city']),
     places: [...new Set(list(raw['place-of-performance']))], cpv: [...new Set(list(raw['classification-cpv']))],
-    deadline: deadlines[0] ?? null, value: Number.isFinite(value) && value > 0 ? value : null,
+    deadline: deadlines[0] ?? null, value: Number.isFinite(value) && value >= MIN_VALUE ? value : null,
     currency: first(raw['estimated-value-cur-proc']) ?? first(raw['estimated-value-cur-lot']), published: (first(raw['publication-date']) ?? '').slice(0, 10),
     documents_url: list(raw['document-url-lot']).find(u => /^https:\/\//.test(u)) ?? null, notice_url: `https://ted.europa.eu/sv/notice/-/detail/${id}`,
     framework: frameworks.some(f => f && f !== 'none') || /\b(ramavtal|dynamiskt inköpssystem)\b/i.test(fullTitle),
@@ -83,7 +112,7 @@ export function watchHits(rawNotices: Record<string, unknown>[], regions: string
   const notices = rawNotices.map(normaliseWatchNotice).filter((n): n is WatchNotice => !!n && COMPETITION.test(n.notice_type))
     .sort((a, b) => b.published.localeCompare(a.published) || b.publication_number.localeCompare(a.publication_number));
   for (const n of notices) {
-    const kind = classifyWatchTender(n.cpv);
+    const kind = classifyWatchTender(n.cpv, n.title);
     if (!kind || !inWatchRegions(n.places, regions)) continue;
     const keys = [n.documents_url, `${n.buyer.toLocaleLowerCase('sv')}|${n.title.toLocaleLowerCase('sv')}`].filter((k): k is string => !!k);
     if (keys.some(k => hits.has(k))) continue;

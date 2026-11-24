@@ -887,7 +887,1052 @@
      "Stockholm"
     ]
    }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-10-30+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "671790-2026",
+   "estimated-value-lot": [
+    "40000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=61776"
+   ],
+   "classification-cpv": [
+    "45442100",
+    "45442110",
+    "45442100",
+    "45442110"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Micasa Fastigheter i Stockholm AB"
+    ]
+   },
+   "publication-date": "2026-09-30+02:00",
+   "estimated-value-proc": "40000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/671790-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Festés – Ramavtal Målningsarbeten",
+    "lav": "Zviedrija – Krāsošanas darbi – Ramavtal Målningsarbeten",
+    "swe": "Sverige – Målning – Ramavtal Målningsarbeten",
+    "gle": "An tSualainn – Painting work – Ramavtal Målningsarbeten",
+    "ell": "Σουηδία – Εργασίες βαφής – Ramavtal Målningsarbeten",
+    "spa": "Suecia – Trabajos de pintura – Ramavtal Målningsarbeten",
+    "est": "Rootsi – Värvimistööd – Ramavtal Målningsarbeten",
+    "nld": "Zweden – Schilderwerk – Ramavtal Målningsarbeten",
+    "fin": "Ruotsi – Maalaustyöt – Ramavtal Målningsarbeten",
+    "pol": "Szwecja – Roboty malarskie – Ramavtal Målningsarbeten",
+    "hrv": "Švedska – Ličilački radovi – Ramavtal Målningsarbeten",
+    "ces": "Švédsko – Malířské práce – Ramavtal Målningsarbeten",
+    "dan": "Sverige – Malearbejde – Ramavtal Målningsarbeten",
+    "ron": "Suedia – Lucrări de vopsire – Ramavtal Målningsarbeten",
+    "por": "Suécia – Obras de pintura – Ramavtal Målningsarbeten",
+    "slk": "Švédsko – Maliarske a natieračské práce – Ramavtal Målningsarbeten",
+    "fra": "Suède – Travaux de peinture – Ramavtal Målningsarbeten",
+    "mlt": "L-Iżvezja – Xogħol ta’ żebgħa – Ramavtal Målningsarbeten",
+    "deu": "Schweden – Anstricharbeiten – Ramavtal Målningsarbeten",
+    "lit": "Švedija – Dažymo darbai – Ramavtal Målningsarbeten",
+    "ita": "Svezia – Lavori di tinteggiatura – Ramavtal Målningsarbeten",
+    "bul": "Швeция – Работи по боядисване – Ramavtal Målningsarbeten",
+    "slv": "Švedska – Pleskarska dela – Ramavtal Målningsarbeten",
+    "eng": "Sweden – Painting work – Ramavtal Målningsarbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "Kista"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE123",
+    "SWE",
+    "SE123",
+    "SWE"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "675994-2026",
+   "estimated-value-lot": [
+    "0"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-mix"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=100705"
+   ],
+   "classification-cpv": [
+    "45300000",
+    "45300000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Fortifikationsverket"
+    ]
+   },
+   "publication-date": "2026-10-01+02:00",
+   "estimated-value-proc": "0",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/675994-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Épületszerelési munka – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "lav": "Zviedrija – Ēku instalācijas darbi – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "swe": "Sverige – Byggnadsinstallationsarbeten – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "gle": "An tSualainn – Building installation work – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "ell": "Σουηδία – Εργασίες κτιριακών εγκαταστάσεων – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "spa": "Suecia – Trabajos de instalación en edificios – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "est": "Rootsi – Hoone installatsioonitööd – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "nld": "Zweden – Installatiewerkzaamheden in de bouw – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "fin": "Ruotsi – Rakennusten asennustyöt – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "pol": "Szwecja – Roboty instalacyjne w budynkach – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "hrv": "Švedska – Instalaterski radovi na građevinama – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "ces": "Švédsko – Stavební montážní práce – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "dan": "Sverige – Udførelse af bygningsinstallationer – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "ron": "Suedia – Lucrări de instalaţii pentru clădiri – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "por": "Suécia – Instalações em edifícios – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "slk": "Švédsko – Stavebno-inštalačné práce – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "fra": "Suède – Travaux d'équipement du bâtiment – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "mlt": "L-Iżvezja – Xogħol ta’ l-istallazzjoni fil-bini – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "deu": "Schweden – Bauinstallationsarbeiten – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "lit": "Švedija – Pastatų įrengimo darbai – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "ita": "Svezia – Lavori di installazione di impianti in edifici – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "bul": "Швeция – Строителни и монтажни работи на инсталации – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "slv": "Švedska – Inštalacijska dela pri gradnjah – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering",
+    "eng": "Sweden – Building installation work – Årsentreprenör Område Linköping/Kvarn (EL) - Omannonsering"
+   },
+   "buyer-city": {
+    "mul": [
+     "ESKILSTUNA"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE321",
+    "SWE",
+    "SE321",
+    "SWE"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "680702-2026",
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/sundsvall/e-Upphandling/NoticeLink.aspx?id=121907"
+   ],
+   "classification-cpv": [
+    "45454100",
+    "45454100",
+    "45454000",
+    "45453000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Sundsvalls kommun"
+    ]
+   },
+   "publication-date": "2026-10-02+02:00",
+   "estimated-value-proc": "70000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/680702-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Helyreállítás – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "lav": "Zviedrija – Atjaunošanas pakalpojumi – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "swe": "Sverige – Restaureringsarbeten – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "gle": "An tSualainn – Restoration work – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "ell": "Σουηδία – Εργασίες ανακαίνισης – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "spa": "Suecia – Trabajos de restauración – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "est": "Rootsi – Restaureerimistööd – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "nld": "Zweden – Restauratiewerkzaamheden – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "fin": "Ruotsi – Entisöintityöt – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "pol": "Szwecja – Odnawianie – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "hrv": "Švedska – Radovi na obnovi – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "ces": "Švédsko – Rekonstrukce budov – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "dan": "Sverige – Restaurering – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "ron": "Suedia – Lucrări de restaurare – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "por": "Suécia – Obras de restauro – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "slk": "Švédsko – Reštaurovanie – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "fra": "Suède – Travaux de réfection – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "mlt": "L-Iżvezja – Xogħol ta’ restawr – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "deu": "Schweden – Mit Instandsetzungsarbeiten verbundene Arbeiten – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "lit": "Švedija – Restauravimo darbai – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "ita": "Svezia – Lavori di restauro – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "bul": "Швeция – Строителни работи по реставрация – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "slv": "Švedska – Restavratorska dela – Hedbergska skolan - Fasad &amp; tak restaurering",
+    "eng": "Sweden – Restoration work – Hedbergska skolan - Fasad &amp; tak restaurering"
+   },
+   "buyer-city": {
+    "mul": [
+     "Sundsvall"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE224",
+    "SWE",
+    "SE224",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-02Z"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "684109-2026",
+   "estimated-value-lot": [
+    "45000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-w-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=100967"
+   ],
+   "classification-cpv": [
+    "45300000",
+    "45300000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Aktiebolaget Kristianstadsbyggen"
+    ]
+   },
+   "publication-date": "2026-10-05+02:00",
+   "estimated-value-proc": "45000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/684109-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Épületszerelési munka – Ramavtal Värmepumpar och Kylanläggningar",
+    "lav": "Zviedrija – Ēku instalācijas darbi – Ramavtal Värmepumpar och Kylanläggningar",
+    "swe": "Sverige – Byggnadsinstallationsarbeten – Ramavtal Värmepumpar och Kylanläggningar",
+    "gle": "An tSualainn – Building installation work – Ramavtal Värmepumpar och Kylanläggningar",
+    "ell": "Σουηδία – Εργασίες κτιριακών εγκαταστάσεων – Ramavtal Värmepumpar och Kylanläggningar",
+    "spa": "Suecia – Trabajos de instalación en edificios – Ramavtal Värmepumpar och Kylanläggningar",
+    "est": "Rootsi – Hoone installatsioonitööd – Ramavtal Värmepumpar och Kylanläggningar",
+    "nld": "Zweden – Installatiewerkzaamheden in de bouw – Ramavtal Värmepumpar och Kylanläggningar",
+    "fin": "Ruotsi – Rakennusten asennustyöt – Ramavtal Värmepumpar och Kylanläggningar",
+    "pol": "Szwecja – Roboty instalacyjne w budynkach – Ramavtal Värmepumpar och Kylanläggningar",
+    "hrv": "Švedska – Instalaterski radovi na građevinama – Ramavtal Värmepumpar och Kylanläggningar",
+    "ces": "Švédsko – Stavební montážní práce – Ramavtal Värmepumpar och Kylanläggningar",
+    "dan": "Sverige – Udførelse af bygningsinstallationer – Ramavtal Värmepumpar och Kylanläggningar",
+    "ron": "Suedia – Lucrări de instalaţii pentru clădiri – Ramavtal Värmepumpar och Kylanläggningar",
+    "por": "Suécia – Instalações em edifícios – Ramavtal Värmepumpar och Kylanläggningar",
+    "slk": "Švédsko – Stavebno-inštalačné práce – Ramavtal Värmepumpar och Kylanläggningar",
+    "fra": "Suède – Travaux d'équipement du bâtiment – Ramavtal Värmepumpar och Kylanläggningar",
+    "mlt": "L-Iżvezja – Xogħol ta’ l-istallazzjoni fil-bini – Ramavtal Värmepumpar och Kylanläggningar",
+    "deu": "Schweden – Bauinstallationsarbeiten – Ramavtal Värmepumpar och Kylanläggningar",
+    "lit": "Švedija – Pastatų įrengimo darbai – Ramavtal Värmepumpar och Kylanläggningar",
+    "ita": "Svezia – Lavori di installazione di impianti in edifici – Ramavtal Värmepumpar och Kylanläggningar",
+    "bul": "Швeция – Строителни и монтажни работи на инсталации – Ramavtal Värmepumpar och Kylanläggningar",
+    "slv": "Švedska – Inštalacijska dela pri gradnjah – Ramavtal Värmepumpar och Kylanläggningar",
+    "eng": "Sweden – Building installation work – Ramavtal Värmepumpar och Kylanläggningar"
+   },
+   "buyer-city": {
+    "mul": [
+     "KRISTIANSTAD"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-05+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "689644-2026",
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/sighem/e-Upphandling/NoticeLink.aspx?id=135778"
+   ],
+   "classification-cpv": [
+    "45261213",
+    "45261213",
+    "45261300",
+    "45261920",
+    "45261910"
+   ],
+   "buyer-name": {
+    "swe": [
+     "AB SigtunaHem"
+    ]
+   },
+   "publication-date": "2026-10-07+02:00",
+   "estimated-value-proc": "4000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/689644-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Tetőfedés fémmel – Takarbeten inklusive snöskottning",
+    "lav": "Zviedrija – Metāla jumta seguma uzlikšana – Takarbeten inklusive snöskottning",
+    "swe": "Sverige – Läggning av takplåt – Takarbeten inklusive snöskottning",
+    "gle": "An tSualainn – Metal roof-covering work – Takarbeten inklusive snöskottning",
+    "ell": "Σουηδία – Εργασίες μεταλλικής κάλυψης οροφής – Takarbeten inklusive snöskottning",
+    "spa": "Suecia – Colocación de cubiertas metálicas – Takarbeten inklusive snöskottning",
+    "est": "Rootsi – Plekk-katusetööd – Takarbeten inklusive snöskottning",
+    "nld": "Zweden – Aanbrengen van metalen dakbedekking – Takarbeten inklusive snöskottning",
+    "fin": "Ruotsi – Peltikatteen asentaminen – Takarbeten inklusive snöskottning",
+    "pol": "Szwecja – Kładzenie dachów metalowych – Takarbeten inklusive snöskottning",
+    "hrv": "Švedska – Radovi pokrivanja krova metalom – Takarbeten inklusive snöskottning",
+    "ces": "Švédsko – Pokládka kovových střešních krytin – Takarbeten inklusive snöskottning",
+    "dan": "Sverige – Tagdækning med metal – Takarbeten inklusive snöskottning",
+    "ron": "Suedia – Lucrări de acoperire cu plăci metalice – Takarbeten inklusive snöskottning",
+    "por": "Suécia – Colocação de coberturas metálicas – Takarbeten inklusive snöskottning",
+    "slk": "Švédsko – Kladenie strešnej krytiny z kovu – Takarbeten inklusive snöskottning",
+    "fra": "Suède – Travaux de couverture métallique – Takarbeten inklusive snöskottning",
+    "mlt": "L-Iżvezja – Xogħol tal-kisi tal-bjut bil-metall – Takarbeten inklusive snöskottning",
+    "deu": "Schweden – Blechdachdeckarbeiten – Takarbeten inklusive snöskottning",
+    "lit": "Švedija – Stogo dengimo metaline danga darbai – Takarbeten inklusive snöskottning",
+    "ita": "Svezia – Copertura di tetti metallici – Takarbeten inklusive snöskottning",
+    "bul": "Швeция – Работи по покриване с метални плоскости – Takarbeten inklusive snöskottning",
+    "slv": "Švedska – Krovska dela s pločevinastimi kritinami – Takarbeten inklusive snöskottning",
+    "eng": "Sweden – Metal roof-covering work – Takarbeten inklusive snöskottning"
+   },
+   "buyer-city": {
+    "mul": [
+     "Märsta"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE122",
+    "SWE",
+    "SE122",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-03+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "706238-2026",
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/trosa/e-Upphandling/NoticeLink.aspx?id=116290"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45000000",
+    "77300000",
+    "90600000",
+    "90610000",
+    "90620000",
+    "90640000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Trosa Kommun",
+     "Trosabygdens Bostäder AB"
+    ]
+   },
+   "publication-date": "2026-10-13+02:00",
+   "estimated-value-proc": "220000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/706238-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "lav": "Zviedrija – Celtniecības darbi – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "swe": "Sverige – Anläggningsarbete – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "gle": "An tSualainn – Construction work – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "spa": "Suecia – Trabajos de construcción – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "est": "Rootsi – Ehitustööd – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "nld": "Zweden – Bouwwerkzaamheden – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "fin": "Ruotsi – Rakennustyöt – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "pol": "Szwecja – Roboty budowlane – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "hrv": "Švedska – Građevinski radovi – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "ces": "Švédsko – Stavební práce – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "ron": "Suedia – Lucrări de construcţii – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "por": "Suécia – Construção – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "slk": "Švédsko – Stavebné práce – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "fra": "Suède – Travaux de construction – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "deu": "Schweden – Bauarbeiten – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "lit": "Švedija – Statybos darbai – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "ita": "Svezia – Lavori di costruzione – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "bul": "Швeция – Строителни и монтажни работи – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "slv": "Švedska – Gradbena dela – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark",
+    "eng": "Sweden – Construction work – Drift- och anläggningsentreprenad - Gata, park och fastighetsmark"
+   },
+   "buyer-city": {
+    "mul": [
+     "Trosa",
+     "Trosa"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SE110",
+    "SWE",
+    "SWE"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "716680-2026",
+   "framework-agreement-lot": [
+    "none",
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/lfvall/e-Upphandling/NoticeLink.aspx?id=134035",
+    "https://www.e-avrop.com/lfvall/e-Upphandling/NoticeLink.aspx?id=134035"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45000000",
+    "45000000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Swedavia AB"
+    ]
+   },
+   "publication-date": "2026-10-16+02:00",
+   "estimated-value-proc": "250000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/716680-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "lav": "Zviedrija – Celtniecības darbi – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "swe": "Sverige – Anläggningsarbete – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "gle": "An tSualainn – Construction work – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "spa": "Suecia – Trabajos de construcción – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "est": "Rootsi – Ehitustööd – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "nld": "Zweden – Bouwwerkzaamheden – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "fin": "Ruotsi – Rakennustyöt – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "pol": "Szwecja – Roboty budowlane – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "hrv": "Švedska – Građevinski radovi – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "ces": "Švédsko – Stavební práce – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "ron": "Suedia – Lucrări de construcţii – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "por": "Suécia – Construção – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "slk": "Švédsko – Stavebné práce – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "fra": "Suède – Travaux de construction – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "deu": "Schweden – Bauarbeiten – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "lit": "Švedija – Statybos darbai – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "ita": "Svezia – Lavori di costruzione – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "bul": "Швeция – Строителни и монтажни работи – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "slv": "Švedska – Gradbena dela – Markarbeten Bana 1 och TWY Y, ARN 2027",
+    "eng": "Sweden – Construction work – Markarbeten Bana 1 och TWY Y, ARN 2027"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm Arlanda"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-10-23+02:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "728524-2026",
+   "estimated-value-lot": [
+    "4000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-w-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/elite/Notice/NoticeDispatch.aspx?NoticeId=96115"
+   ],
+   "classification-cpv": [
+    "45332400",
+    "45332400"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Stiftelsen Svenska Filminstitutet"
+    ]
+   },
+   "publication-date": "2026-10-21+02:00",
+   "estimated-value-proc": "4000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/728524-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Szaniterszerelvény szerelése – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "lav": "Zviedrija – Sanitārtehnisko ierīču uzstādīšanas darbi – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "swe": "Sverige – Montering av sanitetsgods och rör – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "gle": "An tSualainn – Sanitary fixture installation work – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "ell": "Σουηδία – Εργασίες εγκατάστασης εξαρτημάτων υγιεινής – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "spa": "Suecia – Trabajos de instalación de artículos sanitarios – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "est": "Rootsi – Sanitaarseadmete paigaldustööd – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "nld": "Zweden – Installeren van sanitair – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "fin": "Ruotsi – Saniteettikalusteiden asennustyöt – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "pol": "Szwecja – Roboty instalacyjne w zakresie urządzeń sanitarnych – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "hrv": "Švedska – Radovi instaliranja sanitarne opreme – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "ces": "Švédsko – Instalace a montáž sanitárního zařízení – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "dan": "Sverige – Arbejde i forbindelse med installation af sanitetsudstyr – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "ron": "Suedia – Lucrări de instalare de echipamente sanitare – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "por": "Suécia – Instalação de artigos sanitários – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "slk": "Švédsko – Inštalovanie pevného sanitárneho príslušenstva – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "fra": "Suède – Travaux d'installation d'appareils sanitaires – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "mlt": "L-Iżvezja – Xogħol ta’ stallazzjoni ta’ tagħmir sanitarju – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "deu": "Schweden – Installation von Sanitäreinrichtungen – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "lit": "Švedija – Sanitarinės įrangos montavimo darbai – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "ita": "Svezia – Lavori di installazione di apparecchiature idrosanitarie – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "bul": "Швeция – Работи по инсталиране на санитарна керамика – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "slv": "Švedska – Inštalacija sanitarne opreme – Ramavtal VS-arbeten (värme, vatten och avlopp)",
+    "eng": "Sweden – Sanitary fixture installation work – Ramavtal VS-arbeten (värme, vatten och avlopp)"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SE110",
+    "SE110",
+    "SE110",
+    "SWE",
+    "SWE",
+    "SWE",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-26+01:00",
+    "2026-11-26+01:00",
+    "2026-11-26+01:00",
+    "2026-11-26+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "750378-2026",
+   "framework-agreement-lot": [
+    "fa-mix",
+    "fa-mix",
+    "fa-mix",
+    "fa-mix"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62027",
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62027",
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62027",
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62027"
+   ],
+   "classification-cpv": [
+    "45331231",
+    "45331220",
+    "45331230",
+    "45331231",
+    "45331231",
+    "45331231",
+    "45331231",
+    "45331220",
+    "45331230",
+    "45331220",
+    "45331230",
+    "45331220",
+    "45331230",
+    "45331220",
+    "45331230"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Fastighetskontoret"
+    ]
+   },
+   "publication-date": "2026-10-29+01:00",
+   "estimated-value-proc": "70",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/750378-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Fagyasztóberendezés szerelése – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "lav": "Zviedrija – Saldēšanas iekārtu uzstādīšana – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "swe": "Sverige – Installation av kyl- och frysanläggningar – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "gle": "An tSualainn – Installation work of refrigeration equipment – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "ell": "Σουηδία – Εργασίες εγκατάστασης εξοπλισμού ψύξης – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "spa": "Suecia – Trabajos de instalación de equipos técnicos de refrigeración – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "est": "Rootsi – Külmutusseadmete paigaldustööd – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "nld": "Zweden – Installeren van koel- en vriesuitrusting – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "fin": "Ruotsi – Kylmälaitteistojen asennustyöt – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "pol": "Szwecja – Instalowanie urządzeń mrożących – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "hrv": "Švedska – Radovi instaliranja opreme za zamrzavanje – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "ces": "Švédsko – Instalace a montáž mrazicích zařízení – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "dan": "Sverige – Installation af køletekniske anlæg – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "ron": "Suedia – Lucrări de instalare de echipament frigorific – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "por": "Suécia – Instalação de equipamento de refrigeração – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "slk": "Švédsko – Inštalačné práce na zariadení chladničiek – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "fra": "Suède – Travaux d'installation de matériel de réfrigération – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "mlt": "L-Iżvezja – Xogħol ta’ stallazzjoni ta’ l-apparat tar-refriġerazzjoni – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "deu": "Schweden – Installation von kältetechnischen Anlagen – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "lit": "Švedija – Šaldymo įrenginių montavimo darbai – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "ita": "Svezia – Lavori di installazione di impianti di refrigerazione – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "bul": "Швeция – Строителни и монтажни работи на инсталации за замразяване – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "slv": "Švedska – Inštalacija naprav s hladilno tehniko – Kyltekniska anläggningar, ramavtal och driftavtal",
+    "eng": "Sweden – Installation work of refrigeration equipment – Kyltekniska anläggningar, ramavtal och driftavtal"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-28+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "752317-2026",
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/sigtuna/e-Upphandling/NoticeLink.aspx?id=127550"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45000000",
+    "45112000",
+    "45112100",
+    "45112200",
+    "45112300",
+    "45112400",
+    "45112500",
+    "45210000",
+    "45233222"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Sigtuna kommun"
+    ]
+   },
+   "publication-date": "2026-10-29+01:00",
+   "estimated-value-proc": "72000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/752317-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "lav": "Zviedrija – Celtniecības darbi – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "swe": "Sverige – Anläggningsarbete – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "gle": "An tSualainn – Construction work – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "spa": "Suecia – Trabajos de construcción – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "est": "Rootsi – Ehitustööd – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "nld": "Zweden – Bouwwerkzaamheden – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "fin": "Ruotsi – Rakennustyöt – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "pol": "Szwecja – Roboty budowlane – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "hrv": "Švedska – Građevinski radovi – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "ces": "Švédsko – Stavební práce – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "ron": "Suedia – Lucrări de construcţii – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "por": "Suécia – Construção – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "slk": "Švédsko – Stavebné práce – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "fra": "Suède – Travaux de construction – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "deu": "Schweden – Bauarbeiten – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "lit": "Švedija – Statybos darbai – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "ita": "Svezia – Lavori di costruzione – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "bul": "Швeция – Строителни и монтажни работи – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "slv": "Švedska – Gradbena dela – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner",
+    "eng": "Sweden – Construction work – Löpande markarbeten bygg och anläggning inklusive entreprenadmaskiner"
+   },
+   "buyer-city": {
+    "mul": [
+     "Märsta"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE332",
+    "SWE",
+    "SE332",
+    "SWE"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "766519-2026",
+   "estimated-value-lot": [
+    "100000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=103137"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45100000",
+    "45200000",
+    "45213150",
+    "45300000",
+    "45310000",
+    "45312000",
+    "45330000",
+    "45331000",
+    "51900000",
+    "45000000",
+    "45100000",
+    "45200000",
+    "45213150",
+    "45300000",
+    "45310000",
+    "45312000",
+    "45330000",
+    "45331000",
+    "51900000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Bodens Energi Aktiebolag"
+    ]
+   },
+   "publication-date": "2026-11-04+01:00",
+   "estimated-value-proc": "100000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/766519-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Ny Kontorsbyggnad Värme",
+    "lav": "Zviedrija – Celtniecības darbi – Ny Kontorsbyggnad Värme",
+    "swe": "Sverige – Anläggningsarbete – Ny Kontorsbyggnad Värme",
+    "gle": "An tSualainn – Construction work – Ny Kontorsbyggnad Värme",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Ny Kontorsbyggnad Värme",
+    "spa": "Suecia – Trabajos de construcción – Ny Kontorsbyggnad Värme",
+    "est": "Rootsi – Ehitustööd – Ny Kontorsbyggnad Värme",
+    "nld": "Zweden – Bouwwerkzaamheden – Ny Kontorsbyggnad Värme",
+    "fin": "Ruotsi – Rakennustyöt – Ny Kontorsbyggnad Värme",
+    "pol": "Szwecja – Roboty budowlane – Ny Kontorsbyggnad Värme",
+    "hrv": "Švedska – Građevinski radovi – Ny Kontorsbyggnad Värme",
+    "ces": "Švédsko – Stavební práce – Ny Kontorsbyggnad Värme",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Ny Kontorsbyggnad Värme",
+    "ron": "Suedia – Lucrări de construcţii – Ny Kontorsbyggnad Värme",
+    "por": "Suécia – Construção – Ny Kontorsbyggnad Värme",
+    "slk": "Švédsko – Stavebné práce – Ny Kontorsbyggnad Värme",
+    "fra": "Suède – Travaux de construction – Ny Kontorsbyggnad Värme",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Ny Kontorsbyggnad Värme",
+    "deu": "Schweden – Bauarbeiten – Ny Kontorsbyggnad Värme",
+    "lit": "Švedija – Statybos darbai – Ny Kontorsbyggnad Värme",
+    "ita": "Svezia – Lavori di costruzione – Ny Kontorsbyggnad Värme",
+    "bul": "Швeция – Строителни и монтажни работи – Ny Kontorsbyggnad Värme",
+    "slv": "Švedska – Gradbena dela – Ny Kontorsbyggnad Värme",
+    "eng": "Sweden – Construction work – Ny Kontorsbyggnad Värme"
+   },
+   "buyer-city": {
+    "mul": [
+     "BODEN"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE211",
+    "SWE",
+    "SE211",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-07+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "769203-2026",
+   "framework-agreement-lot": [
+    "fa-w-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.e-avrop.com/jönköpingskommun/e-Upphandling/NoticeLink.aspx?id=135500"
+   ],
+   "classification-cpv": [
+    "45330000",
+    "45330000",
+    "45331000",
+    "45331110"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Jönköpings kommun"
+    ]
+   },
+   "publication-date": "2026-11-05+01:00",
+   "estimated-value-proc": "80000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/769203-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Víz-, gázvezeték-szerelési és szaniterszerelési munka – Värme- och sanitetsarbeten",
+    "lav": "Zviedrija – Sanitārtehnikas darbi – Värme- och sanitetsarbeten",
+    "swe": "Sverige – Rörmokeriarbeten – Värme- och sanitetsarbeten",
+    "gle": "An tSualainn – Plumbing and sanitary works – Värme- och sanitetsarbeten",
+    "ell": "Σουηδία – Υδραυλικές εργασίες – Värme- och sanitetsarbeten",
+    "spa": "Suecia – Trabajos de fontanería – Värme- och sanitetsarbeten",
+    "est": "Rootsi – Torustikupaigaldus- ja sanitaartehnilised tööd – Värme- och sanitetsarbeten",
+    "nld": "Zweden – Loodgieterswerk – Värme- och sanitetsarbeten",
+    "fin": "Ruotsi – Putkityöt – Värme- och sanitetsarbeten",
+    "pol": "Szwecja – Roboty instalacyjne wodno-kanalizacyjne i sanitarne – Värme- och sanitetsarbeten",
+    "hrv": "Švedska – Vodoinstalaterski i sanitarni radovi – Värme- och sanitetsarbeten",
+    "ces": "Švédsko – Instalatérské a sanitární práce – Värme- och sanitetsarbeten",
+    "dan": "Sverige – Blikkenslagerarbejde – Värme- och sanitetsarbeten",
+    "ron": "Suedia – Lucrări de instalaţii de apă – Värme- och sanitetsarbeten",
+    "por": "Suécia – Instalação de canalizações – Värme- och sanitetsarbeten",
+    "slk": "Švédsko – Kanalizačné a sanitárne práce – Värme- och sanitetsarbeten",
+    "fra": "Suède – Travaux de plomberie – Värme- och sanitetsarbeten",
+    "mlt": "L-Iżvezja – Xogħlijiet tal-kanen u katusi sanitarji – Värme- och sanitetsarbeten",
+    "deu": "Schweden – Installateurarbeiten – Värme- och sanitetsarbeten",
+    "lit": "Švedija – Vandentiekio ir sanitarinių įrenginių įrengimo darbai – Värme- och sanitetsarbeten",
+    "ita": "Svezia – Lavori di idraulica – Värme- och sanitetsarbeten",
+    "bul": "Швeция – Строителни и монтажни работи на тръбопроводни инсталации – Värme- och sanitetsarbeten",
+    "slv": "Švedska – Vodovodna, plinska in sanitarna inštalacijska dela – Värme- och sanitetsarbeten",
+    "eng": "Sweden – Plumbing and sanitary works – Värme- och sanitetsarbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "Jönköping"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2027-01-03Z"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "788767-2026",
+   "estimated-value-lot": [
+    "120000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=103782"
+   ],
+   "classification-cpv": [
+    "45500000",
+    "45500000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Söderenergi AB"
+    ]
+   },
+   "publication-date": "2026-11-12+01:00",
+   "estimated-value-proc": "120000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/788767-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Mély- és magasépítési gépek és berendezések kölcsönzése kezelővel – Entreprenadarbeten för bränslemottagning",
+    "lav": "Zviedrija – Būvniecības un inženiertehniskās būvniecības iekārtu un aprīkojuma noma, ieskaitot apkalpojošo personālu – Entreprenadarbeten för bränslemottagning",
+    "swe": "Sverige – Uthyrning av maskiner och utrustning för bygg- och anläggningsarbete samt väg- och vattenbyggnad, med maskinskötare – Entreprenadarbeten för bränslemottagning",
+    "gle": "An tSualainn – Hire of construction and civil engineering machinery and equipment with operator – Entreprenadarbeten för bränslemottagning",
+    "ell": "Σουηδία – Ενοικίαση κατασκευαστικών μηχανημάτων και εξοπλισμού για έργα πολιτικού μηχανικού με χειριστή – Entreprenadarbeten för bränslemottagning",
+    "spa": "Suecia – Alquiler de maquinaria y equipo de construcción y de ingeniería civil con maquinista – Entreprenadarbeten för bränslemottagning",
+    "est": "Rootsi – Operaatoriga ehitus- ja tsiviilehitusmasinate ja seadmete rent – Entreprenadarbeten för bränslemottagning",
+    "nld": "Zweden – Verhuur van bouw- en civieltechnische installaties en uitrusting met bedieningspersoneel – Entreprenadarbeten för bränslemottagning",
+    "fin": "Ruotsi – Maa-, tie- ja vesirakentamisessa ja muissa rakennustöissä käytettävien koneiden ja laitteiden vuokraus käyttäjän kanssa – Entreprenadarbeten för bränslemottagning",
+    "pol": "Szwecja – Wynajem maszyn i urządzeń wraz z obsługą operatorską do prowadzenia robót z zakresu budownictwa oraz inżynierii wodnej i lądowej – Entreprenadarbeten för bränslemottagning",
+    "hrv": "Švedska – Iznajmljivanje strojeva i opreme za visokogradnju i niskogradnju s rukovateljem – Entreprenadarbeten för bränslemottagning",
+    "ces": "Švédsko – Pronájem stavebních a demoličních strojů a zařízení s obsluhou – Entreprenadarbeten för bränslemottagning",
+    "dan": "Sverige – Udlejning af entreprenørmateriel og -udstyr med betjeningspersonale – Entreprenadarbeten för bränslemottagning",
+    "ron": "Suedia – Închiriere de utilaje şi de echipament de construcţii şi de lucrări publice cu operator – Entreprenadarbeten för bränslemottagning",
+    "por": "Suécia – Aluguer de máquinas e equipamento para construção e engenharia civil, com operador – Entreprenadarbeten för bränslemottagning",
+    "slk": "Švédsko – Prenájom stavebných strojov a zariadení a strojov a zariadení stavebného inžinierstva s obsluhou – Entreprenadarbeten för bränslemottagning",
+    "fra": "Suède – Location de machines et de matériel de construction et de génie civil avec opérateur – Entreprenadarbeten för bränslemottagning",
+    "mlt": "L-Iżvezja – Kiri tal-makkinarju u l-apparat flimkien ma l-operatur għall-kostruzzjoni u l-inġinerija ċivili – Entreprenadarbeten för bränslemottagning",
+    "deu": "Schweden – Vermietung von Hoch- und Tiefbaumaschinen und -geräten mit Bedienungspersonal – Entreprenadarbeten för bränslemottagning",
+    "lit": "Švedija – Statybos ir civilinės inžinerijos mašinų ir įrenginių su operatoriais nuoma – Entreprenadarbeten för bränslemottagning",
+    "ita": "Svezia – Noleggio di macchinari e attrezzature per lavori edili e di genio civile con operatore – Entreprenadarbeten för bränslemottagning",
+    "bul": "Швeция – Услуги по даване под наем на строителни машини и оборудване, с оператор – Entreprenadarbeten för bränslemottagning",
+    "slv": "Švedska – Dajanje strojev in opreme za visoko in nizko gradnjo v najem, skupaj z upravljavci – Entreprenadarbeten för bränslemottagning",
+    "eng": "Sweden – Hire of construction and civil engineering machinery and equipment with operator – Entreprenadarbeten för bränslemottagning"
+   },
+   "buyer-city": {
+    "mul": [
+     "Södertälje"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-14+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "792107-2026",
+   "estimated-value-lot": [
+    "80000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62118"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45236000",
+    "45000000",
+    "45236000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Trafikkontoret"
+    ]
+   },
+   "publication-date": "2026-11-13+01:00",
+   "estimated-value-proc": "80000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/792107-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Ramavtal markarbeten offentlig belysning innerstaden",
+    "lav": "Zviedrija – Celtniecības darbi – Ramavtal markarbeten offentlig belysning innerstaden",
+    "swe": "Sverige – Anläggningsarbete – Ramavtal markarbeten offentlig belysning innerstaden",
+    "gle": "An tSualainn – Construction work – Ramavtal markarbeten offentlig belysning innerstaden",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Ramavtal markarbeten offentlig belysning innerstaden",
+    "spa": "Suecia – Trabajos de construcción – Ramavtal markarbeten offentlig belysning innerstaden",
+    "est": "Rootsi – Ehitustööd – Ramavtal markarbeten offentlig belysning innerstaden",
+    "nld": "Zweden – Bouwwerkzaamheden – Ramavtal markarbeten offentlig belysning innerstaden",
+    "fin": "Ruotsi – Rakennustyöt – Ramavtal markarbeten offentlig belysning innerstaden",
+    "pol": "Szwecja – Roboty budowlane – Ramavtal markarbeten offentlig belysning innerstaden",
+    "hrv": "Švedska – Građevinski radovi – Ramavtal markarbeten offentlig belysning innerstaden",
+    "ces": "Švédsko – Stavební práce – Ramavtal markarbeten offentlig belysning innerstaden",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Ramavtal markarbeten offentlig belysning innerstaden",
+    "ron": "Suedia – Lucrări de construcţii – Ramavtal markarbeten offentlig belysning innerstaden",
+    "por": "Suécia – Construção – Ramavtal markarbeten offentlig belysning innerstaden",
+    "slk": "Švédsko – Stavebné práce – Ramavtal markarbeten offentlig belysning innerstaden",
+    "fra": "Suède – Travaux de construction – Ramavtal markarbeten offentlig belysning innerstaden",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Ramavtal markarbeten offentlig belysning innerstaden",
+    "deu": "Schweden – Bauarbeiten – Ramavtal markarbeten offentlig belysning innerstaden",
+    "lit": "Švedija – Statybos darbai – Ramavtal markarbeten offentlig belysning innerstaden",
+    "ita": "Svezia – Lavori di costruzione – Ramavtal markarbeten offentlig belysning innerstaden",
+    "bul": "Швeция – Строителни и монтажни работи – Ramavtal markarbeten offentlig belysning innerstaden",
+    "slv": "Švedska – Gradbena dela – Ramavtal markarbeten offentlig belysning innerstaden",
+    "eng": "Sweden – Construction work – Ramavtal markarbeten offentlig belysning innerstaden"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
   }
  ],
- "totalNoticeCount": 11
+ "totalNoticeCount": 25
 }

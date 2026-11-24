@@ -18,6 +18,35 @@ describe('anbudsbevakning (TED)', () => {
     expect(classifyWatchTender(['45000000', '45232450', '45240000'])).toBeNull();
     expect(classifyWatchTender(['90500000', '45000000'])).toBeNull();
   });
+  it('leaves out civil works under a general main code, and other trades without electrical work (saved TED notices)', () => {
+    const kindOf = (id: string) => { const n = normaliseWatchNotice(notices.find(x => x['publication-number'] === id)!)!; return classifyWatchTender(n.cpv, n.title); };
+    // Civil works with the general code 45000000: ground, asphalt, streets and parks, an airfield.
+    for (const id of ['752317-2026', '753186-2026', '706238-2026', '716680-2026', '792107-2026']) expect([id, kindOf(id)]).toEqual([id, null]);
+    // Other trades: heating and sanitation, VS, cooling, heat pumps, painting, roofing, facade, machine hire.
+    for (const id of ['769203-2026', '728524-2026', '750378-2026', '684109-2026', '671790-2026', '689644-2026', '680702-2026', '788767-2026']) expect([id, kindOf(id)]).toEqual([id, null]);
+    // Still shown: electrical work under the general installation code, buildings with and without stated electrical work.
+    expect(kindOf('675994-2026')).toBe('el');
+    expect(kindOf('766519-2026')).toBe('bygg_el');
+    expect(kindOf('812503-2026')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45453000'], 'Renovering av badrum och målning')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45000000'], 'Byte av VA-ledningar')).toBeNull();
+    expect(classifyWatchTender(['45000000'], 'Ny förskola Vägghuset')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45330000', '45311000'], 'Värme och el, ombyggnad')).toBe('bygg_el');
+    expect(classifyWatchTender(['45000000'], 'DIS - Investering och reinvestering inom Infrasystem Vägbelysning')).toBe('el');
+    expect(classifyWatchTender(['45000000'], 'Älvsjö – Flemingsberg Spår- och växelbyten')).toBeNull();
+    expect(classifyWatchTender(['45000000'], 'Nytt Sjövattenintag till Solnaverket')).toBeNull();
+    expect(classifyWatchTender(['45212200'], 'Ramavtal, Om- och nyläggning av konstgräsplaner')).toBeNull();
+    expect(classifyWatchTender(['45300000'], 'Ramavtal låstjänster i södra Klara')).toBeNull();
+    expect(classifyWatchTender(['45000000'], 'Fyrkanten P-hus')).toBe('bygg_kontrollera');
+  });
+  it('shows values below 10 000 kr as not stated, and decodes HTML entities in titles', () => {
+    const n = (id: string) => normaliseWatchNotice(notices.find(x => x['publication-number'] === id)!)!;
+    expect(n('750378-2026')).toMatchObject({ value: null, framework: true });
+    expect(formatWatchValue(n('750378-2026').value, n('750378-2026').currency)).toBe('Värde ej angivet');
+    expect(n('812503-2026').value).toBeNull();
+    expect(n('757782-2026').value).toBe(80000000);
+    expect(n('680702-2026').title).toBe('Hedbergska skolan - Fasad & tak restaurering');
+  });
   it('builds the hits for Stockholm, Uppsala and Södermanland from a saved TED response: calls for tenders only, no duplicates', () => {
     const hits = byId(watchHits(notices, DEFAULT_WATCH_REGIONS));
     // An award notice in Skåne and the civil-works framework agreements are not hits.
