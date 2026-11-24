@@ -10,7 +10,7 @@
 import * as unipile from "../../supabase/functions/_shared/unipile.ts";
 
 const secret = Deno.env.get("UNIPILE_WEBHOOK_SECRET") ?? "";
-if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET saknas: signaturer kan inte kontrolleras förrän webhooken är skapad (steg 4).");
+if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET saknas: signaturer kan inte kontrolleras förrän webhooken är skapad (steg 3 i README).");
 
 Deno.serve({ port: 8787 }, async (req) => {
   const url = new URL(req.url);
