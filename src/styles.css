@@ -983,3 +983,15 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-workspace .tender-aside .tender-list-row{width:auto;padding:6px 12px;border:1px solid var(--border);border-bottom:1px solid var(--border);border-radius:999px;gap:8px;white-space:nowrap}
 .tender-workspace .tender-aside .tender-list-row .grow{flex-direction:row;align-items:baseline;gap:8px}
 .tender-workspace .tender-aside .tender-list-row svg{display:none}
+
+/* Anbud: no nested scroll areas or overlapping sticky rows; the page scrolls as one */
+.tender-workspace .tender-panel .overflow-x-auto{max-height:none;overflow-x:auto;overflow-y:visible}
+.tender-workspace .tender-panel table thead th{position:static}
+.tender-workspace .tender-grid tr.tender-sec-head th{position:static}
+.tender-grid-bar{position:static;padding:0}
+.tender-kpi-strip{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.tender-kpi-cell.main{grid-column:auto}
+.tender-workspace .tender-grid table{min-width:1100px}
+.tender-workspace .tender-grid td .input{min-width:0}
+.tender-workspace .tender-grid td.min-w-56{min-width:200px}
+.tender-workspace .tender-grid td.min-w-32{min-width:100px}
