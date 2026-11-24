@@ -817,3 +817,23 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .tender-file-item>.tender-list-row{flex:1;min-width:0}
 .tender-incomplete{border:1px solid var(--line2);border-left:4px solid var(--ink);background:var(--pink);color:var(--ink);padding:12px 14px;border-radius:10px}
 .tender-incomplete ul{margin:0;padding-left:18px;list-style:disc}
+
+/* Tender detail tabs and overview (presentation only) */
+.tender-hero{padding-bottom:8px}
+.tender-actions{gap:8px;margin-top:16px}
+.tender-actions>*{margin-top:0!important}
+.tender-tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.tender-tab{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;font-size:14px;font-weight:500;color:var(--muted-foreground);border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;cursor:pointer}
+.tender-tab:hover{color:var(--foreground)}
+.tender-tab.on{color:var(--foreground);border-bottom-color:var(--foreground)}
+[role=group] .tender-tab{border:1px solid var(--border);border-radius:999px;padding:4px 12px;margin:0}
+[role=group] .tender-tab.on{background:var(--foreground);color:var(--background)}
+.tender-tab-count{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--muted);color:var(--foreground)}
+.tender-panel{padding-top:20px}
+.tender-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.tender-kpi{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
+.tender-kpi b{font-size:26px;font-variant-numeric:tabular-nums}
+.tender-filter{max-width:240px}
+.tender-panel table thead tr{background:var(--muted)}
+.tender-panel table th{font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+.tender-panel table tbody th{text-transform:none;letter-spacing:0;font-size:14px}

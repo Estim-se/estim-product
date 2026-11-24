@@ -38,6 +38,8 @@ export function TendersPage() {
   // Anbudsbevakning (flag ANBUD_BEVAKNING): a found tender opens the "Nytt anbud" dialog with its name filled in.
   const watchEnabled = useTenderWatchEnabled(company, real).enabled;
   const linkWatchHit = useServerFn(updateTenderWatchHit);
+  // Tabs inside an opened tender; presentation only, data and actions are unchanged.
+  const [detailTab, setDetailTab] = useState<'overview' | 'calc' | 'apartments' | 'risks'>('overview');
   const [watchHit, setWatchHit] = useState<TenderWatchHitRow | null>(null);
   function startFromWatch(hit: TenderWatchHitRow) { setTab('tenders'); setSelected(null); setMessage(''); setFiles([]); setName(hit.title.slice(0, 160)); setWatchHit(hit); setShow(true); }
   const [starting, setStarting] = useState(false);
@@ -53,6 +55,12 @@ export function TendersPage() {
   const documents = useQuery({ queryKey: ['tender-documents', company, selected?.id], queryFn: () => selected ? docs({ data: { id: selected.id } }) : Promise.resolve([]), enabled: real && !!company && !!selected });
   const insights = useQuery({ queryKey: ['tender-insights', company, selected?.id], queryFn: () => selected ? loadInsights({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
   const quantities = useQuery({ queryKey: ['tender-quantities', company, selected?.id], queryFn: () => selected ? loadQuantities({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected });
+  const counts = (() => {
+    const ins = (insights.data?.result ?? {}) as { risks?: unknown[]; questions?: unknown[] };
+    const qty = (quantities.data?.status === 'analysed' ? quantities.data.result : {}) as { items?: unknown[] };
+    return { risks: Array.isArray(ins.risks) ? ins.risks.length : 0, questions: Array.isArray(ins.questions) ? ins.questions.length : 0, items: Array.isArray(qty.items) ? qty.items.length : 0 };
+  })();
+  useEffect(() => { setDetailTab('overview'); }, [selected?.id]);
   const job = useQuery({ queryKey: ['tender-job', company, selected?.id], queryFn: () => selected ? loadJob({ data: { id: selected.id } }) : Promise.resolve(null), enabled: real && !!company && !!selected,
     refetchInterval: q => q.state.data?.status === 'running' ? 4000 : false });
   const analyzing = starting || job.data?.status === 'running';
@@ -210,21 +218,39 @@ export function TendersPage() {
     </div>
     {!show && message && <p role="status" className="small mt12">{message}</p>}
     {(tenders.isError || documents.isError) && <div role="alert" className="row mt16"><span>Anbuden kunde inte hämtas.</span><Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { void tenders.refetch(); void documents.refetch(); }}>Försök igen</Button></div>}
-    {selected ? <section className="tender-detail mt24"><div className="row between wrap"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button>{job.data?.status === 'error' && !analyzing && <Button variant="prototype" className="btn btn-primary" disabled={!real || documents.isFetching} onClick={() => void analyze(true)}><ScanText size={16} />Fortsätt analysen</Button>}<Button variant="prototype" className="btn btn-ghost" disabled={analyzing} onClick={() => void removeTender()}><Trash2 size={16} />Ta bort anbud</Button></div>
+    {selected ? <section className="tender-detail mt24"><div className="row between wrap tender-hero"><div className="grow"><h2>{selected.name}</h2><span className="muted small">{fileRows.length} filer · {tenderStatus(currentTender?.status ?? selected.status)}</span></div><Button variant="prototype" className="btn btn-primary" disabled={!real || analyzing || !fileRows.length || documents.isFetching || currentTender?.status === 'uploading'} onClick={() => void analyze()}><ScanText size={16} />{analyzing ? 'Analyserar…' : currentTender?.status === 'analysed' || currentTender?.status === 'error' || currentTender?.status === 'analyzing' ? 'Analysera igen' : 'Analysera'}</Button>{job.data?.status === 'error' && !analyzing && <Button variant="prototype" className="btn btn-primary" disabled={!real || documents.isFetching} onClick={() => void analyze(true)}><ScanText size={16} />Fortsätt analysen</Button>}<Button variant="prototype" className="btn btn-ghost" disabled={analyzing} onClick={() => void removeTender()}><Trash2 size={16} />Ta bort anbud</Button></div>
+      <div className="row wrap tender-actions">
       {real && insights.data?.status==='analysed' && <Button variant="prototype" className="btn btn-ghost mt16" disabled={analyzing||documents.isFetching} onClick={()=>void analyze(false,true)}><ScanText size={16}/>Räkna om mängder och kalkyl</Button>}
       {real && insights.data?.result && <Button variant="prototype" className="btn btn-ghost mt16" disabled={analyzing||documents.isFetching} onClick={()=>void analyze(false,false,true)}><ScanText size={16}/>Kör om risker och frågor</Button>}
       {real && <Button variant="prototype" className="btn btn-ghost mt16" disabled={analyzing||documents.isFetching||!fileRows.length} onClick={()=>{if(window.confirm('Är du säker? Sparade läsresultat ersätts med en ny läsning.'))void analyze(false,false,false,true);}}><ScanText size={16}/>Läs om underlaget</Button>}
-      {real && (exportBlock ? <div className="row wrap mt16"><Button variant="prototype" className="btn btn-ghost" disabled aria-describedby="tender-export-block"><Download size={16} />Exportera</Button><span id="tender-export-block" className="small muted">{exportBlock}</span></div> : <div className="row mt16"><TenderExport key={`${company}-${selected.id}`} id={selected.id} name={selected.name} insights={insights.data?.status === 'analysed' ? insights.data.result : null} quantities={quantities.data?.status === 'analysed' ? quantities.data.result : null} documents={fileRows}/></div>)}
+      {real && (exportBlock ? <div className="row wrap"><Button variant="prototype" className="btn btn-ghost" disabled aria-describedby="tender-export-block"><Download size={16} />Exportera</Button><span id="tender-export-block" className="small muted">{exportBlock}</span></div> : <div className="row"><TenderExport key={`${company}-${selected.id}`} id={selected.id} name={selected.name} insights={insights.data?.status === 'analysed' ? insights.data.result : null} quantities={quantities.data?.status === 'analysed' ? quantities.data.result : null} documents={fileRows}/></div>)}
+      </div>
       {analysisProgress && <p role="status" className="small mt16">{analysisProgress}</p>}
       {currentTender?.error && !analyzing && <p role="alert" className="small mt16">{job.data?.status === 'error' && job.data.failed_step ? `${tenderJobStepLabel(job.data.failed_step)} misslyckades: ` : ''}{currentTender.error}{job.data?.status === 'error' ? ' Klicka på Fortsätt analysen för att fortsätta från det steget; klara steg körs inte om.' : ''}</p>}
       {analyzing && <p className="small muted mt16">Analysen körs på servern. Du kan stänga eller ladda om sidan.</p>}
+      <div role="tablist" aria-label="Anbudsdelar" className="tender-tabs mt24">{([['overview','Översikt'],['calc','Kalkyl'],['apartments','Lägenheter'],['risks','Risk & frågor']] as const).map(([k,l])=><button key={k} type="button" role="tab" aria-selected={detailTab===k} className={`tender-tab${detailTab===k?' on':''}`} onClick={()=>setDetailTab(k)}>{l}{k==='risks'&&counts.risks>0&&<span className="tender-tab-count">{counts.risks}</span>}</button>)}</div>
+      {detailTab==='overview'&&<div className="tender-panel">
+        <div className="tender-kpis">{([['Filer',fileRows.length],['Mängdposter',counts.items],['Risker',counts.risks],['Frågor',counts.questions]] as const).map(([l,v])=><div key={l} className="tender-kpi"><span className="small muted">{l}</span><b>{v}</b></div>)}</div>
+        {insights.data?.result && <TenderInsightsSections part="key" result={insights.data.result} documents={fileRows} />}
+        <h2 className="mt24">Underlag</h2>
       {documents.isFetching && real && !documents.data ? <p className="muted mt16">Hämtar filer…</p> : <div className="tender-file-list mt16">{fileRows.map(d => <div key={d.id} className="row tender-file-item"><Button variant="prototype" className="tender-file-row" onClick={() => void open(d)}><FileText size={22} /><span className="grow"><span className="row wrap"><b>{d.file_name}</b>{d.doc_type && <span className="chip tender-type">{d.doc_type}</span>}</span>{d.summary && <span className="small tender-summary">{d.summary}</span>}<span className="muted small">{d.file_type.toUpperCase()} · {tenderSize(d.size)}{d.page_count ? ` · ${d.page_count} sidor` : ''}{d.analysis_status === 'analyzing' ? ' · Analyserar…' : ''}</span>{d.error && <span className="small tender-error">{d.error}</span>}</span><FolderOpen size={18} /></Button><Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} aria-label={`Ta bort ${d.file_name}`} onClick={() => void removeFile(d)}><Trash2 size={16} />Ta bort</Button></div>)}</div>}
       {!fileRows.length && !documents.isFetching && <p className="muted mt16">Inga filer sparade.</p>}
-      {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
-      {insights.data?.result && <TenderInsightsSections result={insights.data.result} documents={fileRows} />}
+        {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
+      </div>}
+      {detailTab==='calc'&&<div className="tender-panel">
       {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
       {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
-      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result} documents={fileRows}/>:null} />}
+      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections part="calc" result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result} documents={fileRows}/>:null} />}
+      </div>}
+      {detailTab==='apartments'&&<div className="tender-panel">
+      {quantities.isError && <p role="alert" className="small mt16">Mängderna kunde inte hämtas.</p>}
+      {quantities.data?.status === 'error' && !analyzing && <p role="alert" className="small mt16">{quantities.data.error}</p>}
+      {quantities.data?.status === 'analysed' && !analyzing && <TenderQuantitiesSections part="assumptions" result={quantities.data.result} documents={fileRows} calculation={real?<TenderCalculation id={selected.id} company={company} quantities={quantities.data.result} documents={fileRows}/>:null} />}
+      </div>}
+      {detailTab==='risks'&&<div className="tender-panel">
+        {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
+        {insights.data?.result && <TenderInsightsSections part="risks" result={insights.data.result} documents={fileRows} />}
+      </div>}
     </section> : tenders.isFetching && real ? <p className="muted mt24">Hämtar anbud…</p> : rows.length ? <div className="tender-list mt24">{rows.map(t => <div key={t.id} className="row tender-file-item"><Button variant="prototype" className="tender-list-row" onClick={() => setSelected(t)}><FolderOpen size={24} /><span className="grow"><b>{t.name}</b><span className="small muted">{new Date(t.created_at).toLocaleDateString('sv-SE')}</span></span><span className="chip">{tenderStatus(t.status)}</span></Button><Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Ta bort ${t.name}`} onClick={() => void removeTender(t)}><Trash2 size={16} />Ta bort</Button></div>)}</div> : <div className="tender-empty"><FolderOpen size={40} /><h2>Inga anbud ännu</h2></div>}
     </>}
   </>;
