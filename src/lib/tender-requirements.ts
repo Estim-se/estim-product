@@ -149,12 +149,21 @@ export function requirementScope(r: Pick<Requirement, 'unit_of_count'>) {
 }
 // The unit a quote states explicitly ("i varje trapphus", "per våningsplan", "i samtliga lägenheter"). A requirement
 // counted in another unit family than its own quote states is not guessed: it is kept for clarification.
-const QUOTED_BASIS: [RegExp, string][] = [[/\b(?:i varje|per|i samtliga|samtliga|i alla)\s+(?:trapphus|trapphusen|uppgång)/i, 'trapphus'], [/\b(?:i varje|per|samtliga|i samtliga)\s+våningsplan/i, 'trapphus'],
-  [/\b(?:i varje|per|i samtliga|samtliga|i alla)\s+(?:lägenhet|lägenheter|lgh|bostad)/i, 'lägenhet'], [/\b(?:i varje|per|i samtliga|samtliga)\s+(?:kök|badrum|våtrum|rum)\b/i, 'lägenhet'],
-  [/\b(?:i varje|per|i samtliga|samtliga)\s+(?:lokal|lokaler)\b/i, 'lokal'], [/\b(?:i varje|per|för varje)\s+etapp/i, 'etapp']];
+const QUOTED_BASIS: [RegExp, string][] = [[/\b(?:i varje|i respektive|respektive|i samtliga|samtliga|i alla)\s+(?:lägenhet\w*|lgh)\s+och\s+lokal\w*/i, 'lägenhet_och_lokal'], [/\b(?:i varje|per|i samtliga|samtliga|i alla)\s+(?:trapphus|trapphusen|uppgång)/i, 'trapphus'], [/\b(?:i varje|per|samtliga|i samtliga)\s+våningsplan/i, 'trapphus'],
+  [/\b(?:i varje|i respektive|respektive|per|i samtliga|samtliga|i alla)\s+(?:lägenhet|lägenheter|lgh|bostad)/i, 'lägenhet'], [/\b(?:i varje|per|i samtliga|samtliga)\s+(?:kök|badrum|våtrum|rum)\b/i, 'lägenhet'],
+  [/\b(?:i varje|i respektive|respektive|per|i samtliga|samtliga)\s+(?:lokal|lokaler)\b/i, 'lokal'], [/\b(?:i varje|per|för varje)\s+etapp/i, 'etapp']];
 const BASIS_OF_UNIT: Partial<Record<RequirementUnit, string>> = { 'lägenhet': 'lägenhet', 'kök': 'lägenhet', 'badrum': 'lägenhet', 'wc': 'lägenhet', 'vardagsrum': 'lägenhet', 'sovrum': 'lägenhet', 'halvrum': 'lägenhet', 'sovrum_och_halvrum': 'lägenhet', 'hall': 'lägenhet', 'per_area': 'lägenhet', 'trapphus': 'trapphus', 'trapphusplan': 'trapphus', 'entré': 'trapphus', 'lokal': 'lokal', 'etapp': 'etapp' };
+const PROPERTY_UNITS = new Set(['post', 'fast_antal', 'fastighet', 'huskropp', 'etapp']);
+// "2st lamputtag per lägenhet": a number stated per apartment is always multiplied by the number of apartments.
+const PER_APARTMENT_COUNT = /(\d+)\s*(?:st\b|stycken\b)?[^.\d]{0,40}?\bper\s+(?:lägenhet|lgh|bostad)\b/i;
+// Units counted inside the apartments (sections 1–4) and the premises unit (section 5).
+const APARTMENT_UNITS = new Set(['lägenhet', 'kök', 'badrum', 'wc', 'vardagsrum', 'sovrum', 'halvrum', 'sovrum_och_halvrum', 'hall', 'per_area', 'bänklängd']);
+// The quote also names the requirement's own unit ("huvudledningar till samtliga lägenhets, lokaler och …"): no conflict.
+const OWN_UNIT_WORDS: Record<string, RegExp> = { lägenhet: /\b(lägenhet\w*|lgh|bostad\w*)/i, trapphus: /\b(trapphus\w*|uppgång\w*|våningsplan\w*)/i, lokal: /\blokal(er|en|erna)?\b/i, etapp: /\betapp\w*/i };
+const quotedBases = (evidence: string | undefined) => evidence ? [...new Set(QUOTED_BASIS.filter(([re]) => re.test(evidence)).map(([, b]) => b))] : [];
 function quotedBasisConflict(unit: RequirementUnit, evidence: string | undefined) {
   const own = BASIS_OF_UNIT[unit]; if (!own || !evidence) return null;
+  if (OWN_UNIT_WORDS[own]?.test(evidence)) return null;
   const stated = [...new Set(QUOTED_BASIS.filter(([re]) => re.test(evidence)).map(([, b]) => b))];
   if (unit === 'lägenhet_och_lokal' || !stated.length || stated.includes(own)) return null;
   return stated.join('/');
@@ -256,6 +265,14 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
   // Work the catalog prices with another kind's type (a washing-machine supply with the IP44 outlet type) is bound to
   // that type, whichever type the model named.
   const apartmentType = (type: string | null) => { const t = type ? canonical.types.find(x => x.id === type) : undefined; return !!t && sectionOfPost(t.name, undefined, t.section, postMeaning) <= 4; };
+  // A type that names a kind of work the post does not ("Styrning fasadbelysning" for "Fasadarmaturer") is not this work.
+  const WORK_WORDS = ['styrning', 'matning', 'rivning', 'demontering', 'återmontering', 'provning', 'dimensionering', 'samordning', 'anslutning', 'projektering', 'tomrör'];
+  const sameWork = (post: string, name: string) => { const p = post.toLocaleLowerCase('sv'), n = name.toLocaleLowerCase('sv'); return WORK_WORDS.every(w => !n.includes(w) || p.includes(w)); };
+  const typeOfMeaning = (post: string) => {
+    const m = postMeaning(post); if (!m) return null;
+    const hit = canonical.types.find(t => postMeaning(t.name) === m) ?? canonical.types.find(t => postMeaning(t.name) === pricedAs(m));
+    return hit && sameWork(post, hit.name) ? hit.id : null;
+  };
   const ownType = (type: string | null, post: string) => {
     const m = postMeaning(post);
     if (type && m && pricedAs(m) !== m && !canonical.types.some(t => postMeaning(t.name) === m)) {
@@ -264,14 +281,41 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     if (!type || !coversSeveral(type)) return type;
     return m && !GENERIC_MEANINGS.has(m) ? canonical.types.find(t => postMeaning(t.name) === m)?.id ?? type : type;
   };
+  // The units each catalog type is counted in by the requirements (to recognise the same delivery at another unit).
+  const unitsOfType = new Map<string, Set<string>>();
+  for (const r of input.requirements) { const t = ownType(typeOf(r.type_id), r.post); if (t) unitsOfType.set(t, new Set([...unitsOfType.get(t) ?? [], r.unit_of_count])); }
   for (const stated of input.requirements) {
     // Work at the worktop stated per counter length that is not a socket (a luminaire above the worktop): one worktop
     // per kitchen, Antagen with the reason, before the identity is formed.
-    const raw = stated.unit_of_count === 'bänklängd' && !counterSocket(stated)
+    let raw: Requirement = stated.unit_of_count === 'bänklängd' && !counterSocket(stated)
       ? { ...stated, unit_of_count: 'kök' as const, per_unit: stated.per_unit ?? 1, assumed: true, note: [stated.note, 'Antaget en arbetsbänk per kök.'].filter(Boolean).join(' ') } : stated;
+    // A number stated per apartment in the quote is counted per apartment, whatever property-level unit was named.
+    const perApartment = raw.source?.evidence.match(PER_APARTMENT_COUNT);
+    if (perApartment && model?.counts.apartments && PROPERTY_UNITS.has(raw.unit_of_count) && raw.unit_of_count !== 'etapp') {
+      const n = Number(perApartment[1]);
+      if (n > 0 && n <= 50 && (raw.fixed_quantity === null || raw.fixed_quantity === n || raw.per_unit === n)) raw = { ...raw, unit_of_count: 'lägenhet', per_unit: n, fixed_quantity: null, note: [raw.note, `Underlaget anger ${n} per lägenhet.`].filter(Boolean).join(' ') };
+    }
+    // A property-level unit for work whose quote states another unit ("i respektive lägenhet och lokaler"), while the
+    // same catalog type is counted in that unit by another requirement, is that delivery: it takes the quoted unit
+    // (and so the same identity), instead of becoming a second row.
+    const quotedType = ownType(typeOf(raw.type_id), raw.post);
+    if (quotedType && PROPERTY_UNITS.has(raw.unit_of_count) && raw.unit_of_count !== 'etapp' && raw.fixed_quantity === null) {
+      const bases = quotedBases(raw.source?.evidence), siblings = unitsOfType.get(quotedType) ?? new Set();
+      const unit = (['lägenhet_och_lokal', 'lägenhet', 'lokal', 'trapphus'] as const).find(b => bases.includes(b) && (siblings.has(b) || b === 'lägenhet_och_lokal' && siblings.has('lägenhet')));
+      if (unit) raw = { ...raw, unit_of_count: unit, per_unit: raw.per_unit ?? 1, note: [raw.note, `Underlaget anger ${unit === 'lägenhet_och_lokal' ? 'lägenheter och lokaler' : unit}; räknas så.`].filter(Boolean).join(' ') };
+    }
     const source = raw.source ? verifyTenderSource(documents, { ...raw.source }) : null;
     const sources = [...(source ? [source] : [])];
-    const type = ownType(typeOf(raw.type_id), raw.post), countUnit = model ? roomUnit(raw) : raw.unit_of_count, scope = requirementScope({ ...raw, unit_of_count: countUnit });
+    // Without a valid catalog type from the model, the code binds the post to the catalog type of its own meaning when
+    // the catalog has exactly that kind of work (deterministic; otherwise it stays a visible proposal).
+    const modelType = ownType(typeOf(raw.type_id), raw.post), meaningType = modelType ? null : typeOfMeaning(raw.post);
+    const type = modelType ?? meaningType, countUnit = model ? roomUnit(raw) : raw.unit_of_count, scope = requirementScope({ ...raw, unit_of_count: countUnit });
+    // The section follows the unit the post is counted in: apartment units in sections 1–4 (the catalog type's own
+    // section when it is apartment work), premises in section 5.
+    const typeSection = type ? sectionOfPost(typeName.get(type) ?? '', undefined, canonical.types.find(t => t.id === type)?.section, postMeaning) : null;
+    if (APARTMENT_UNITS.has(countUnit) && typeSection && typeSection <= 4) raw = { ...raw, section: typeSection };
+    else if (APARTMENT_UNITS.has(countUnit) && (raw.section < 1 || raw.section > 4)) raw = { ...raw, section: countUnit === 'kök' ? 2 : countUnit === 'badrum' || countUnit === 'wc' ? 3 : 4 };
+    else if (countUnit === 'lokal' && raw.section !== 5) raw = { ...raw, section: 5 };
     const option = OPTION.test(`${raw.post} ${raw.note ?? ''}`);
     // On a general type the delivery is told apart by the post's own specific meaning when the code finds one
     // ("Uttag kombimaskin" and "Vägguttag för kombimaskin" are one delivery); the model's free-text work only otherwise.
@@ -282,12 +326,17 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const delivery = ownMeaning && !GENERIC_MEANINGS.has(ownMeaning) ? `betydelse:${ownMeaning}` : raw.work ? beyondType(raw.work) : beyondType(raw.post);
     const what = !type ? `utan-typ:${normalWords(raw.post)}` : coversSeveral(type) ? `${type}:${delivery}` : type;
     const rid = stableRequirementId(`${option ? `option:${normalWords(raw.post)}|` : ''}${what}|${scope}|${typeFamily(countUnit)}|${raw.room_type ? normalWords(raw.room_type) : ''}`);
-    const validation = [...(raw.type_id && !type ? [`okänd katalog-ID ${raw.type_id.slice(0, 40)}`] : []), ...(!raw.source ? ['källa saknas'] : !source ? ['källan kunde inte verifieras'] : [])];
+    const validation = [...(raw.type_id && !modelType ? [`okänd katalog-ID ${raw.type_id.slice(0, 40)}`] : []), ...(meaningType ? ['katalogtyp vald efter postens betydelse'] : []), ...(!raw.source ? ['källa saknas'] : !source ? ['källan kunde inte verifieras'] : [])];
     const cov: Coverage = { requirement_id: rid, post: raw.post.slice(0, 240), status: 'Kräver avklaring', row: null, reason: null, validation };
     coverage.push(cov);
     const ids = { requirement_ids: [rid], scope };
     const basisConflict = quotedBasisConflict(countUnit, source?.evidence);
-    if (basisConflict) {
+    // A post per premises whose quote speaks of the apartments ("samtliga lägenheter förses med mätare") is counted per
+    // premises from the object list, Antagen and for clarification: never 0 when the list has premises.
+    if (basisConflict === 'lägenhet' && countUnit === 'lokal') {
+      raw = { ...raw, assumed: true, note: [raw.note, 'Källan nämner lägenheter; antaget att varje lokal har motsvarande – kontrollera.'].filter(Boolean).join(' ') };
+      cov.reason = 'Källan anger lägenheter, kravet räknas per lokal.'; clarify.add(cov);
+    } else if (basisConflict) {
       add(raw.post, raw.section, raw.unit, null, '–', `Underlaget anger antal per ${basisConflict} men kravet räknas per ${countUnit} – kontrollera och fyll i mängd.`, 'Saknar mängd', sources, raw.note, undefined, { count_unit: countUnit, type_id: type, ...ids }, cov);
       cov.reason = `Källan anger per ${basisConflict}, kravet per ${countUnit}.`; clarify.add(cov);
       continue;

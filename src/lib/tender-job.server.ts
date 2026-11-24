@@ -11,7 +11,7 @@ type Job = { tender_id: string; company_id: string; analysis_run: string; status
 import { cacheDocumentKey, fromCacheForm, toCacheForm } from './tender-cache-keys';
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
-const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'requirement-identity-v27', calculation: 'levels-v11' };
+const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'requirement-identity-v28', calculation: 'levels-v11' };
 
 async function admin(): Promise<Db> {
   const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
@@ -167,7 +167,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     // Feature flag: the requirements engine (model lists requirements, code counts) replaces the operand engine when on.
     const requirementsEngine = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1';
     const { extractRequirementQuantities } = await import('./tender-requirements-ai.server');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v14', engine: requirementsEngine ? 'requirements-catalog-v4' : 'operands', catalog: requirementsEngine ? catalogOf(settings.data?.post_types) : null }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null, catalogOf(settings.data?.post_types)) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v15', engine: requirementsEngine ? 'requirements-catalog-v4' : 'operands', catalog: requirementsEngine ? catalogOf(settings.data?.post_types) : null }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null, catalogOf(settings.data?.post_types)) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};

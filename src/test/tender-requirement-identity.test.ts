@@ -156,6 +156,50 @@ describe('requirement identity and deduplication', () => {
       expect(status(q, 'Bänkuttag kök')).toMatchObject({ status: 'Ingår i annan post', row: 'Bänkuttag kök enligt typrecept' });
     }
   });
+  it('Baggen export errors, in general form: per-apartment numbers, premises posts, sections and the catalog type by meaning', () => {
+    const cat = [...catalog, { id: '00000000-0000-4000-8000-000000000521', name: 'Lampstickpropp med LED' }, { id: '00000000-0000-4000-8000-000000000522', name: 'Huvudledning lokal' },
+      { id: '00000000-0000-4000-8000-000000000523', name: 'Brandvarnare' }, { id: '00000000-0000-4000-8000-000000000524', name: 'Dubbelt vägguttag' }, { id: '00000000-0000-4000-8000-000000000525', name: 'Styrning fasadbelysning' }];
+    const docs = [...documents.slice(0, 2), { ...documents[1]!, id: '00000000-0000-4000-8000-000000000004', file_name: 'El2.pdf', text: 'Fysisk sida: 1\nLamputtag skall vara DCL och till 2st lamputtag per lägenhet skall lampstickpropp med E27 levereras.\nNya huvudledningar till samtliga lägenhets, lokaler och fastighetscentraler.\nSamtliga lägenheter förses med mätare för debiteringsmätning.\nStäduttag monteras, 1st per trapphus.\nInom lägenheter monteras brandvarnare, en per 60m2.' }];
+    const s2 = (evidence: string) => ({ document_id: '00000000-0000-4000-8000-000000000004', page: 1, evidence });
+    const q = buildRequirementQuantities(decodeRequirements({ requirements: [
+      req('Lampstickpropp med LED', 'fast_antal', null, { fixed_quantity: 2, type_id: cat[10]!.id, section: 4, source: s2('Lamputtag skall vara DCL och till 2st lamputtag per lägenhet skall lampstickpropp med E27 levereras.') }),
+      req('Huvudledning lokal', 'lokal', 1, { type_id: cat[11]!.id, section: 5, source: s2('Nya huvudledningar till samtliga lägenhets, lokaler och fastighetscentraler.') }),
+      req('Mätare för lokal', 'lokal', 1, { section: 5, source: s2('Samtliga lägenheter förses med mätare för debiteringsmätning.') }),
+      req('Brandvarnare', 'per_area', 1, { area_divisor: 60, type_id: cat[12]!.id, section: 5, source: s2('Inom lägenheter monteras brandvarnare, en per 60m2.') }),
+      req('Städuttag trapphus', 'trapphus', 1, { type_id: 'okänd', section: 6, source: s2('Städuttag monteras, 1st per trapphus.') }),
+      req('Fasadarmaturer vid entréer', 'fast_antal', null, { fixed_quantity: 4, section: 6, source: s2('Städuttag monteras, 1st per trapphus.') }),
+    ], counts: [{ name: 'trapphus', value: 4, source: s2('Städuttag monteras, 1st per trapphus.') }] }), model, docs, exampleRoomRecipes, null, cat);
+    const row = (post: string) => [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])].find(i => i.post === post)!;
+    // "2st ... per lägenhet" is 2 × the apartments, whatever unit the model named.
+    expect(row('Lampstickpropp med LED')).toMatchObject({ quantity: '12', count_unit: 'lägenhet' });
+    // Premises posts use the premises in the object list (2 here); a quote naming premises is no conflict.
+    expect(row('Huvudledning lokal')).toMatchObject({ quantity: '2', level: 'Bekräftad' });
+    expect(row('Mätare för lokal')).toMatchObject({ quantity: '2', level: 'Antagen' }); expect(status(q, 'Mätare för lokal')?.status).toBe('Kräver avklaring');
+    // The section follows the unit: smoke detectors per apartment area are apartment work, not premises.
+    expect(row('Brandvarnare').section).toBeLessThanOrEqual(4);
+    // A documented post without a valid catalog type is bound by its own meaning; a type of another kind of work is not used.
+    expect(row('Städuttag trapphus').type_id).toBe(cat[13]!.id);
+    expect(row('Fasadarmaturer vid entréer').type_id).toBeNull();
+  });
+  it('a property-level unit for work whose quote states apartments and premises joins that delivery instead of a second row', () => {
+    const tom = '00000000-0000-4000-8000-000000000531', hc = '00000000-0000-4000-8000-000000000532', hl = '00000000-0000-4000-8000-000000000533';
+    const cat = [...catalog, { id: tom, name: 'Tomrör för framtida mätning' }, { id: hc, name: 'Huvudledning fastighetscentral' }, { id: hl, name: 'Huvudledning lägenhet' }];
+    const quote = 'Tomrör och BUS ledning för framtida mätning av vattenförbrukning i respektive lägenhet och lokaler.', feeds = 'Nya huvudledningar till samtliga lägenhets, lokaler och fastighetscentraler.';
+    const docs = [...documents.slice(0, 2), { ...documents[1]!, id: '00000000-0000-4000-8000-000000000005', file_name: 'El3.pdf', text: `Fysisk sida: 1\n${quote}\n${feeds}` }];
+    const s3 = (evidence: string) => ({ document_id: '00000000-0000-4000-8000-000000000005', page: 1, evidence });
+    const q = buildRequirementQuantities(decodeRequirements({ requirements: [
+      req('Tomrör lägenhet', 'lägenhet', 1, { type_id: tom, section: 1, source: s3(quote) }),
+      req('Tomrör lägenheter och lokaler', 'lägenhet_och_lokal', 1, { type_id: tom, section: 7, source: s3(quote) }),
+      req('Tomrör (lgh och lokaler)', 'fastighet', 1, { type_id: tom, section: 7, source: s3(quote) }),
+      req('Huvudledning lägenhet', 'lägenhet', 1, { type_id: hl, section: 1, source: s3(feeds) }),
+      req('Huvudledning fastighetscentral', 'huskropp', 1, { type_id: hc, section: 7, source: s3(feeds) }),
+    ], counts: [{ name: 'huskropp', value: 2, source: s3(feeds) }] }), model, docs, exampleRoomRecipes, null, cat);
+    const all = [...q.items, ...q.assumptions.flatMap(a => a.item ? [a.item] : [])];
+    // Two rows for the tubes (per apartment, and apartments and premises), not a third per property.
+    expect(all.filter(i => i.type_id === tom).map(i => i.count_unit).sort()).toEqual(['lägenhet', 'lägenhet_och_lokal']);
+    // A property central's feed stays per building although the quote also names the apartments.
+    expect(all.find(i => i.type_id === hc)).toMatchObject({ count_unit: 'huskropp', quantity: '2' });
+  });
   it('the same delivery at property level is one row, whatever place the model names', () => {
     const q = build([req('Ny fastighetscentral', 'fastighet', null, { fixed_quantity: 2, type_id: T.riv, scope: 'fastighet', section: 7, source: src('Matning till hiss.') }),
       req('Fastighetscentral i elrum', 'fastighet', null, { fixed_quantity: 2, type_id: T.riv, scope: 'tekniska_utrymmen', section: 7, source: src('Matning till hiss.') })]);
