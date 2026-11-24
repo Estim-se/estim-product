@@ -79,7 +79,16 @@ export const saveTenderWatchRegions = createServerFn({ method: 'POST' }).middlew
   return { ok: true };
 });
 
-export const updateTenderWatchHit = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator((v: unknown) => z.object({ id: z.string().uuid(), status: z.enum(['sedd', 'avvisad', 'analys']), tender_id: z.string().uuid().nullable().optional() }).parse(v)).handler(async ({ data, context }) => {
+// The list has been opened: the company's new hits are seen (the page keeps showing which ones were new this time).
+export const markTenderWatchSeen = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  if (!tenderWatchEnabled()) throw new Error('Anbudsbevakningen är inte aktiverad.');
+  const db = context.supabase as unknown as Db;
+  const r = await db.from('tender_watch_hits').update({ status: 'sedd' }).eq('status', 'ny').select('id') as unknown as Result<{ id: string }[]>;
+  if (r.error) throw new Error('Anbuden kunde inte markeras som sedda.');
+  return { seen: r.data?.length ?? 0 };
+});
+
+export const updateTenderWatchHit =createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).inputValidator((v: unknown) => z.object({ id: z.string().uuid(), status: z.enum(['sedd', 'avvisad', 'analys']), tender_id: z.string().uuid().nullable().optional() }).parse(v)).handler(async ({ data, context }) => {
   if (!tenderWatchEnabled()) throw new Error('Anbudsbevakningen är inte aktiverad.');
   const db = context.supabase as unknown as Db;
   const r = await db.from('tender_watch_hits').update({ status: data.status, ...(data.tender_id ? { tender_id: data.tender_id } : {}) }).eq('id', data.id).select('id') as unknown as Result<{ id: string }[]>;
