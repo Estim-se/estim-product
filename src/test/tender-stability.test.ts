@@ -19,7 +19,8 @@ describe('requirements stay the same between runs', () => {
     const docs = [{ id: 'd1', file_name: 'El.pdf', doc_type: 'Teknisk beskrivning', text }], catalog = [{ id: 'k1', name: 'LED-armatur källare' }, { id: 'k2', name: 'Närvarogivare' }];
     const listed = (...posts: string[]) => decodeRequirements({ counts: [], requirements: posts.map(p => req(p, 'fastighet', 1, { type_id: /Närvaro/.test(p) ? 'k2' : 'k1' })) });
     // Only the presence detectors and the technical rooms' lighting are listed: the storage/basement lighting is missing.
-    const missing = missingDocumentedCategories(docs, listed('Närvarogivare lägenhetsförråd och källargångar', 'Belysning tekniska utrymmen'), catalog);
+    // A presence detector post whose name speaks of the lighting is priced as a detector and does not cover the luminaires.
+    const missing = missingDocumentedCategories(docs, listed('Närvarostyrning belysning källargångar/förråd', 'Belysning tekniska utrymmen'), catalog);
     expect(missing.map(([m, lines]) => [m, lines[0]!.place])).toEqual([['armatur-kallare', 'Lägenhetsförråd och källargångar']]);
     expect(missingDocumentedCategories(docs, listed('Närvarogivare förråd', 'Belysning tekniska utrymmen', 'Armaturer källargångar och förråd'), catalog)).toEqual([]);
   });

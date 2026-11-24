@@ -65,7 +65,10 @@ export function missingDocumentedCategories(documents: { id: string; file_name: 
   const have = new Map<string, Set<string> | 'all'>();
   for (const r of listed.requirements) {
     const places = placesOf(`${r.post} ${r.room_type ?? ''} ${r.scope ?? ''}`);
-    for (const m of [postMeaning(r.post), r.type_id ? postMeaning(typeName.get(r.type_id) ?? '') : null]) {
+    // A requirement priced with a catalog type covers that type's meaning: presence detectors for the basement lighting
+    // ("Närvarostyrning belysning källargångar") do not cover the basement luminaires themselves.
+    const typeMeaning = r.type_id ? postMeaning(typeName.get(r.type_id) ?? '') : null;
+    for (const m of typeMeaning ? [typeMeaning] : [postMeaning(r.post)]) {
       if (!m) continue;
       const prior = have.get(m);
       have.set(m, prior === 'all' || !places.size ? 'all' : new Set([...prior ?? [], ...places]));
