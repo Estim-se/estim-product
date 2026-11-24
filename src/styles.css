@@ -913,3 +913,25 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-workspace .tender-panel table thead tr{background:var(--tw-soft)}
 .tender-workspace .tender-panel table th{text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted-foreground)}
 @media (max-width:1024px){.tender-workspace .tender-aside{border-right:0;border-bottom:1px solid var(--border);min-height:0}.tender-workspace .tender-main{padding:18px}}
+
+/* Anbud: spreadsheet-like overview inside every tab (visual only) */
+.tender-workspace .tender-panel>h2,.tender-workspace .tender-panel section>h2,.tender-workspace .tender-panel .row>h2{font-size:18px;font-weight:600;padding-bottom:8px;border-bottom:2px solid var(--foreground);margin-bottom:4px}
+.tender-workspace .tender-panel .overflow-x-auto{border:1px solid var(--border);border-radius:10px;max-height:70vh;overflow:auto;background:var(--background)}
+.tender-workspace .tender-panel .overflow-x-auto>table{border-radius:0;overflow:visible;border-collapse:separate;border-spacing:0}
+.tender-workspace .tender-panel table{font-size:13px}
+.tender-workspace .tender-panel table thead th{position:sticky;top:0;z-index:2;background:color-mix(in oklab,var(--foreground) 7%,var(--background));color:var(--foreground);font-weight:600;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--border)}
+.tender-workspace .tender-panel table th,.tender-workspace .tender-panel table td{padding:6px 10px;border-right:1px solid color-mix(in oklab,var(--border) 70%,transparent)}
+.tender-workspace .tender-panel table tr>*:last-child{border-right:0}
+.tender-workspace .tender-panel table tbody tr{border-bottom:1px solid color-mix(in oklab,var(--border) 80%,transparent)}
+.tender-workspace .tender-panel table tbody tr:nth-child(even){background:color-mix(in oklab,var(--foreground) 2.5%,var(--background))}
+.tender-workspace .tender-panel table tbody tr:hover{background:color-mix(in oklab,var(--primary) 7%,var(--background))}
+.tender-workspace .tender-panel table td.tabular-nums,.tender-workspace .tender-panel table th.tabular-nums{text-align:right;font-variant-numeric:tabular-nums}
+.tender-workspace .tender-panel table tfoot tr,.tender-workspace .tender-panel table tbody tr:last-child:has(.font-semibold){background:color-mix(in oklab,var(--foreground) 6%,var(--background));font-weight:600;border-top:2px solid var(--foreground)}
+.tender-workspace .tender-panel table .small.muted{font-size:12px;line-height:1.35}
+.tender-workspace .tender-panel table .chip{font-size:11px;padding:1px 8px;border-radius:4px}
+.tender-workspace .tender-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.tender-workspace .tender-kpi{border-radius:0;border:0;border-right:1px solid var(--border);text-align:left;padding:14px 16px}
+.tender-workspace .tender-kpi:last-child{border-right:0}
+.tender-workspace .tender-kpi b{display:block;font-size:24px;font-variant-numeric:tabular-nums;margin-top:2px}
+.tender-workspace .tender-panel .space-y-8>*+*{margin-top:28px}
+@media (max-width:720px){.tender-workspace .tender-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-workspace .tender-kpi:nth-child(2){border-right:0}.tender-workspace .tender-kpi:nth-child(-n+2){border-bottom:1px solid var(--border)}}
