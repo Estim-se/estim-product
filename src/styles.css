@@ -946,23 +946,23 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-kpi-cell.main span{color:color-mix(in oklab,var(--background) 70%,transparent)}
 .tender-kpi-cell.main b{font-size:24px}
 @media (max-width:900px){.tender-kpi-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-kpi-cell{border-bottom:1px solid var(--border)}.tender-kpi-cell.main{grid-column:1/-1}}
-.tender-sheet-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;position:sticky;top:0;z-index:4;background:var(--background);padding:8px 0}
-.tender-sheet-bar .tender-filter{max-width:280px}
+.tender-grid-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;position:sticky;top:0;z-index:4;background:var(--background);padding:8px 0}
+.tender-grid-bar .tender-filter{max-width:280px}
 .tender-legend{display:flex;gap:6px;flex-wrap:wrap;margin-right:auto}
 .tender-level{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap}
 .lv-ok{background:color-mix(in oklab,oklch(0.72 0.15 150) 22%,var(--background));color:oklch(0.38 0.1 150)}
 .lv-calc{background:color-mix(in oklab,oklch(0.7 0.12 240) 20%,var(--background));color:oklch(0.4 0.12 240)}
 .lv-assumed{background:color-mix(in oklab,oklch(0.78 0.14 60) 28%,var(--background));color:oklch(0.45 0.12 50)}
 .lv-missing{background:color-mix(in oklab,var(--foreground) 8%,var(--background));color:var(--muted-foreground)}
-.tender-workspace .tender-sheet tr.tender-sec-head th{position:sticky;top:33px;z-index:1;background:color-mix(in oklab,var(--foreground) 88%,var(--background));color:var(--background);padding:0;border-right:0}
+.tender-workspace .tender-grid tr.tender-sec-head th{position:sticky;top:33px;z-index:1;background:color-mix(in oklab,var(--foreground) 88%,var(--background));color:var(--background);padding:0;border-right:0}
 .tender-sec-head button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-weight:600;font-size:13px;text-align:left;color:inherit;background:none;border:0;cursor:pointer}
 .tender-sec-meta{margin-left:auto;font-weight:500;opacity:.75;font-variant-numeric:tabular-nums}
 .tender-caret{width:12px}
-.tender-workspace .tender-sheet tr.tender-sec-sum{background:color-mix(in oklab,var(--foreground) 6%,var(--background))!important;font-weight:600;border-top:1px solid var(--foreground)}
-.tender-workspace .tender-sheet tr.tender-sec-sum>*{padding:8px 10px;text-align:right}
-.tender-workspace .tender-sheet tr.tender-sec-sum>th{text-align:left}
-.tender-workspace .tender-sheet tr.tender-grand{background:var(--foreground)!important;color:var(--background);font-weight:700}
-.tender-workspace .tender-sheet tr.tender-grand td{text-align:right}
+.tender-workspace .tender-grid tr.tender-sec-sum{background:color-mix(in oklab,var(--foreground) 6%,var(--background))!important;font-weight:600;border-top:1px solid var(--foreground)}
+.tender-workspace .tender-grid tr.tender-sec-sum>*{padding:8px 10px;text-align:right}
+.tender-workspace .tender-grid tr.tender-sec-sum>th{text-align:left}
+.tender-workspace .tender-grid tr.tender-grand{background:var(--foreground)!important;color:var(--background);font-weight:700}
+.tender-workspace .tender-grid tr.tender-grand td{text-align:right}
 .tender-nr{color:var(--muted-foreground);font-variant-numeric:tabular-nums;white-space:nowrap}
 .tender-num-input{text-align:right;color:oklch(0.45 0.15 255);font-variant-numeric:tabular-nums;min-width:90px}
 .tender-share{display:inline-block;width:70px;height:6px;border-radius:3px;background:color-mix(in oklab,var(--foreground) 10%,var(--background));margin-right:8px;vertical-align:middle;overflow:hidden}
