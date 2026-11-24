@@ -29,6 +29,14 @@ use the editor.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
 
+## Standing rules for new features
+
+- New features must not change existing ones: the tender engine (analysis, quantities, catalog, calculation, export), WhatsApp (receiving, sending, routing on phone_number_id), email via Nylas, the inbox, quotes and documents.
+- New features are built as their own modules behind their own flag (off by default), use the existing entry points and only add new tables.
+- The n8n flows are never changed without the owner's explicit yes. Email and channels are agreed with Dennis.
+- After every merge: run the tender tests locally (totals unchanged) and all WhatsApp and email tests.
+- Tests run the same in every terminal: `vitest.config.ts` normalises a lower-case Windows drive letter, so `vi.mock` applies; never trust a local result where mocks did not apply.
+
 ## App structure
 - Refresh incoming AI interpretation before drafting; derive estimate ranges in code so follow-ups use current job details and catalog prices.
 - Save company WhatsApp settings through authenticated RLS with a returned row; grant only the setting column and expose structural error codes, so denied/no-row writes cannot appear successful.
