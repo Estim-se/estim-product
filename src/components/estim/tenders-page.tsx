@@ -18,6 +18,8 @@ import { TenderQuantitiesSections } from './tender-quantities';
 import { TenderCalculationSettings } from './tender-calculation-settings';
 import { TenderCalculation } from './tender-calculation';
 import { TenderExport } from './tender-export';
+import { TenderWatch, useTenderWatchEnabled } from './tender-watch';
+import { updateTenderWatchHit, type TenderWatchHitRow } from '@/lib/tender-watch.functions';
 
 export function TendersPage() {
   const ws = useWorkspace();
@@ -32,7 +34,12 @@ export function TendersPage() {
   const startJob = useServerFn(startTenderJob), loadJob = useServerFn(getTenderJob), nudgeJob = useServerFn(nudgeTenderJob);
   const loadInsights = useServerFn(getTenderInsights);
   const loadQuantities = useServerFn(getTenderQuantities);
-  const [tab, setTab] = useState<'tenders' | 'settings'>('tenders');
+  const [tab, setTab] = useState<'tenders' | 'settings' | 'watch'>('tenders');
+  // Anbudsbevakning (flag ANBUD_BEVAKNING): a found tender opens the "Nytt anbud" dialog with its name filled in.
+  const watchEnabled = useTenderWatchEnabled(company, real).enabled;
+  const linkWatchHit = useServerFn(updateTenderWatchHit);
+  const [watchHit, setWatchHit] = useState<TenderWatchHitRow | null>(null);
+  function startFromWatch(hit: TenderWatchHitRow) { setTab('tenders'); setSelected(null); setMessage(''); setFiles([]); setName(hit.title.slice(0, 160)); setWatchHit(hit); setShow(true); }
   const [starting, setStarting] = useState(false);
   const [selected, setSelected] = useState<Tender | null>(null);
   const [show, setShow] = useState(false), [name, setName] = useState('');
@@ -146,6 +153,7 @@ export function TendersPage() {
         }
         await complete({ data: { id: tender.id, files: metadata } });
         tenderId = null;
+        if (watchHit) { await linkWatchHit({ data: { id: watchHit.id, status: 'analys', tender_id: tender.id } }).catch(() => undefined); setWatchHit(null); void queryClient.invalidateQueries({ queryKey: ['tender-watch', company] }); }
         await queryClient.invalidateQueries({ queryKey: ['tenders', company] });
         setSelected({ id: tender.id, name: name.trim(), status: 'ready', created_at: new Date().toISOString() });
       }
@@ -177,11 +185,11 @@ export function TendersPage() {
   }
   return <>
     <TopHeader title="Anbud" />
-    <div role="tablist" aria-label="Anbud" className="row wrap border-b border-border pb-3"><Button role="tab" aria-selected={tab==='tenders'} variant="prototype" className={`btn btn-sm ${tab==='tenders'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('tenders')}>Alla anbud</Button><Button role="tab" aria-selected={tab==='settings'} variant="prototype" className={`btn btn-sm ${tab==='settings'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('settings')}>Kalkylinställningar</Button></div>
-    {tab==='settings'?<TenderCalculationSettings company={company} real={real}/>:<>
+    <div role="tablist" aria-label="Anbud" className="row wrap border-b border-border pb-3"><Button role="tab" aria-selected={tab==='tenders'} variant="prototype" className={`btn btn-sm ${tab==='tenders'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('tenders')}>Alla anbud</Button><Button role="tab" aria-selected={tab==='settings'} variant="prototype" className={`btn btn-sm ${tab==='settings'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('settings')}>Kalkylinställningar</Button>{watchEnabled && <Button role="tab" aria-selected={tab==='watch'} variant="prototype" className={`btn btn-sm ${tab==='watch'?'btn-primary':'btn-ghost'}`} disabled={analyzing} onClick={()=>setTab('watch')}>Hittade anbud</Button>}</div>
+    {tab==='watch'&&watchEnabled?<TenderWatch company={company} onStart={startFromWatch}/>:tab==='settings'?<TenderCalculationSettings company={company} real={real}/>:<>
     <div className="row between wrap tender-toolbar">
       {selected ? <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => setSelected(null)}><ArrowLeft size={16} />Alla anbud</Button> : <span className="muted small">{rows.length} anbud</span>}
-      <Dialog.Root open={show} onOpenChange={v => { if (!busy) { setShow(v); setMessage(''); if (v) { setName(''); setFiles([]); } } }}>
+      <Dialog.Root open={show} onOpenChange={v => { if (!busy) { setShow(v); setMessage(''); if (v) { setName(''); setFiles([]); } else setWatchHit(null); } }}>
         <Dialog.Trigger asChild><Button variant="prototype" className="btn btn-primary"><Plus size={16} />Nytt anbud</Button></Dialog.Trigger>
         <Dialog.Portal><Dialog.Overlay className="ov tender-overlay" /><Dialog.Content className="md tender-modal" aria-describedby="tender-formats" onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
           <div className="md-h"><Dialog.Title>Nytt anbud</Dialog.Title><Dialog.Close asChild><Button variant="prototype" className="xbtn" disabled={busy} aria-label="Stäng" title="Stäng"><X size={18} /></Button></Dialog.Close></div>
@@ -190,6 +198,7 @@ export function TendersPage() {
               <label className="field">Namn<input className="input" value={name} onChange={e => setName(e.target.value)} maxLength={160} required disabled={busy} placeholder="Anbudets namn" /></label>
               <div className="field"><span>Filer</span><input ref={fileInput} className="hide" aria-label="Välj filer" type="file" multiple accept=".pdf,.docx,.xlsx,.zip" disabled={busy} onChange={e => setFiles(Array.from(e.target.files ?? []))} /><Button type="button" variant="prototype" className="btn btn-ghost" disabled={busy} onClick={() => fileInput.current?.click()}><Upload size={16} />Välj filer</Button>{!files.length && <span className="small muted">Inga filer valda</span>}</div>
               <Dialog.Description id="tender-formats" className="small muted">PDF, DOCX, XLSX eller ZIP · Max 50 MB totalt, även efter uppackning.</Dialog.Description>
+              {watchHit && <p className="small">Hittat anbud: {watchHit.buyer}{watchHit.deadline ? `, anbudstid ${watchHit.deadline}` : ''}. {watchHit.documents_url ? <>Ladda ner underlaget från <a href={watchHit.documents_url} target="_blank" rel="noopener noreferrer">annonsdatabasen</a> och välj filerna här.</> : 'Ladda ner underlaget från upphandlingens annonsdatabas och välj filerna här.'}</p>}
               {files.length > 0 && <ul className="tender-selected-files">{files.map((f, i) => <li key={`${f.name}-${i}`}><FileText size={16} /><span>{f.name}</span><span className="muted small">{tenderSize(f.size)}</span></li>)}</ul>}
               {progress && <p role="status" className="small">{progress}</p>}
               {message && <p role="alert" className="small">{message}</p>}

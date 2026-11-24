@@ -24,8 +24,14 @@ vi.mock('@/lib/tender-job.functions', () => ({
 }));
 vi.mock('@/lib/tender-insights.functions', () => ({ getTenderInsights: async () => fixture.hasInsights ? {status:'analysed',result:{risks:[],questions:[]}} : null }));
 vi.mock('@/lib/tender-quantities.functions', () => ({ getTenderQuantities: async () => null }));
+const watch = vi.hoisted(() => ({ enabled: false, linked: [] as unknown[] }));
+vi.mock('@/lib/tender-watch.functions', () => ({
+  getTenderWatch: async () => watch.enabled ? { enabled: true, ready: true, regions: ['SE110'], last_fetched_at: '2026-11-24T08:00:00Z', hits: [{ id: '00000000-0000-4000-8000-000000000071', publication_number: '795738-2026', kind: 'bygg_el', title: 'Winquists väg 24, ny förskola', buyer: 'SISAB', city: 'Stockholm', places: ['SE110'], cpv: ['45210000'], deadline: '2027-01-22', value: 70000000, currency: 'SEK', framework: false, published: '2026-11-10', documents_url: 'https://www.kommersannons.se/x', notice_url: 'https://ted.europa.eu/sv/notice/-/detail/795738-2026', status: 'ny', tender_id: null }] } : { enabled: false },
+  refreshTenderWatch: async () => ({ fetched: false, added: 0 }), saveTenderWatchRegions: async () => ({ ok: true }),
+  updateTenderWatchHit: async (v: unknown) => { watch.linked.push(v); return { ok: true }; },
+}));
 vi.mock('@/lib/tender-calculation.functions', () => ({ getTenderCalculationSettings: async () => null, getTenderCalculationMatches: async () => null, saveTenderCalculationSettings: vi.fn(), saveTenderCalculationMatches: vi.fn() }));
-afterEach(() => { cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.riskReruns=[];fixture.hasInsights=false;fixture.job=null; });
+afterEach(() => { watch.enabled = false; watch.linked = []; cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.riskReruns=[];fixture.hasInsights=false;fixture.job=null; });
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry:false }, mutations: { retry:false } } });
   render(<QueryClientProvider client={qc}><TendersPage /></QueryClientProvider>);
@@ -57,4 +63,17 @@ it('reruns only risks and questions without touching the calculation plan',async
  fixture.hasInsights=true;renderPage();fireEvent.click(await screen.findByText('Testanbud'));
  fireEvent.click(await screen.findByRole('button',{name:'Kör om risker och frågor'}));
  await waitFor(()=>expect(fixture.riskReruns).toEqual(['tender']));expect(fixture.starts).toEqual([]);expect(fixture.recalculations).toEqual([]);expect(fixture.job?.['plan']).toEqual(['risks:1','risks:2','risks:3','questions']);
+});
+it('shows Hittade anbud only when the tender watch is enabled, and Starta analys opens Nytt anbud with the name filled in', async () => {
+  renderPage();
+  await screen.findByText('Testanbud');
+  expect(screen.queryByRole('tab', { name: 'Hittade anbud' })).toBeNull();
+  cleanup(); watch.enabled = true;
+  renderPage();
+  fireEvent.click(await screen.findByRole('tab', { name: 'Hittade anbud' }));
+  expect(await screen.findByText('Winquists väg 24, ny förskola')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Underlaget' }).getAttribute('href')).toBe('https://www.kommersannons.se/x');
+  fireEvent.click(screen.getByRole('button', { name: 'Starta analys' }));
+  expect((await screen.findByLabelText('Namn') as HTMLInputElement).value).toBe('Winquists väg 24, ny förskola');
+  expect(screen.getByText(/Hittat anbud: SISAB, anbudstid 2027-01-22/)).toBeTruthy();
 });

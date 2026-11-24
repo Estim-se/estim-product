@@ -1,0 +1,893 @@
+{
+ "notices": [
+  {
+   "place-of-performance": [
+    "SE224",
+    "SWE",
+    "SE224",
+    "SWE"
+   ],
+   "notice-type": "can-standard",
+   "publication-number": "671873-2026",
+   "classification-cpv": [
+    "45316100",
+    "45316100",
+    "45316110",
+    "50232000",
+    "50232100"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Vellinge kommun"
+    ]
+   },
+   "publication-date": "2026-09-30+02:00",
+   "estimated-value-proc": "28000000",
+   "estimated-value-cur-proc": "SEK",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/671873-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Kültéri világítóberendezések szerelése – Gatubelysning",
+    "lav": "Zviedrija – Āra apgaismes ierīču uzstādīšana – Gatubelysning",
+    "swe": "Sverige – Installation av utomhusbelysning – Gatubelysning",
+    "gle": "An tSualainn – Installation of outdoor illumination equipment – Gatubelysning",
+    "ell": "Σουηδία – Τοποθέτηση εξοπλισμού φωτισμού εξωτερικών χώρων – Gatubelysning",
+    "spa": "Suecia – Instalación de equipo de alumbrado exterior – Gatubelysning",
+    "est": "Rootsi – Välisvalgustuse paigaldamine – Gatubelysning",
+    "nld": "Zweden – Installeren van buitenverlichting – Gatubelysning",
+    "fin": "Ruotsi – Ulkovalojen asennustyöt – Gatubelysning",
+    "pol": "Szwecja – Instalowanie urządzeń oświetlenia zewnętrznego – Gatubelysning",
+    "hrv": "Švedska – Instalacija vanjske rasvjete – Gatubelysning",
+    "ces": "Švédsko – Instalace a montáž zařízení pro venkovní osvětlení – Gatubelysning",
+    "dan": "Sverige – Installation af udstyr til udendørsbelysning – Gatubelysning",
+    "ron": "Suedia – Instalare de echipament de iluminare exterioară – Gatubelysning",
+    "por": "Suécia – Instalação de equipamento de iluminação exterior – Gatubelysning",
+    "slk": "Švédsko – Inštalovanie vonkajších osvetľovacích zariadení – Gatubelysning",
+    "fra": "Suède – Installation d'appareils d'éclairage extérieur – Gatubelysning",
+    "mlt": "L-Iżvezja – Stallazzjoni tat-tagħmir ta’ l-illuminazzjoni esterna – Gatubelysning",
+    "deu": "Schweden – Installation von Beleuchtungsanlagen im Freien – Gatubelysning",
+    "lit": "Švedija – Lauko apšvietimo įrenginių montavimas – Gatubelysning",
+    "ita": "Svezia – Installazione di dispositivi di illuminazione esterna – Gatubelysning",
+    "bul": "Швeция – Монтажни работи на осветители на пътища, летища и други – Gatubelysning",
+    "slv": "Švedska – Inštalacija naprav za razsvetljavo na prostem – Gatubelysning",
+    "eng": "Sweden – Installation of outdoor illumination equipment – Gatubelysning"
+   },
+   "buyer-city": {
+    "mul": [
+     "Vellinge"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-18+02:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "703090-2026",
+   "framework-agreement-lot": [
+    "fa-mix"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://annonser.clira.io/upphandling/b316e878-3c99-4e3b-89e5-3a5ccd656e33"
+   ],
+   "classification-cpv": [
+    "65310000",
+    "45317300",
+    "65310000",
+    "45317300"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Sollentuna Energi & Miljö AB"
+    ]
+   },
+   "publication-date": "2026-10-12+02:00",
+   "estimated-value-proc": "25000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/703090-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Áramszolgáltatás – Distributionselektriker till Sollentuna Elnät",
+    "lav": "Zviedrija – Elektrosadale – Distributionselektriker till Sollentuna Elnät",
+    "swe": "Sverige – Eldistribution – Distributionselektriker till Sollentuna Elnät",
+    "gle": "An tSualainn – Electricity distribution – Distributionselektriker till Sollentuna Elnät",
+    "ell": "Σουηδία – Διανομή ηλεκτρικού – Distributionselektriker till Sollentuna Elnät",
+    "spa": "Suecia – Distribución de electricidad – Distributionselektriker till Sollentuna Elnät",
+    "est": "Rootsi – Elektrijaotus – Distributionselektriker till Sollentuna Elnät",
+    "nld": "Zweden – Elektriciteitsdistributie – Distributionselektriker till Sollentuna Elnät",
+    "fin": "Ruotsi – Sähkönjakelu – Distributionselektriker till Sollentuna Elnät",
+    "pol": "Szwecja – Przesył energii elektrycznej – Distributionselektriker till Sollentuna Elnät",
+    "hrv": "Švedska – Distribucija električne struje – Distributionselektriker till Sollentuna Elnät",
+    "ces": "Švédsko – Rozvod elektřiny – Distributionselektriker till Sollentuna Elnät",
+    "dan": "Sverige – Eldistribution – Distributionselektriker till Sollentuna Elnät",
+    "ron": "Suedia – Distribuţie de energie electrică – Distributionselektriker till Sollentuna Elnät",
+    "por": "Suécia – Distribuição de electricidade – Distributionselektriker till Sollentuna Elnät",
+    "slk": "Švédsko – Rozvod elektriny – Distributionselektriker till Sollentuna Elnät",
+    "fra": "Suède – Distribution d'électricité – Distributionselektriker till Sollentuna Elnät",
+    "mlt": "L-Iżvezja – Distribuzzjoni ta' l-elettriku – Distributionselektriker till Sollentuna Elnät",
+    "deu": "Schweden – Stromversorgung – Distributionselektriker till Sollentuna Elnät",
+    "lit": "Švedija – Elektros skirstymas – Distributionselektriker till Sollentuna Elnät",
+    "ita": "Svezia – Erogazione di energia elettrica – Distributionselektriker till Sollentuna Elnät",
+    "bul": "Швeция – Разпределение на електрическа енергия – Distributionselektriker till Sollentuna Elnät",
+    "slv": "Švedska – Distribucija električne energije – Distributionselektriker till Sollentuna Elnät",
+    "eng": "Sweden – Electricity distribution – Distributionselektriker till Sollentuna Elnät"
+   },
+   "buyer-city": {
+    "mul": [
+     "Sollentuna"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-04+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "749316-2026",
+   "estimated-value-lot": [
+    "400000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62030"
+   ],
+   "classification-cpv": [
+    "45212000",
+    "45212212",
+    "45212220",
+    "45212225",
+    "45212230",
+    "45231100",
+    "45232411",
+    "45232420",
+    "45232430",
+    "45232452",
+    "45300000",
+    "45310000",
+    "45331000",
+    "45212000",
+    "45212212",
+    "45212220",
+    "45212225",
+    "45212230",
+    "45231100",
+    "45232411",
+    "45232420",
+    "45232430",
+    "45232452",
+    "45300000",
+    "45310000",
+    "45331000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Fastighetskontoret"
+    ]
+   },
+   "publication-date": "2026-10-29+01:00",
+   "estimated-value-proc": "400000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/749316-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Szabadidő, sport, kultúra, szállás és étterem céljára szolgáló épületek kivitelezése – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "lav": "Zviedrija – Ar atpūtu, sportu, kultūru, nakšņošanu un ēdināšanu saistītu ēku būvniecība – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "swe": "Sverige – Bygg- och anläggningsarbeten: byggnader för fritidsaktiviteter, idrott, kultur, inkvartering och restaurangverksamhet – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "gle": "An tSualainn – Construction work for buildings relating to leisure, sports, culture, lodging and restaurants – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες για κτίρια αναψυχής, αθλητισμού, πολιτιστικών εκδηλώσεων, στέγασης και εστιατορίων – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "spa": "Suecia – Trabajos de construcción de edificios relacionados con el ocio, los deportes, la cultura y el alojamiento y restaurantes – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "est": "Rootsi – Vaba ajaga, spordiga, kultuuriga, majutusega ja restoranidega seotud hoonete ehitustööd – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "nld": "Zweden – Gebouwen voor vrijetijdsbesteding, sport, cultuur, logies en restaurant – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "fin": "Ruotsi – Vapaa-ajan-, urheilu-, kulttuuri-, majoitus- ja ravintolarakennusten rakentamistyöt – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "pol": "Szwecja – Roboty budowlane w zakresie budowy wypoczynkowych, sportowych, kulturalnych, hotelowych i restauracyjnych obiektów budowlanych – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "hrv": "Švedska – Građevinski radovi na zgradama u vezi s odmorom i razonodom, sportom, kulturom, smještajem i restoranima – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "ces": "Švédsko – Stavební úpravy budov sloužících pro volný čas, sporty, kulturu, ubytování a restaurace – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "dan": "Sverige – Bygge- og anlægsarbejde i forbindelse med bygninger til fritidsaktiviteter, sport, kultur, indkvartering og restauranter – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "ron": "Suedia – Lucrări de construcţii de clădiri destinate activităţilor de recreere, sportive, culturale, de cazare şi restaurante – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "por": "Suécia – Obras de construção de edifícios relacionados com recreio, desporto, cultura, alojamento e restauração – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "slk": "Švédsko – Stavebné práce na stavbe budov pre voľný čas, šport, kultúru, ubytovanie a reštauračné stravovanie – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "fra": "Suède – Travaux de construction de bâtiments destinés aux loisirs, aux sports, à la culture, à l'hébergement et de restaurants – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni tal-bini trelatat mas-serħan, sports, kultura, lukandi u resturanti – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "deu": "Schweden – Bauarbeiten für Gebäude, die der Freizeitgestaltung, dem Sport, der Kultur, der Unterbringung und Verpflegung dienen – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "lit": "Švedija – Laisvalaikio, sporto, kultūros, laikino apsigyvenimo pastatų bei restoranų statybos darbai – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "ita": "Svezia – Lavori di costruzione di centri ricreativi, sportivi, culturali, alberghi e ristoranti – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "bul": "Швeция – Строителни и монтажни работи по общо изграждане на други сгради – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "slv": "Švedska – Gradbena dela na stavbah, ki so namenjene prostemu času, športu, kulturi, nastanitvi in prehrani – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan",
+    "eng": "Sweden – Construction work for buildings relating to leisure, sports, culture, lodging and restaurants – Vällingby sim- och idrottshall, entreprenad för om- och nybyggnad i samverkan"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SE110",
+    "SE110",
+    "SWE",
+    "SWE",
+    "SWE",
+    "SE110",
+    "SE110",
+    "SE110",
+    "SWE",
+    "SWE",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-30Z"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "753186-2026",
+   "estimated-value-lot": [
+    "140000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=102871"
+   ],
+   "classification-cpv": [
+    "45000000",
+    "45000000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Haninge kommun"
+    ]
+   },
+   "publication-date": "2026-10-30+01:00",
+   "estimated-value-proc": "140000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/753186-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Építési munkák – Asfalt- och beläggningsarbeten",
+    "lav": "Zviedrija – Celtniecības darbi – Asfalt- och beläggningsarbeten",
+    "swe": "Sverige – Anläggningsarbete – Asfalt- och beläggningsarbeten",
+    "gle": "An tSualainn – Construction work – Asfalt- och beläggningsarbeten",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες – Asfalt- och beläggningsarbeten",
+    "spa": "Suecia – Trabajos de construcción – Asfalt- och beläggningsarbeten",
+    "est": "Rootsi – Ehitustööd – Asfalt- och beläggningsarbeten",
+    "nld": "Zweden – Bouwwerkzaamheden – Asfalt- och beläggningsarbeten",
+    "fin": "Ruotsi – Rakennustyöt – Asfalt- och beläggningsarbeten",
+    "pol": "Szwecja – Roboty budowlane – Asfalt- och beläggningsarbeten",
+    "hrv": "Švedska – Građevinski radovi – Asfalt- och beläggningsarbeten",
+    "ces": "Švédsko – Stavební práce – Asfalt- och beläggningsarbeten",
+    "dan": "Sverige – Bygge- og anlægsarbejder – Asfalt- och beläggningsarbeten",
+    "ron": "Suedia – Lucrări de construcţii – Asfalt- och beläggningsarbeten",
+    "por": "Suécia – Construção – Asfalt- och beläggningsarbeten",
+    "slk": "Švédsko – Stavebné práce – Asfalt- och beläggningsarbeten",
+    "fra": "Suède – Travaux de construction – Asfalt- och beläggningsarbeten",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni – Asfalt- och beläggningsarbeten",
+    "deu": "Schweden – Bauarbeiten – Asfalt- och beläggningsarbeten",
+    "lit": "Švedija – Statybos darbai – Asfalt- och beläggningsarbeten",
+    "ita": "Svezia – Lavori di costruzione – Asfalt- och beläggningsarbeten",
+    "bul": "Швeция – Строителни и монтажни работи – Asfalt- och beläggningsarbeten",
+    "slv": "Švedska – Gradbena dela – Asfalt- och beläggningsarbeten",
+    "eng": "Sweden – Construction work – Asfalt- och beläggningsarbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "HANINGE"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-30Z"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "755869-2026",
+   "estimated-value-lot": [
+    "85000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=102840"
+   ],
+   "classification-cpv": [
+    "45233220",
+    "45000000",
+    "45112000",
+    "45233220",
+    "45000000",
+    "45112000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Österåkers kommun"
+    ]
+   },
+   "publication-date": "2026-10-30+01:00",
+   "estimated-value-proc": "85000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/755869-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Közút burkolása – Ramavtal mark- och beläggningsarbeten",
+    "lav": "Zviedrija – Ceļu seguma būvdarbi – Ramavtal mark- och beläggningsarbeten",
+    "swe": "Sverige – Ytbehandling av vägar – Ramavtal mark- och beläggningsarbeten",
+    "gle": "An tSualainn – Surface work for roads – Ramavtal mark- och beläggningsarbeten",
+    "ell": "Σουηδία – Επιφανειακές εργασίες οδοστρώματος οδών – Ramavtal mark- och beläggningsarbeten",
+    "spa": "Suecia – Trabajos de pavimentación de carreteras – Ramavtal mark- och beläggningsarbeten",
+    "est": "Rootsi – Teede pindamistööd – Ramavtal mark- och beläggningsarbeten",
+    "nld": "Zweden – Wegdekwerkzaamheden voor wegen – Ramavtal mark- och beläggningsarbeten",
+    "fin": "Ruotsi – Teiden päällystystyöt – Ramavtal mark- och beläggningsarbeten",
+    "pol": "Szwecja – Roboty w zakresie nawierzchni dróg – Ramavtal mark- och beläggningsarbeten",
+    "hrv": "Švedska – Radovi na površinskom sloju cesta – Ramavtal mark- och beläggningsarbeten",
+    "ces": "Švédsko – Povrchová úprava silnic – Ramavtal mark- och beläggningsarbeten",
+    "dan": "Sverige – Belægningsarbejde på veje – Ramavtal mark- och beläggningsarbeten",
+    "ron": "Suedia – Lucrări de îmbrăcare a drumurilor – Ramavtal mark- och beläggningsarbeten",
+    "por": "Suécia – Pavimentação de estradas – Ramavtal mark- och beläggningsarbeten",
+    "slk": "Švédsko – Práce vrchnej stavby ciest – Ramavtal mark- och beläggningsarbeten",
+    "fra": "Suède – Travaux de revêtement de routes – Ramavtal mark- och beläggningsarbeten",
+    "mlt": "L-Iżvezja – Xogħlijiet fuq l-uċuħ għal toroq – Ramavtal mark- och beläggningsarbeten",
+    "deu": "Schweden – Oberbauarbeiten für Landstraßen – Ramavtal mark- och beläggningsarbeten",
+    "lit": "Švedija – Kelių dangos darbai – Ramavtal mark- och beläggningsarbeten",
+    "ita": "Svezia – Lavori di superficie per strade – Ramavtal mark- och beläggningsarbeten",
+    "bul": "Швeция – Строителни работи по полагане на пътна настилка на други пътища – Ramavtal mark- och beläggningsarbeten",
+    "slv": "Švedska – Dela na zgornjem ustroju cest – Ramavtal mark- och beläggningsarbeten",
+    "eng": "Sweden – Surface work for roads – Ramavtal mark- och beläggningsarbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "ÅKERSBERGA"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SE110",
+    "SWE",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-03+01:00",
+    "2026-12-03+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "757782-2026",
+   "estimated-value-lot": [
+    "40000000",
+    "40000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc",
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62051",
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62051"
+   ],
+   "classification-cpv": [
+    "45310000",
+    "45317000",
+    "50532000",
+    "98341130",
+    "45310000",
+    "45310000",
+    "45317000",
+    "50532000",
+    "98341130",
+    "45317000",
+    "50532000",
+    "98341130"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Fastighetskontoret"
+    ]
+   },
+   "publication-date": "2026-11-02+01:00",
+   "estimated-value-proc": "80000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/757782-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Villamos szerelési munka – Ramavtal avhjälpande EL-arbeten",
+    "lav": "Zviedrija – Elektrības vadu instalācijas darbi – Ramavtal avhjälpande EL-arbeten",
+    "swe": "Sverige – Installation av elektriska ledningar och armatur – Ramavtal avhjälpande EL-arbeten",
+    "gle": "An tSualainn – Electrical installation work – Ramavtal avhjälpande EL-arbeten",
+    "ell": "Σουηδία – Εργασίες ηλεκτρολογικών εγκαταστάσεων – Ramavtal avhjälpande EL-arbeten",
+    "spa": "Suecia – Trabajos de instalación eléctrica – Ramavtal avhjälpande EL-arbeten",
+    "est": "Rootsi – Elektripaigaldustööd – Ramavtal avhjälpande EL-arbeten",
+    "nld": "Zweden – Aanleg van elektriciteit – Ramavtal avhjälpande EL-arbeten",
+    "fin": "Ruotsi – Sähköjohtojen asennus ja muut sähköasennustyöt – Ramavtal avhjälpande EL-arbeten",
+    "pol": "Szwecja – Roboty instalacyjne elektryczne – Ramavtal avhjälpande EL-arbeten",
+    "hrv": "Švedska – Elektroinstalacijski radovi – Ramavtal avhjälpande EL-arbeten",
+    "ces": "Švédsko – Elektroinstalační práce – Ramavtal avhjälpande EL-arbeten",
+    "dan": "Sverige – Udførelse af elektriske installationer – Ramavtal avhjälpande EL-arbeten",
+    "ron": "Suedia – Lucrări de instalaţii electrice – Ramavtal avhjälpande EL-arbeten",
+    "por": "Suécia – Obras de instalação eléctrica – Ramavtal avhjälpande EL-arbeten",
+    "slk": "Švédsko – Elektroinštalačné práce – Ramavtal avhjälpande EL-arbeten",
+    "fra": "Suède – Travaux d'équipement électrique – Ramavtal avhjälpande EL-arbeten",
+    "mlt": "L-Iżvezja – Xogħol ta’ l-istallazzjoni ta’ l-elettriku – Ramavtal avhjälpande EL-arbeten",
+    "deu": "Schweden – Installation von elektrischen Leitungen – Ramavtal avhjälpande EL-arbeten",
+    "lit": "Švedija – Elektros instaliacijos montavimo darbai – Ramavtal avhjälpande EL-arbeten",
+    "ita": "Svezia – Lavori di installazione di cablaggi – Ramavtal avhjälpande EL-arbeten",
+    "bul": "Швeция – Строителни и монтажни работи на електрически инсталации – Ramavtal avhjälpande EL-arbeten",
+    "slv": "Švedska – Elektroinštalacijska dela – Ramavtal avhjälpande EL-arbeten",
+    "eng": "Sweden – Electrical installation work – Ramavtal avhjälpande EL-arbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-17+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "776573-2026",
+   "estimated-value-lot": [
+    "115000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62106"
+   ],
+   "classification-cpv": [
+    "45214200",
+    "31625000",
+    "42511110",
+    "45212500",
+    "45260000",
+    "45262220",
+    "45262700",
+    "45310000",
+    "45315100",
+    "45330000",
+    "45331200",
+    "45432130",
+    "45443000",
+    "45214200",
+    "31625000",
+    "42511110",
+    "45212500",
+    "45260000",
+    "45262220",
+    "45262700",
+    "45310000",
+    "45315100",
+    "45330000",
+    "45331200",
+    "45432130",
+    "45443000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Skolfastigheter i Stockholm Aktiebolag (SISAB)"
+    ]
+   },
+   "publication-date": "2026-11-09+01:00",
+   "estimated-value-proc": "115000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/776573-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Iskolaépületek kivitelezése – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "lav": "Zviedrija – Skolu ēku celtniecības darbi – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "swe": "Sverige – Bygg- och anläggningsarbeten: skolbyggnader – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "gle": "An tSualainn – Construction work for school buildings – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "ell": "Σουηδία – Κατασκευαστικές εργασίες για σχολικά κτίρια – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "spa": "Suecia – Trabajos de construcción de edificios escolares – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "est": "Rootsi – Koolimajade ehitustööd – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "nld": "Zweden – Schoolgebouwen – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "fin": "Ruotsi – Koulurakennusten rakentamistyöt – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "pol": "Szwecja – Roboty budowlane w zakresie budowy obiektów budowlanych związanych ze szkolnictwem – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "hrv": "Švedska – Građevinski radovi na školskim zgradama – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "ces": "Švédsko – Stavební úpravy školních budov – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "dan": "Sverige – Bygge- og anlægsarbejde i forbindelse med skolebygninger – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "ron": "Suedia – Lucrări de construcţii de instituţii şcolare – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "por": "Suécia – Construção de edifícios escolares – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "slk": "Švédsko – Stavebné práce na stavbe budov škôl – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "fra": "Suède – Travaux de construction de bâtiments scolaires – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni għal bini ta’ l-iskejjel – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "deu": "Schweden – Bauarbeiten für Schulgebäude – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "lit": "Švedija – Mokyklų statybos darbai – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "ita": "Svezia – Lavori di costruzione di edifici scolastici – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "bul": "Швeция – Строителни и монтажни работи по общо изграждане на училища – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "slv": "Švedska – Gradbena dela na šolskih stavbah – Bromstensskolan hus B & C, ROT och verksamhetsanpassning",
+    "eng": "Sweden – Construction work for school buildings – Bromstensskolan hus B & C, ROT och verksamhetsanpassning"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2027-01-22+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "795738-2026",
+   "estimated-value-lot": [
+    "70000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62160"
+   ],
+   "classification-cpv": [
+    "45210000",
+    "45236000",
+    "45300000",
+    "45310000",
+    "45314000",
+    "45330000",
+    "45331000",
+    "45400000",
+    "45420000",
+    "45430000",
+    "51900000",
+    "45210000",
+    "45236000",
+    "45300000",
+    "45310000",
+    "45314000",
+    "45330000",
+    "45331000",
+    "45400000",
+    "45420000",
+    "45430000",
+    "51900000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Skolfastigheter i Stockholm Aktiebolag (SISAB)"
+    ]
+   },
+   "publication-date": "2026-11-16+01:00",
+   "estimated-value-proc": "70000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/795738-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Magasépítési munka – Winquists väg 24, ny förskola",
+    "lav": "Zviedrija – Ēku celtniecības darbi – Winquists väg 24, ny förskola",
+    "swe": "Sverige – Byggnadsanläggning – Winquists väg 24, ny förskola",
+    "gle": "An tSualainn – Building construction work – Winquists väg 24, ny förskola",
+    "ell": "Σουηδία – Εργασίες κατασκευής κτιρίων – Winquists väg 24, ny förskola",
+    "spa": "Suecia – Trabajos de construcción de inmuebles – Winquists väg 24, ny förskola",
+    "est": "Rootsi – Hoonete ehitustööd – Winquists väg 24, ny förskola",
+    "nld": "Zweden – Bouwen van gebouwen – Winquists väg 24, ny förskola",
+    "fin": "Ruotsi – Talonrakentaminen – Winquists väg 24, ny förskola",
+    "pol": "Szwecja – Roboty budowlane w zakresie budynków – Winquists väg 24, ny förskola",
+    "hrv": "Švedska – Radovi na podizanju zgrada – Winquists väg 24, ny förskola",
+    "ces": "Švédsko – Bytová výstavba – Winquists väg 24, ny förskola",
+    "dan": "Sverige – Byggearbejde – Winquists väg 24, ny förskola",
+    "ron": "Suedia – Lucrări de construcţii de clădiri – Winquists väg 24, ny förskola",
+    "por": "Suécia – Construção de edifícios – Winquists väg 24, ny förskola",
+    "slk": "Švédsko – Stavebné práce na stavbe budov – Winquists väg 24, ny förskola",
+    "fra": "Suède – Travaux de construction de bâtiments – Winquists väg 24, ny förskola",
+    "mlt": "L-Iżvezja – Xogħol tal-kostruzzjoni tal-bini – Winquists väg 24, ny förskola",
+    "deu": "Schweden – Bauleistungen im Hochbau – Winquists väg 24, ny förskola",
+    "lit": "Švedija – Pastatų statybos darbai – Winquists väg 24, ny förskola",
+    "ita": "Svezia – Lavori generali di costruzione di edifici – Winquists väg 24, ny förskola",
+    "bul": "Швeция – Строителни и монтажни работи по общо изграждане на сгради – Winquists väg 24, ny förskola",
+    "slv": "Švedska – Gradbena dela na stavbah – Winquists väg 24, ny förskola",
+    "eng": "Sweden – Building construction work – Winquists väg 24, ny förskola"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-30Z"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "801427-2026",
+   "estimated-value-lot": [
+    "85000000"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "fa-wo-rc"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://tendsign.com/doc.aspx?MeFormsNoticeId=102840"
+   ],
+   "classification-cpv": [
+    "45233220",
+    "45000000",
+    "45112000",
+    "45233220",
+    "45000000",
+    "45112000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Österåkers kommun"
+    ]
+   },
+   "publication-date": "2026-11-18+01:00",
+   "estimated-value-proc": "85000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/801427-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Közút burkolása – Ramavtal mark- och beläggningsarbeten",
+    "lav": "Zviedrija – Ceļu seguma būvdarbi – Ramavtal mark- och beläggningsarbeten",
+    "swe": "Sverige – Ytbehandling av vägar – Ramavtal mark- och beläggningsarbeten",
+    "gle": "An tSualainn – Surface work for roads – Ramavtal mark- och beläggningsarbeten",
+    "ell": "Σουηδία – Επιφανειακές εργασίες οδοστρώματος οδών – Ramavtal mark- och beläggningsarbeten",
+    "spa": "Suecia – Trabajos de pavimentación de carreteras – Ramavtal mark- och beläggningsarbeten",
+    "est": "Rootsi – Teede pindamistööd – Ramavtal mark- och beläggningsarbeten",
+    "nld": "Zweden – Wegdekwerkzaamheden voor wegen – Ramavtal mark- och beläggningsarbeten",
+    "fin": "Ruotsi – Teiden päällystystyöt – Ramavtal mark- och beläggningsarbeten",
+    "pol": "Szwecja – Roboty w zakresie nawierzchni dróg – Ramavtal mark- och beläggningsarbeten",
+    "hrv": "Švedska – Radovi na površinskom sloju cesta – Ramavtal mark- och beläggningsarbeten",
+    "ces": "Švédsko – Povrchová úprava silnic – Ramavtal mark- och beläggningsarbeten",
+    "dan": "Sverige – Belægningsarbejde på veje – Ramavtal mark- och beläggningsarbeten",
+    "ron": "Suedia – Lucrări de îmbrăcare a drumurilor – Ramavtal mark- och beläggningsarbeten",
+    "por": "Suécia – Pavimentação de estradas – Ramavtal mark- och beläggningsarbeten",
+    "slk": "Švédsko – Práce vrchnej stavby ciest – Ramavtal mark- och beläggningsarbeten",
+    "fra": "Suède – Travaux de revêtement de routes – Ramavtal mark- och beläggningsarbeten",
+    "mlt": "L-Iżvezja – Xogħlijiet fuq l-uċuħ għal toroq – Ramavtal mark- och beläggningsarbeten",
+    "deu": "Schweden – Oberbauarbeiten für Landstraßen – Ramavtal mark- och beläggningsarbeten",
+    "lit": "Švedija – Kelių dangos darbai – Ramavtal mark- och beläggningsarbeten",
+    "ita": "Svezia – Lavori di superficie per strade – Ramavtal mark- och beläggningsarbeten",
+    "bul": "Швeция – Строителни работи по полагане на пътна настилка на други пътища – Ramavtal mark- och beläggningsarbeten",
+    "slv": "Švedska – Dela na zgornjem ustroju cest – Ramavtal mark- och beläggningsarbeten",
+    "eng": "Sweden – Surface work for roads – Ramavtal mark- och beläggningsarbeten"
+   },
+   "buyer-city": {
+    "mul": [
+     "ÅKERSBERGA"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2027-01-12+02:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "812093-2026",
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://annonser.clira.io/upphandling/52bca0e8-fc40-49e6-86b6-260043f45061"
+   ],
+   "classification-cpv": [
+    "45443000",
+    "45443000"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Telge Inköp AB"
+    ]
+   },
+   "publication-date": "2026-11-23+01:00",
+   "estimated-value-proc": "200000000",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/812093-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Homlokzati munka – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "lav": "Zviedrija – Fasādes darbi – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "swe": "Sverige – Fasadarbeten – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "gle": "An tSualainn – Facade work – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "ell": "Σουηδία – Εργασίες πρόσοψης – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "spa": "Suecia – Trabajos de fachada – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "est": "Rootsi – Fassaaditööd – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "nld": "Zweden – Gevelwerkzaamheden – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "fin": "Ruotsi – Julkisivutyöt – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "pol": "Szwecja – Roboty elewacyjne – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "hrv": "Švedska – Fasadni radovi – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "ces": "Švédsko – Práce na fasádách – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "dan": "Sverige – Facadearbejde – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "ron": "Suedia – Lucrări de faţade – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "por": "Suécia – Obras de fachada – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "slk": "Švédsko – Fasádne práce – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "fra": "Suède – Travaux de façade – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "mlt": "L-Iżvezja – Xogħol fuq il-faċċata – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "deu": "Schweden – Fassadenarbeiten – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "lit": "Švedija – Fasadų įrengimo darbai – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "ita": "Svezia – Lavori di facciata – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "bul": "Швeция – Работи по фасади – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "slv": "Švedska – Dela na fasadi – Fasadrenovering och installation av FX-system Turkosen 11-12",
+    "eng": "Sweden – Facade work – Fasadrenovering och installation av FX-system Turkosen 11-12"
+   },
+   "buyer-city": {
+    "mul": [
+     "Södertälje"
+    ]
+   }
+  },
+  {
+   "place-of-performance": [
+    "SE110",
+    "SWE",
+    "SE110",
+    "SWE"
+   ],
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-29+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "812503-2026",
+   "estimated-value-lot": [
+    "20"
+   ],
+   "estimated-value-cur-lot": [
+    "SEK"
+   ],
+   "framework-agreement-lot": [
+    "none"
+   ],
+   "estimated-value-cur-proc": "SEK",
+   "document-url-lot": [
+    "https://www.kommersannons.se/stockholm/Notice/NoticeDispatch.aspx?NoticeId=62199"
+   ],
+   "classification-cpv": [
+    "45400000",
+    "39293300",
+    "45212200",
+    "45400000",
+    "39293300",
+    "45212200"
+   ],
+   "buyer-name": {
+    "swe": [
+     "Fastighetskontoret"
+    ]
+   },
+   "publication-date": "2026-11-23+01:00",
+   "estimated-value-proc": "20",
+   "links": {
+    "html": {
+     "SWE": "https://ted.europa.eu/sv/notice/-/detail/812503-2026"
+    }
+   },
+   "notice-title": {
+    "hun": "Svédország – Épületbefejezési munka – Nybyggnation multihall Enskede IP",
+    "lav": "Zviedrija – Ēku celtniecības pabeigšanas darbi – Nybyggnation multihall Enskede IP",
+    "swe": "Sverige – Färdigställande byggnadsarbeten – Nybyggnation multihall Enskede IP",
+    "gle": "An tSualainn – Building completion work – Nybyggnation multihall Enskede IP",
+    "ell": "Σουηδία – Εργασίες αποπεράτωσης κτιρίων – Nybyggnation multihall Enskede IP",
+    "spa": "Suecia – Acabado de edificios – Nybyggnation multihall Enskede IP",
+    "est": "Rootsi – Ehituse viimistlustööd – Nybyggnation multihall Enskede IP",
+    "nld": "Zweden – Afwerking van gebouwen – Nybyggnation multihall Enskede IP",
+    "fin": "Ruotsi – Rakennusten lopputyöt – Nybyggnation multihall Enskede IP",
+    "pol": "Szwecja – Roboty wykończeniowe w zakresie obiektów budowlanych – Nybyggnation multihall Enskede IP",
+    "hrv": "Švedska – Završni građevinski radovi – Nybyggnation multihall Enskede IP",
+    "ces": "Švédsko – Práce při dokončování budov – Nybyggnation multihall Enskede IP",
+    "dan": "Sverige – Færdiggørelse af bygninger – Nybyggnation multihall Enskede IP",
+    "ron": "Suedia – Lucrări de finisare a construcţiilor – Nybyggnation multihall Enskede IP",
+    "por": "Suécia – Obras de acabamento de edifícios – Nybyggnation multihall Enskede IP",
+    "slk": "Švédsko – Kompletizačné (dokončovacie) práce – Nybyggnation multihall Enskede IP",
+    "fra": "Suède – Travaux de parachèvement de bâtiment – Nybyggnation multihall Enskede IP",
+    "mlt": "L-Iżvezja – Xogħol tat-tkomplija ta’ bini – Nybyggnation multihall Enskede IP",
+    "deu": "Schweden – Baufertigstellung – Nybyggnation multihall Enskede IP",
+    "lit": "Švedija – Pastato užbaigimo darbai – Nybyggnation multihall Enskede IP",
+    "ita": "Svezia – Lavori di completamento degli edifici – Nybyggnation multihall Enskede IP",
+    "bul": "Швeция – Довършителни строителни работи – Nybyggnation multihall Enskede IP",
+    "slv": "Švedska – Zaključna gradbena dela – Nybyggnation multihall Enskede IP",
+    "eng": "Sweden – Building completion work – Nybyggnation multihall Enskede IP"
+   },
+   "buyer-city": {
+    "mul": [
+     "Stockholm"
+    ]
+   }
+  }
+ ],
+ "totalNoticeCount": 11
+}
