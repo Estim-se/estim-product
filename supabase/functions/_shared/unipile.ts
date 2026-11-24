@@ -123,8 +123,9 @@ export async function createAuthLink(args: { state: string; redirectUri: string;
 export function parseAccount(data: unknown): { email: string; provider: MailProvider; status: string } {
   if (!isObj(data)) throw new Error("unipile_invalid_account");
   const provider = mapProvider(data.provider);
-  // v2 has no dedicated address field: `name` is the public identifier, i.e. the address for mail accounts.
-  const email = (str(data.name, 320) ?? "").trim().toLowerCase();
+  // v2 has no documented address field. A real Gmail account returns the address in `user_id` (checked 2026-11-25);
+  // `name` is the documented "public identifier" and is kept as a fallback.
+  const email = [data.user_id, data.name].map((v) => (str(v, 320) ?? "").trim().toLowerCase()).find((v) => EMAIL_RE.test(v)) ?? "";
   if (!provider) throw new Error("unipile_unsupported_account");
   if (!EMAIL_RE.test(email)) throw new Error("unipile_no_email");
   return { email, provider, status: str(data.status, 40) ?? "" };

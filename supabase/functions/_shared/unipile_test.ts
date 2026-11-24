@@ -63,6 +63,9 @@ Deno.test("accounts: provider mapping and the mailbox address come from Unipile"
   assertEquals(mapProvider("imap"), "imap");
   assertEquals(mapProvider("whatsapp"), null);
   assertEquals(parseAccount({ provider: "outlook", name: "Info@Foretag.se", status: "running" }), { email: "info@foretag.se", provider: "microsoft", status: "running" });
+  // shape of a real Gmail account (2026-11-25): the address is in user_id
+  assertEquals(parseAccount({ object: "Account", user_id: "Anna@Example.com", id: "acc_1", status: "running", provider: "google" }), { email: "anna@example.com", provider: "google", status: "running" });
+  assertEquals(parseAccount({ provider: "google", user_id: "not-an-email", name: "anna@example.com" }).email, "anna@example.com");
   assertThrows(() => parseAccount({ provider: "linkedin", name: "x@y.se" }), "unipile_unsupported_account");
   assertThrows(() => parseAccount({ provider: "google", name: "Anna Andersson" }), "unipile_no_email");
 });
