@@ -31,12 +31,12 @@ Kör allt från repots rotmapp. Ha tre terminaler öppna.
    cloudflared tunnel --url http://localhost:8787
    ```
 
-3. **Terminal 3: skapa webhooken**, med tunneladressen. Lägg värdet `secret` i `.env` som `UNIPILE_WEBHOOK_SECRET`
-   och starta om mottagaren i terminal 1.
+3. **Skapa webhooken i Unipiles dashboard** (en vanlig API-nyckel, Account API Key, får inte skapa webhooks):
+   Webhooks → Add endpoint → URL `https://<tunnel>.trycloudflare.com/webhook`, händelserna `email.new`,
+   `email.new.bounce`, `account.add`, `account.reconnect`, `account.status.disconnected`, `account.status.running`
+   och `account.remove`. Lägg endpointens secret i `.env` som `UNIPILE_WEBHOOK_SECRET` och starta om mottagaren i terminal 1.
 
-   ```powershell
-   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts webhook https://<tunnel>.trycloudflare.com
-   ```
+   Har du en Service Key kan skriptet göra samma sak: `smoke.ts webhook https://<tunnel>.trycloudflare.com`.
 
 4. **Koppla din Gmail.** Öppna länken som skrivs ut och logga in.
 
