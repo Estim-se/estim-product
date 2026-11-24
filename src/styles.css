@@ -889,3 +889,27 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-aside .tender-list-row .grow{min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
 .tender-aside .tender-list-row .grow>*{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
 .tender-aside .tender-list-row .chip{flex:none}
+
+/* Tender workspace visual refresh (mockup-inspired, presentation only) */
+.tender-workspace{--tw-accent:oklch(0.58 0.12 160);--tw-soft:color-mix(in oklab,var(--foreground) 4%,var(--background));font-family:"Instrument Sans",system-ui,sans-serif;gap:0;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--background)}
+.tender-workspace .tender-aside{border:0;border-right:1px solid var(--border);border-radius:0;background:var(--tw-soft);padding:20px 14px;top:0;max-height:none;min-height:calc(100vh - 140px)}
+.tender-workspace .tender-aside .tender-toolbar{border-bottom:0;padding-bottom:12px}
+.tender-workspace .tender-aside input{border-radius:10px;background:var(--background)}
+.tender-workspace .tender-aside .tender-list-row{padding:10px 12px;font-size:15px}
+.tender-workspace .tender-aside .tender-list-row:hover{background:color-mix(in oklab,var(--foreground) 5%,transparent)}
+.tender-workspace .tender-list-row.on{background:color-mix(in oklab,var(--foreground) 7%,transparent);font-weight:500}
+.tender-workspace .tender-main{padding:24px 32px}
+.tender-workspace .tender-detail h2{font-family:"Instrument Sans",system-ui,sans-serif;font-weight:600;font-size:28px;letter-spacing:-.01em}
+.tender-workspace .tender-body{grid-template-columns:1fr;gap:20px}
+.tender-workspace .tender-subnav{position:static;flex-direction:row;gap:28px;border-bottom:1px solid var(--border);overflow-x:auto}
+.tender-workspace .tender-subnav-item{border-radius:0;padding:12px 0;gap:8px;font-size:15px;font-weight:400;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent}
+.tender-workspace .tender-subnav-item:hover{background:transparent}
+.tender-workspace .tender-subnav-item.on{background:transparent;color:var(--foreground);font-weight:500;border-bottom-color:var(--tw-accent)}
+.tender-workspace .tender-subnav-count{background:var(--tw-soft);border-radius:999px;padding:1px 7px}
+.tender-workspace .tender-kpi,.tender-workspace .tender-todo{border-radius:12px;box-shadow:0 1px 2px color-mix(in oklab,var(--foreground) 6%,transparent)}
+.tender-workspace .tender-kpi b{font-weight:600}
+.tender-workspace .tender-filter,.tender-workspace .tender-content input[type=search],.tender-workspace .tender-content input[type=text]{border-radius:10px;background:var(--tw-soft);border:1px solid var(--border)}
+.tender-workspace .tender-panel table{border-radius:12px;overflow:hidden}
+.tender-workspace .tender-panel table thead tr{background:var(--tw-soft)}
+.tender-workspace .tender-panel table th{text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted-foreground)}
+@media (max-width:1024px){.tender-workspace .tender-aside{border-right:0;border-bottom:1px solid var(--border);min-height:0}.tender-workspace .tender-main{padding:18px}}
