@@ -847,7 +847,6 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .tender-aside .tender-list{display:flex;flex-direction:column;gap:2px}
 .tender-aside .tender-file-item{gap:0}
 .tender-aside .tender-file-item>.btn-sm{display:none}
-.tender-aside .tender-file-item:hover>.btn-sm,.tender-aside .tender-file-item:focus-within>.btn-sm{display:inline-flex}
 .tender-aside .tender-list-row{border-radius:10px;padding:8px 10px}
 .tender-aside .tender-list-row svg{width:18px;height:18px}
 .tender-aside .tender-list-row .chip{font-size:11px}
@@ -883,3 +882,10 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-risk-row .grow{min-width:0;display:flex;flex-direction:column;gap:2px}
 .tender-risk-sub{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
 .tender-sheet{position:fixed;top:0;right:0;bottom:0;z-index:60;width:min(520px,100vw);overflow:auto;background:var(--card);border-left:1px solid var(--border);box-shadow:-20px 0 40px -20px color-mix(in oklab,var(--foreground) 30%,transparent)}
+
+.tender-aside .tender-file-item{width:100%}
+.tender-aside .tender-list-row{flex:1;min-width:0;width:100%;display:flex;align-items:center;gap:8px}
+.tender-aside .tender-list-row>svg{display:none}
+.tender-aside .tender-list-row .grow{min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
+.tender-aside .tender-list-row .grow>*{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
+.tender-aside .tender-list-row .chip{flex:none}
