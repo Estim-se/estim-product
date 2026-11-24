@@ -25,6 +25,15 @@ const need = (value: string | undefined, what: string): string => {
   if (!value) { console.error(`Saknar ${what}. Kör utan argument för hjälp.`); Deno.exit(1); }
   return value;
 };
+/** The tunnel address, refusing the README's placeholder. */
+const publicUrl = (value: string | undefined): string => {
+  const url = need(value, "publik adress (tunneladressen)").replace(/\/$/, "");
+  if (/[<>]/.test(url) || !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(url)) {
+    console.error(`"${url}" är inte en riktig adress. Använd adressen som cloudflared skriver ut, t.ex. https://red-apple-tree.trycloudflare.com`);
+    Deno.exit(1);
+  }
+  return url;
+};
 const show = (title: string, value: unknown) => console.log(`\n== ${title} ==\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
 async function raw(path: string, init?: RequestInit): Promise<{ status: number; contentType: string; body: unknown }> {
   const res = await unipile.unipileFetch(path, init);
@@ -35,12 +44,19 @@ async function raw(path: string, init?: RequestInit): Promise<{ status: number; 
 
 switch (command) {
   case "link": {
-    const base = need(args[0], "publik adress (tunneladressen)").replace(/\/$/, "");
+    const base = publicUrl(args[0]);
     const provider = args[1] === "google" || args[1] === "microsoft" ? args[1] : undefined;
     const state = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
-    const link = await unipile.createAuthLink({ state, redirectUri: `${base}/klar`, provider, minutes: 30 });
-    show("Öppna länken och logga in", link);
-    show("Vår state (ska komma tillbaka i account.add och i adressen efter inloggning)", state);
+    try {
+      const link = await unipile.createAuthLink({ state, redirectUri: `${base}/klar`, provider, minutes: 30 });
+      show("Öppna länken och logga in", link);
+      show("Vår state (ska komma tillbaka i account.add och i adressen efter inloggning)", state);
+    } catch (e) {
+      // The app hides Unipile's error text; here we repeat the same request to see why it was refused.
+      const body = { providers: provider === "google" ? "google" : provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: `${base}/klar`, expires_on: new Date(Date.now() + 30 * 60_000).toISOString(), state };
+      show(`Unipile vägrade (${(e as Error).message}). Skickat`, body);
+      show("Unipiles svar", (await raw("/auth/link", { method: "POST", body: JSON.stringify(body) })).body);
+    }
     break;
   }
   case "account": {
@@ -89,7 +105,7 @@ switch (command) {
     break;
   }
   case "webhook": {
-    const base = need(args[0], "publik adress (tunneladressen)").replace(/\/$/, "");
+    const base = publicUrl(args[0]);
     const r = await raw("/webhooks/endpoints/", { method: "POST", body: JSON.stringify({ url: `${base}/webhook`, trigger_events: EVENTS, description: "Estim lokalt test" }) });
     show(`Rått svar (${r.status})`, r.body);
     console.log("\nLägg värdet i \"secret\" som UNIPILE_WEBHOOK_SECRET i scripts/unipile/.env och starta om webhook-servern.");
