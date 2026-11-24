@@ -42,7 +42,9 @@ export function classifyWatchTender(cpv: string[], title = ''): WatchKind | null
   const [main = '', ...rest] = cpv;
   const elCode = cpv.some(c => c.startsWith('4531')), elTitle = EL_TITLE.test(title), electrical = elCode || elTitle;
   if (starts(main, EL)) return 'el';
-  if (starts(main, CIVIL)) return null;
+  // Civil works are left out unless electrical work or lighting is named (title or code): then shown for checking,
+  // as one tender too many is better than a relevant one missed.
+  if (starts(main, CIVIL)) return electrical ? 'bygg_kontrollera' : null;
   // Another trade (VVS, painting, roofing, machine hire …) is not shown unless it states electrical work.
   if (starts(main, TRADE)) return electrical ? 'bygg_el' : null;
   const general = GENERAL.includes(main);
@@ -51,7 +53,7 @@ export function classifyWatchTender(cpv: string[], title = ''): WatchKind | null
       // A general code decides nothing: civil codes or civil words in the title, or another trade's title without
       // electrical work, mean the tender is not for an electrical contractor.
       const building = rest.some(c => starts(c, BUILDING));
-      if (!elCode && (rest.some(c => starts(c, CIVIL)) && !building || CIVIL_TITLE.test(title) || WATER_TITLE.test(title))) return null;
+      if (!elCode && (rest.some(c => starts(c, CIVIL)) && !building || CIVIL_TITLE.test(title) || WATER_TITLE.test(title))) return elTitle ? 'bygg_kontrollera' : null;
       // Electrical work in the title of a general contract that names no building work is an electrical tender.
       if (elTitle && (main === '45300000' || !building)) return 'el';
     }

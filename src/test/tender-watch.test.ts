@@ -21,7 +21,12 @@ describe('anbudsbevakning (TED)', () => {
   it('leaves out civil works under a general main code, and other trades without electrical work (saved TED notices)', () => {
     const kindOf = (id: string) => { const n = normaliseWatchNotice(notices.find(x => x['publication-number'] === id)!)!; return classifyWatchTender(n.cpv, n.title); };
     // Civil works with the general code 45000000: ground, asphalt, streets and parks, an airfield.
-    for (const id of ['752317-2026', '753186-2026', '706238-2026', '716680-2026', '792107-2026']) expect([id, kindOf(id)]).toEqual([id, null]);
+    for (const id of ['752317-2026', '753186-2026', '706238-2026', '716680-2026']) expect([id, kindOf(id)]).toEqual([id, null]);
+    // Civil works that name lighting or electrical work are shown for checking (one too many rather than one missed).
+    expect(kindOf('792107-2026')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45233220', '45000000'], 'Mark- och elarbeten, ny gång- och cykelväg med belysning')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45000000', '45232200'], 'Markarbeten för el i kvarteret')).toBe('bygg_kontrollera');
+    expect(classifyWatchTender(['45233220', '45000000'], 'Ramavtal mark- och beläggningsarbeten')).toBeNull();
     // Other trades: heating and sanitation, VS, cooling, heat pumps, painting, roofing, facade, machine hire.
     for (const id of ['769203-2026', '728524-2026', '750378-2026', '684109-2026', '671790-2026', '689644-2026', '680702-2026', '788767-2026']) expect([id, kindOf(id)]).toEqual([id, null]);
     // Still shown: electrical work under the general installation code, buildings with and without stated electrical work.
