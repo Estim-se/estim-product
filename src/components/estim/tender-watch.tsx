@@ -3,8 +3,8 @@ import { useServerFn } from '@tanstack/react-start';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, RefreshCw, ScanText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getTenderWatch, refreshTenderWatch, saveTenderWatchRegions, updateTenderWatchHit, type TenderWatchHitRow } from '@/lib/tender-watch.functions';
-import { daysLeft, formatWatchValue, SWEDISH_REGIONS, WATCH_KIND_LABEL, type WatchKind } from '@/lib/tender-watch';
+import { getTenderWatch, markTenderWatchSeen, refreshTenderWatch, saveTenderWatchRegions, updateTenderWatchHit, type TenderWatchHitRow } from '@/lib/tender-watch.functions';
+import { daysLeft, deadlinePassed, formatWatchValue, SWEDISH_REGIONS, visibleWatchHits, WATCH_KIND_LABEL, type WatchKind } from '@/lib/tender-watch';
 
 // "Hittade anbud": tenders found on TED for the company's regions (Anbudsbevakning, flag ANBUD_BEVAKNING). Starting an
 // analysis opens the existing "Nytt anbud" dialog with the name filled in; the analysis itself is unchanged.
@@ -16,10 +16,13 @@ export function useTenderWatchEnabled(company: string | undefined, real: boolean
 const ORDER: WatchKind[] = ['el', 'bygg_el', 'bygg_kontrollera'];
 export function TenderWatch({ company, onStart }: { company: string | undefined; onStart: (hit: TenderWatchHitRow) => void }) {
   const queryClient = useQueryClient();
-  const load = useServerFn(getTenderWatch), refresh = useServerFn(refreshTenderWatch), saveRegions = useServerFn(saveTenderWatchRegions), update = useServerFn(updateTenderWatchHit);
+  const load = useServerFn(getTenderWatch), refresh = useServerFn(refreshTenderWatch), saveRegions = useServerFn(saveTenderWatchRegions), update = useServerFn(updateTenderWatchHit), markSeen = useServerFn(markTenderWatchSeen);
   const watch = useQuery({ queryKey: ['tender-watch', company], queryFn: () => load(), enabled: !!company, staleTime: 60000 });
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [editing, setEditing] = useState(false), [regions, setRegions] = useState<string[]>([]);
   const [kind, setKind] = useState<WatchKind | 'alla'>('alla');
+  const [showPassed, setShowPassed] = useState(false);
+  // Hits that were new when the list was opened keep their "Ny" mark on this visit; in the database they become seen.
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const refreshed = useRef(false);
   const data = watch.data && watch.data.enabled && watch.data.ready ? watch.data : null;
   async function fetchNow(force: boolean) {
@@ -33,6 +36,12 @@ export function TenderWatch({ company, onStart }: { company: string | undefined;
   }
   // Daily fetch when the list is opened (the server skips it if the last fetch is less than 20 hours old).
   useEffect(() => { if (data && !refreshed.current) { refreshed.current = true; void fetchNow(false); } }, [!!data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unseen = data?.hits.filter(h => h.status === 'ny').map(h => h.id) ?? [];
+  useEffect(() => {
+    if (!unseen.length) return;
+    setNewIds(old => new Set([...old, ...unseen]));
+    void markSeen().then(() => queryClient.invalidateQueries({ queryKey: ['tender-watch', company] })).catch(() => undefined);
+  }, [unseen.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
   async function hide(hit: TenderWatchHitRow) {
     try { await update({ data: { id: hit.id, status: 'avvisad' } }); await queryClient.invalidateQueries({ queryKey: ['tender-watch', company] }); }
     catch { setMessage('Anbudet kunde inte döljas.'); }
@@ -48,7 +57,9 @@ export function TenderWatch({ company, onStart }: { company: string | undefined;
   if (watch.data?.enabled && !watch.data.ready) return <p role="status" className="muted mt24">{watch.data.message}</p>;
   if (!data) return null;
   const now = new Date();
-  const hits = data.hits.filter(h => kind === 'alla' || h.kind === kind).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || (a.deadline ?? '9').localeCompare(b.deadline ?? '9'));
+  const ofKind = data.hits.filter(h => kind === 'alla' || h.kind === kind);
+  const hits = visibleWatchHits(ofKind, { showPassed, now });
+  const passed = ofKind.filter(h => deadlinePassed(h.deadline, now)).length;
   const regionNames = data.regions.map(c => SWEDISH_REGIONS.find(r => r.code === c)?.name ?? c).join(', ');
   return <section className="mt16 tender-watch">
     <div className="row between wrap">
@@ -65,19 +76,20 @@ export function TenderWatch({ company, onStart }: { company: string | undefined;
     <div role="tablist" aria-label="Typ av anbud" className="row wrap mt16">
       {(['alla', ...ORDER] as const).map(k => <Button key={k} role="tab" aria-selected={kind === k} variant="prototype" className={`btn btn-sm ${kind === k ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setKind(k)}>{k === 'alla' ? `Alla (${data.hits.length})` : `${WATCH_KIND_LABEL[k]} (${data.hits.filter(h => h.kind === k).length})`}</Button>)}
     </div>
+    <label className="row small mt12"><input type="checkbox" checked={showPassed} onChange={e => setShowPassed(e.target.checked)} />Visa passerade{passed ? ` (${passed})` : ''}</label>
     {message && <p role="status" className="small mt12">{message}</p>}
     {!hits.length ? <p className="muted mt24">Inga hittade anbud ännu.</p> : <div className="tender-list mt16">{hits.map(h => {
-      const left = daysLeft(h.deadline, now);
+      const left = daysLeft(h.deadline, now), over = deadlinePassed(h.deadline, now);
       return <div key={h.id} className="row tender-file-item tender-watch-hit">
         <span className="grow col">
-          <span className="row wrap"><b>{h.title}</b><span className="chip">{WATCH_KIND_LABEL[h.kind]}</span>{h.framework && <span className="chip">Ramavtal</span>}{h.status === 'analys' && <span className="chip">Analys startad</span>}</span>
+          <span className="row wrap">{(newIds.has(h.id) || h.status === 'ny') && <span className="chip chip-lime tender-watch-new">Ny</span>}<b>{h.title}</b><span className="chip">{WATCH_KIND_LABEL[h.kind]}</span>{h.framework && <span className="chip">Ramavtal</span>}{h.status === 'analys' && <span className="chip">Analys startad</span>}</span>
           <span className="small">{h.buyer}{h.city ? ` · ${h.city}` : ''}</span>
           <span className="small muted">{h.deadline ? `Anbudstid ${h.deadline}${left !== null ? left >= 0 ? ` (${left} dagar kvar)` : ' (passerad)' : ''}` : 'Anbudstid ej angiven'} · {formatWatchValue(h.value, h.currency)}{h.framework ? ' (takvärde för ramavtalet)' : ''} · CPV {h.cpv[0] ?? '–'}</span>
         </span>
         <span className="row wrap">
           {h.documents_url && <a className="btn btn-ghost btn-sm" href={h.documents_url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />Underlaget</a>}
           <a className="btn btn-ghost btn-sm" href={h.notice_url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />TED</a>
-          <Button variant="prototype" className="btn btn-primary btn-sm" onClick={() => onStart(h)}><ScanText size={16} />Starta analys</Button>
+          {!over && <Button variant="prototype" className="btn btn-primary btn-sm" onClick={() => onStart(h)}><ScanText size={16} />Starta analys</Button>}
           <Button variant="prototype" className="btn btn-ghost btn-sm" aria-label={`Dölj ${h.title}`} onClick={() => void hide(h)}><X size={16} />Dölj</Button>
         </span>
       </div>;

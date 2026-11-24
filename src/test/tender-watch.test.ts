@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import saved from './fixtures/ted-search-sweden.json';
-import { classifyWatchTender, daysLeft, DEFAULT_WATCH_REGIONS, formatWatchValue, inWatchRegions, normaliseWatchNotice, tenderWatchQuery, watchHits, watchSince } from '@/lib/tender-watch';
+import { classifyWatchTender, daysLeft, deadlinePassed, visibleWatchHits, DEFAULT_WATCH_REGIONS, formatWatchValue, inWatchRegions, normaliseWatchNotice, tenderWatchQuery, watchHits, watchSince } from '@/lib/tender-watch';
 import { fetchTedNotices } from '@/lib/tender-watch-ted.server';
 
 // Saved TED search responses (public notices, reusable with the source stated); no network calls in these tests.
@@ -54,8 +54,17 @@ describe('anbudsbevakning (TED)', () => {
     const now = new Date('2026-11-24T08:00:00Z');
     expect(watchSince(null, now)).toBe('20260929');
     expect(watchSince('2026-11-23T08:00:00Z', now)).toBe('20261122');
-    expect(daysLeft('2026-11-30', now)).toBe(7);
+    expect(daysLeft('2026-11-30', now)).toBe(6); expect(daysLeft('2026-11-24', now)).toBe(0); expect(daysLeft('2026-11-23', now)).toBe(-1);
     expect(normaliseWatchNotice({ 'publication-number': 'nonsense' })).toBeNull();
+  });
+  it('hides tenders whose deadline has passed unless asked for, nearest deadline first and tenders without a deadline last', () => {
+    const now = new Date('2026-11-24T08:00:00Z');
+    const hit = (id: string, deadline: string | null, published = '2026-11-01') => ({ id, deadline, published });
+    const hits = [hit('ingen', null), hit('senare', '2027-01-22'), hit('passerad', '2026-11-20'), hit('idag', '2026-11-24'), hit('snart', '2026-12-03', '2026-11-02'), hit('snart-tidigare', '2026-12-03', '2026-10-01')];
+    expect(visibleWatchHits(hits, { showPassed: false, now }).map(h => h.id)).toEqual(['idag', 'snart', 'snart-tidigare', 'senare', 'ingen']);
+    expect(visibleWatchHits(hits, { showPassed: true, now }).map(h => h.id)).toEqual(['passerad', 'idag', 'snart', 'snart-tidigare', 'senare', 'ingen']);
+    expect(deadlinePassed('2026-11-23', now)).toBe(true); expect(deadlinePassed('2026-11-24', now)).toBe(false); expect(deadlinePassed(null, now)).toBe(false);
+    expect(hits.map(h => h.id)[0]).toBe('ingen');
   });
   it('pages through the TED search with the given fetch (saved responses, no network)', async () => {
     const pages = [{ notices: Array.from({ length: 250 }, (_, i) => ({ 'publication-number': `${i}-2026` })) }, saved];

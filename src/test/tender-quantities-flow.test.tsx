@@ -24,14 +24,19 @@ vi.mock('@/lib/tender-job.functions', () => ({
 }));
 vi.mock('@/lib/tender-insights.functions', () => ({ getTenderInsights: async () => fixture.hasInsights ? {status:'analysed',result:{risks:[],questions:[]}} : null }));
 vi.mock('@/lib/tender-quantities.functions', () => ({ getTenderQuantities: async () => null }));
-const watch = vi.hoisted(() => ({ enabled: false, linked: [] as unknown[] }));
+const watch = vi.hoisted(() => {
+  const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const hit = (id: string, title: string, deadline: string | null, status: string) => ({ id: `00000000-0000-4000-8000-0000000000${id}`, publication_number: `7957${id}-2026`, kind: 'bygg_el', title, buyer: 'SISAB', city: 'Stockholm', places: ['SE110'], cpv: ['45210000'], deadline, value: 70000000, currency: 'SEK', framework: false, published: '2026-11-10', documents_url: 'https://www.kommersannons.se/x', notice_url: 'https://ted.europa.eu/sv/notice/-/detail/795738-2026', status, tender_id: null });
+  return { enabled: false, linked: [] as unknown[], seen: 0, hits: () => [hit('71', 'Winquists väg 24, ny förskola', day(30), 'ny'), hit('72', 'Ramavtal utan frist', null, 'sedd'), hit('73', 'Passerad skola', day(-3), 'sedd'), hit('74', 'Snart stänger', day(5), 'sedd')] };
+});
 vi.mock('@/lib/tender-watch.functions', () => ({
-  getTenderWatch: async () => watch.enabled ? { enabled: true, ready: true, regions: ['SE110'], last_fetched_at: '2026-11-24T08:00:00Z', hits: [{ id: '00000000-0000-4000-8000-000000000071', publication_number: '795738-2026', kind: 'bygg_el', title: 'Winquists väg 24, ny förskola', buyer: 'SISAB', city: 'Stockholm', places: ['SE110'], cpv: ['45210000'], deadline: '2027-01-22', value: 70000000, currency: 'SEK', framework: false, published: '2026-11-10', documents_url: 'https://www.kommersannons.se/x', notice_url: 'https://ted.europa.eu/sv/notice/-/detail/795738-2026', status: 'ny', tender_id: null }] } : { enabled: false },
+  getTenderWatch: async () => watch.enabled ? { enabled: true, ready: true, regions: ['SE110'], last_fetched_at: '2026-11-24T08:00:00Z', hits: watch.hits().map(h => watch.seen && h.status === 'ny' ? { ...h, status: 'sedd' } : h) } : { enabled: false },
+  markTenderWatchSeen: async () => { watch.seen++; return { seen: 1 }; },
   refreshTenderWatch: async () => ({ fetched: false, added: 0 }), saveTenderWatchRegions: async () => ({ ok: true }),
   updateTenderWatchHit: async (v: unknown) => { watch.linked.push(v); return { ok: true }; },
 }));
 vi.mock('@/lib/tender-calculation.functions', () => ({ getTenderCalculationSettings: async () => null, getTenderCalculationMatches: async () => null, saveTenderCalculationSettings: vi.fn(), saveTenderCalculationMatches: vi.fn() }));
-afterEach(() => { watch.enabled = false; watch.linked = []; cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.riskReruns=[];fixture.hasInsights=false;fixture.job=null; });
+afterEach(() => { watch.enabled = false; watch.linked = []; watch.seen = 0; cleanup(); fixture.starts=[]; fixture.recalculations=[];fixture.riskReruns=[];fixture.hasInsights=false;fixture.job=null; });
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry:false }, mutations: { retry:false } } });
   render(<QueryClientProvider client={qc}><TendersPage /></QueryClientProvider>);
@@ -72,8 +77,16 @@ it('shows Hittade anbud only when the tender watch is enabled, and Starta analys
   renderPage();
   fireEvent.click(await screen.findByRole('tab', { name: 'Hittade anbud' }));
   expect(await screen.findByText('Winquists väg 24, ny förskola')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Underlaget' }).getAttribute('href')).toBe('https://www.kommersannons.se/x');
-  fireEvent.click(screen.getByRole('button', { name: 'Starta analys' }));
+  // Nearest deadline first, no deadline last, the passed one hidden; the new one keeps its Ny mark and is marked seen.
+  const titles = () => screen.getAllByText(/förskola|Ramavtal utan frist|Passerad skola|Snart stänger/).map(e => e.textContent);
+  expect(titles()).toEqual(['Snart stänger', 'Winquists väg 24, ny förskola', 'Ramavtal utan frist']);
+  await waitFor(() => expect(watch.seen).toBe(1));
+  expect(await screen.findByText('Ny')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Visa passerade (1)' }));
+  expect(titles()).toEqual(['Passerad skola', 'Snart stänger', 'Winquists väg 24, ny förskola', 'Ramavtal utan frist']);
+  expect(screen.getAllByRole('button', { name: 'Starta analys' })).toHaveLength(3);
+  expect(screen.getAllByRole('link', { name: 'Underlaget' })[0]!.getAttribute('href')).toBe('https://www.kommersannons.se/x');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Starta analys' })[1]!);
   expect((await screen.findByLabelText('Namn') as HTMLInputElement).value).toBe('Winquists väg 24, ny förskola');
-  expect(screen.getByText(/Hittat anbud: SISAB, anbudstid 2027-01-22/)).toBeTruthy();
+  expect(screen.getByText(/Hittat anbud: SISAB, anbudstid \d{4}-\d{2}-\d{2}/)).toBeTruthy();
 });

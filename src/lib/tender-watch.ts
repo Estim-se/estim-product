@@ -98,8 +98,16 @@ export function watchSince(lastFetched: string | null, now: Date) {
   return from.toISOString().slice(0, 10).replace(/-/g, '');
 }
 export function daysLeft(deadline: string | null, now: Date) {
+  // Whole days between today and the deadline day: 0 on the deadline day, negative once it has passed.
   if (!deadline) return null;
-  return Math.ceil((new Date(`${deadline}T23:59:59Z`).getTime() - now.getTime()) / 86400000);
+  return Math.round((Date.parse(deadline.slice(0, 10)) - Date.parse(now.toISOString().slice(0, 10))) / 86400000);
+}
+export const deadlinePassed = (deadline: string | null, now: Date) => { const left = daysLeft(deadline, now); return left !== null && left < 0; };
+// The list as shown: tenders whose deadline has passed are hidden unless asked for; nearest deadline first, tenders
+// without a deadline last (newest publication first among equal deadlines).
+export function visibleWatchHits<T extends { deadline: string | null; published: string }>(hits: T[], options: { showPassed: boolean; now: Date }): T[] {
+  return hits.filter(h => options.showPassed || !deadlinePassed(h.deadline, options.now))
+    .sort((a, b) => (a.deadline ?? '9999-12-31').localeCompare(b.deadline ?? '9999-12-31') || b.published.localeCompare(a.published));
 }
 export function formatWatchValue(value: number | null, currency: string | null) {
   if (!value) return 'Värde ej angivet';
