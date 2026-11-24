@@ -51,7 +51,18 @@ describe('the catalog binding and calculation do not depend on wording', () => {
     const qty = (p: string) => rows.find(r => r.post === p)?.quantity;
     expect([qty('Håltagning och tätning'), qty('Tätning av håltagning i våtrum'), qty('Håltagning i allmänna utrymmen')]).toEqual(['0', '6', '1']);
     expect([qty('Debiteringsmätare per lägenhet'), qty('Mätartavla, mätarblock'), qty('Mätartavla lokal')]).toEqual(['5', '0', '2']);
-  });  it('a one-off requirement on a per-apartment catalog type that already has its own per-apartment row is not counted again', () => {
+    // A row at 0 is never Bekräftad.
+    expect(rows.find(r => r.post === 'Mätartavla, mätarblock')?.level).toBe('Antagen');
+  });  it('a post for apartments and premises counts the premises part when the type has only its own apartment rows', () => {
+    const item = (post: string, quantity: string, count_unit: string) => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level: 'Bekräftad' as const, count_unit, type_id: id(3) });
+    const apartments = Array.from({ length: 5 }, (_, i) => ({ row: i + 2, number: `10${i}`, address: 'Gata 1', floor: '1', label: '2 rok', rooms: 2, area: 50, bedrooms: 1, half_rooms: 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default' as const, code: null }));
+    const q: TenderQuantities = { rules: { operands: [], items: [], assumptions: [] }, assumptions: [], object_model: { document_id: id(99), sheet: 'Lista', premises: 9, apartments },
+      items: [item('Tomrör för framtida mätning lägenhet', '5', 'lägenhet'), item('Tomrör för framtida mätning i lägenheter och lokaler', '14', 'lägenhet_och_lokal')] };
+    const rows = calculateTenderCost(q, settings, { bindings: q.items.map(i => ({ post: i.post, type_id: id(3), manual_hours: null, manual_list_price: null })), demolition: null }).rows;
+    expect(rows.find(r => r.post === 'Tomrör för framtida mätning i lägenheter och lokaler')).toMatchObject({ quantity: '9', level: 'Bekräftad' });
+    expect(rows.find(r => r.post === 'Tomrör för framtida mätning i lägenheter och lokaler')?.rule).toMatch(/Lokaldelen: 9 lokaler/);
+  });
+  it('a one-off requirement on a per-apartment catalog type that already has its own per-apartment row is not counted again', () => {
     const item = (post: string, quantity: string, count_unit: string, level: 'Bekräftad' | 'Saknar mängd' = 'Bekräftad') => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level, count_unit, type_id: id(9) });
     const apartments = Array.from({ length: 5 }, (_, i) => ({ row: i + 2, number: `10${i}`, address: 'Gata 1', floor: '1', label: '2 rok', rooms: 2, area: 50, bedrooms: 1, half_rooms: 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default' as const, code: null }));
     const q: TenderQuantities = { rules: { operands: [], items: [], assumptions: [] }, assumptions: [], object_model: { document_id: id(99), sheet: 'Lista', premises: 0, apartments },

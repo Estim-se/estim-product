@@ -91,7 +91,9 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
   // A post for apartments and premises together is already covered when the same type has its own apartment or
   // premises posts ("Mätartavla" per apartment and per premises, and "Mätartavla, mätarblock" for both).
   const specific = (t: { name: string } | undefined) => { const m = t ? postMeaning(t.name) : null; return !!m && !GENERIC_MEANINGS.has(m); };
-  const splitTypes = new Set(items.filter(i => i.count_unit && i.count_unit !== 'lägenhet_och_lokal' && (UNIT_FAMILY[effective(i).unit!] === 'lägenhet' || i.count_unit === 'lokal') && specific(typeOf(i.post))).map(i => typeOf(i.post)?.id).filter(Boolean));
+  const own = (family: 'lägenhet' | 'lokal') => new Set(items.filter(i => i.count_unit && i.count_unit !== 'lägenhet_och_lokal' && (family === 'lokal' ? i.count_unit === 'lokal' : UNIT_FAMILY[effective(i).unit!] === 'lägenhet') && specific(typeOf(i.post))).map(i => typeOf(i.post)?.id).filter(Boolean));
+  const apartmentTypes = own('lägenhet'), premisesTypes = own('lokal');
+  const premisesCount = q.object_model?.premises ?? 0;
   // A one-off post that would be counted per apartment from its catalog type, while the same type already has its own
   // per-apartment row, is that delivery again: it stays visible at 0 instead of being counted a second time.
   const apartmentRowOf = (item: { post: string }) => { const t = typeOf(item.post); return t ? items.find(x => x !== item && typeOf(x.post)?.id === t.id && !x.option && UNIT_FAMILY[x.count_unit ?? ''] === 'lägenhet')?.post : undefined; };
@@ -101,18 +103,25 @@ export function calculateTenderCost(rawQuantities: unknown, rawSettings: unknown
     const packaged = packageKey(item), carrier = packaged ? carrierOf.get(packaged) : undefined;
     const apartmentRow = perApartmentOf(item) ? apartmentRowOf(item) : undefined;
     const perApartment = perApartmentOf(item) && !apartmentRow;
-    const covered = item.count_unit === 'lägenhet_och_lokal' && !!t && splitTypes.has(t.id);
-    const includedIn = carrier && carrier !== item.post ? carrier : covered ? 'postens egna rader för lägenheter och lokaler' : apartmentRow;
+    // A post for apartments and premises together, when the type has its own apartment rows but no premises rows,
+    // counts the premises part ("i respektive lägenhet och lokaler": the 9 premises); with both it is covered.
+    const combined = item.count_unit === 'lägenhet_och_lokal' && !!t;
+    const covered = combined && apartmentTypes.has(t!.id) && premisesTypes.has(t!.id);
+    const premisesPart = combined && !covered && apartmentTypes.has(t!.id) ? premisesCount : null;
+    const includedIn = carrier && carrier !== item.post ? carrier : covered || premisesPart === 0 ? 'postens egna rader för lägenheter och lokaler' : apartmentRow;
     if (includedIn) included.set(item.post, includedIn);
     const i = carrier && carrier !== item.post ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${carrier} (samma katalogtyp och enhet).` }
       : covered ? { ...item, quantity: '0', rule: `${item.rule} Ingår i postens egna rader för lägenheter och lokaler (samma katalogtyp).` }
+      : premisesPart !== null ? { ...item, quantity: String(premisesPart), calculation: `${premisesPart} lokaler`, rule: `${item.rule} Lokaldelen: ${premisesPart} lokaler i objektlistan; lägenheterna räknas på postens egen rad för lägenheter (samma katalogtyp).` }
       : apartmentRow ? { ...item, quantity: '0', rule: `${item.rule} Ingår i ${apartmentRow} (samma katalogtyp, räknad per lägenhet).` }
       : perApartment ? { ...item, quantity: String(apartments), calculation: `${apartments} lägenheter`, rule: `${item.rule} Antaget: katalogtypen gäller per lägenhet, ${apartments} lägenheter i objektlistan.`, level: 'Antagen' as const, certainty: 'Låg' as const }
       : item;
     const hoursPerUnit = t ? b?.manual_hours ?? t.hours : null, listPrice = t ? b?.manual_list_price ?? t.list_price : null;
     // Levels as in the reference calculation: Bekräftad, Räknad and Antagen are in the total (Antagen is marked for
     // checking); Saknar mängd stays outside until a quantity is entered; a post without catalog type is Saknar pris.
-    const quantityLevelOfRow = quantityLevel(i);
+    // A quantity of 0 is never Bekräftad or Räknad: a row priced elsewhere or without a count is at most Antagen.
+    const stated = quantityLevel(i);
+    const quantityLevelOfRow = Number(i.quantity) === 0 && (stated === 'Bekräftad' || stated === 'Räknad') ? 'Antagen' : stated;
     const needsQuantity = quantityLevelOfRow === 'Saknar mängd';
     // A catalog type with neither time nor price (e.g. a grid owner's fee awaiting a quote) has no price yet either.
     // An option is never priced as its main post: it stays Saknar pris until its own time or price is entered.
