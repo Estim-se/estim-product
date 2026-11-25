@@ -8,7 +8,7 @@ async function assertRejects(fn: () => Promise<unknown>, _cls: unknown, includes
   throw new Error("expected rejection");
 }
 import {
-  errCode, gunzip, htmlToText, isNoReplySender, parseMessage, parseNotification, pointer, readBounded, shouldSkip, stripQuoted, verifyNylasSignature,
+  errCode, gunzip, htmlToText, isNoReplySender, mailText, parseMessage, parseNotification, pointer, readBounded, shouldSkip, stripQuoted, verifyNylasSignature,
   type NylasMessage,
 } from "./nylas.ts";
 
@@ -121,4 +121,14 @@ Deno.test("readBounded: refuses a large content-length at once and stops reading
   // exactly at the limit is accepted; an empty body is empty
   assertEquals((await readBounded(new Request("http://x", { method: "POST", body: new Uint8Array(100) }), 100))?.length, 100);
   assertEquals((await readBounded(new Request("http://x", { method: "POST" }), 100))?.length, 0);
+});
+
+Deno.test("mail text: quoted history is cut, but a mail that is only a forward is kept whole (step 6)", () => {
+  assertEquals(mailText("<p>Hej!</p><p>Från: Anna</p><p>gammalt</p>", 8000), "Hej!");
+  const forward = "Från: Anna Andersson\nSkickat: igår\nÄmne: Offert\n\nVi vill renovera badrummet.";
+  assertEquals(stripQuoted(forward), ""); // the old code dropped this mail as empty
+  assertEquals(mailText(forward, 8000), forward);
+  assertEquals(mailText("> bara citat", 8000), "> bara citat");
+  assertEquals(mailText("", 8000), "");
+  assertEquals(mailText("x".repeat(9000), 8000).length, 8000);
 });

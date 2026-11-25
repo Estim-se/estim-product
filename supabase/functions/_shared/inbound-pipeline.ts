@@ -33,6 +33,19 @@ interface Triage {
   customer: { name: string | null; email: string | null; phone: string | null };
 }
 
+const SENT_AT_PAST_MS = 30 * 86_400_000, SENT_AT_FUTURE_MS = 5 * 60_000;
+/**
+ * The time stored as the message's sent_at. The mail's own Date header is chosen by the sender: it is used only within
+ * [now - 30 days, now + 5 minutes], otherwise our receive time. (A forged "Date: 2099" would pin the thread on top of
+ * the inbox, decide which mail email-send replies to and sort last in the conversation the AI reads.) Compared as
+ * absolute UTC instants, so time zones do not matter. null = the mail had no date (estim_receive sets it).
+ */
+export function sentAtFor(ts: number | null, now = Date.now()): string | null {
+  if (ts == null) return null;
+  const ms = ts * 1000;
+  return new Date(Number.isFinite(ms) && ms >= now - SENT_AT_PAST_MS && ms <= now + SENT_AT_FUTURE_MS ? ms : now).toISOString();
+}
+
 /** `known` (sender has an open thread) only matters with EMAIL_FLOOD_GUARD_V2: unknown senders get a share of the cap. */
 export async function aiAllowed(db: SupabaseClient, companyId: string, known?: boolean): Promise<boolean> {
   if (Deno.env.get("AI_ENABLED") === "false") return false;
@@ -137,11 +150,12 @@ export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: str
   }
 
   // The existing receive function: customer, thread, message, empty draft and the queued AI job, in one transaction.
+  const sentAt = sentAtFor(mail.ts);
   const payload = {
     channel: "email", customer_email: customer.email ?? mail.fromEmail, text: mail.text, provider_message_id: mail.messageKey,
     ...(customer.name ?? mail.fromName ? { customer_name: (customer.name ?? mail.fromName)!.slice(0, 200) } : {}),
     ...(customer.phone ? { customer_phone: customer.phone.slice(0, 100) } : {}),
-    ...(mail.ts != null ? { sent_at: new Date(mail.ts * 1000).toISOString() } : {}),
+    ...(sentAt ? { sent_at: sentAt } : {}),
     job: (mail.subject || "E-postförfrågan").slice(0, 120),
   };
   const stored = await db.rpc("estim_receive", { cid: companyId, payload });

@@ -247,6 +247,15 @@ export function htmlToText(input: string): string {
     .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * The text stored for a received mail: HTML to text, quoted history cut, at most `max` characters. When cutting leaves
+ * nothing (a forwarded mail that starts with "Från:"), the whole text is kept instead of dropping the mail as empty.
+ */
+export function mailText(raw: string, max: number): string {
+  const plain = htmlToText(raw);
+  return (stripQuoted(plain) || plain).slice(0, max);
+}
+
 /** Cuts the quoted history ("På … skrev", "On … wrote:", > lines) so only the new text is kept. */
 export function stripQuoted(text: string): string {
   const out: string[] = [];

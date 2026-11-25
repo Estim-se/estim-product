@@ -23,8 +23,8 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
-  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, htmlToText, parseNotification, pointer, readBounded,
-  shouldSkip, stripQuoted, verifyNylasSignature,
+  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, mailText, parseNotification, pointer, readBounded,
+  shouldSkip, verifyNylasSignature,
 } from "../_shared/nylas.ts";
 import * as unipile from "../_shared/unipile.ts";
 import { bindUnipileAccount } from "../_shared/connection-binding.ts";
@@ -141,7 +141,7 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
   if (reason) { console.info(`[${source.tag}] skipped message:`, reason); return {}; }
 
   const sender = msg.from[0]!;
-  const cleaned = stripQuoted(htmlToText(msg.body ?? msg.snippet ?? "")).slice(0, MAX_BODY_CHARS);
+  const cleaned = mailText(msg.body ?? msg.snippet ?? "", MAX_BODY_CHARS);
   if (!cleaned) return {};
 
   return await ingestMail(db, {

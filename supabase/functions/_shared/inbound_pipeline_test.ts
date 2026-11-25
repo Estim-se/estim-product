@@ -4,7 +4,7 @@
 function assert(v: unknown, msg = "assertion failed"): asserts v { if (!v) throw new Error(msg); }
 function assertEquals(a: unknown, b: unknown, msg = "") { const x = JSON.stringify(a, null, 1), y = JSON.stringify(b, null, 1); if (x !== y) throw new Error(`${msg}\nexpected ${y}\nbut got ${x}`); }
 import { asClient, FakeDb, type Row } from "./test-db.ts";
-import { ingestMail, type InboundMail, pipelineTiming } from "./inbound-pipeline.ts";
+import { ingestMail, type InboundMail, pipelineTiming, sentAtFor } from "./inbound-pipeline.ts";
 import { FLOOD_WARNING } from "./mail-flood.ts";
 import { UNVERIFIED_WARNING } from "./sender-auth.ts";
 
@@ -247,4 +247,31 @@ Deno.test("sender check pass or unknown: same calls as the golden list", async (
     await withEnv({ EMAIL_SENDER_CHECK: "true" }, db, () => run(db, mail({ senderCheck })));
     assertEquals(db.normalized(), GOLDEN_NEW_SENDER, senderCheck);
   }
+});
+
+/* ---------- Step 6: sent_at (approved by Dennis 2026-11-25) ---------- */
+
+Deno.test("sent_at: the mail's date only within [now - 30 days, now + 5 min], otherwise our receive time", () => {
+  const now = Date.parse("2026-11-25T12:00:00Z"), s = (iso: string) => Date.parse(iso) / 1000;
+  const at = (iso: string) => sentAtFor(s(iso), now);
+  assertEquals(at("2026-11-25T11:00:00Z"), "2026-11-25T11:00:00.000Z");
+  assertEquals(at("2026-10-26T12:00:00Z"), "2026-10-26T12:00:00.000Z"); // exactly 30 days
+  assertEquals(at("2026-10-26T11:59:59Z"), "2026-11-25T12:00:00.000Z");
+  assertEquals(at("2026-11-25T12:05:00Z"), "2026-11-25T12:05:00.000Z"); // exactly 5 minutes ahead
+  assertEquals(at("2026-11-25T12:05:01Z"), "2026-11-25T12:00:00.000Z");
+  assertEquals(at("2099-01-01T00:00:00Z"), "2026-11-25T12:00:00.000Z"); // forged Date: 2099
+  assertEquals(at("1970-01-01T00:00:00Z"), "2026-11-25T12:00:00.000Z");
+  assertEquals(sentAtFor(Number.NaN, now), "2026-11-25T12:00:00.000Z");
+  assertEquals(sentAtFor(null, now), null); // no date: estim_receive decides, as before
+  // the same instant written in another time zone is the same instant
+  assertEquals(sentAtFor(Date.parse("Wed, 25 Nov 2026 12:30:00 +0100") / 1000, now), "2026-11-25T11:30:00.000Z");
+});
+
+Deno.test("sent_at: a forged future date is stored as the receive time", async () => {
+  const db = pipelineDb();
+  const before = Date.now();
+  await withEnv({}, db, () => run(db, mail({ ts: Date.parse("2099-01-01T00:00:00Z") / 1000 })));
+  const call = db.calls.find((c) => c.startsWith("rpc.estim_receive"))!;
+  const sentAt = Date.parse(/"sent_at":"([^"]+)"/.exec(call)![1]!);
+  assert(sentAt >= before && sentAt <= Date.now(), "not the receive time");
 });
