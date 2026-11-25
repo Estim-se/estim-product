@@ -72,10 +72,11 @@ Deno.test("auth links ask for mail permissions only, also when reconnecting", ()
     const config = body.config as { google: { oauth_scope: string[] }; outlook: { oauth_scope: string[] } };
     const all = [...config.google.oauth_scope, ...config.outlook.oauth_scope].join(" ");
     assertFalse(/calendar|Calendars|gmail\.modify|contacts/i.test(all));
+    assert(config.google.oauth_scope.includes("email"));
     assert(config.google.oauth_scope.includes("https://www.googleapis.com/auth/gmail.readonly"));
     assert(config.google.oauth_scope.includes("https://www.googleapis.com/auth/gmail.send"));
-    // Microsoft: "Mail.Send alone is insufficient"
-    assert(["Mail.Send", "Mail.ReadWrite", "offline_access"].every((s) => config.outlook.oauth_scope.includes(s)));
+    // Microsoft: "Mail.Send alone is insufficient" (Unipile adds openid/offline_access itself and rejects them here)
+    assert(["User.Read", "Mail.ReadWrite", "Mail.Send"].every((s) => config.outlook.oauth_scope.includes(s)));
   }
 });
 

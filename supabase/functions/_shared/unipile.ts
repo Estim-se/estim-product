@@ -174,20 +174,20 @@ export function mapProvider(value: unknown): MailProvider | null {
 }
 
 /**
- * Mail-only permissions, the final list Unipile asks the provider for (v2 "Permissions required", 2026-11-25).
- * Without it Unipile's shared app also asks for calendar access and Gmail's gmail.modify.
+ * Mail-only permissions, the final list Unipile asks the provider for (v2 "Permissions required", verified against
+ * POST /auth/link on 2026-11-25). Without it Unipile's shared app also asks for calendar access and Gmail's gmail.modify.
  * Google: gmail.readonly covers email.new / email.new.bounce, fetching mails and attachments, and reading the original
- *   for a threaded reply; gmail.send sends. Google lists granted scopes as full URLs, so they are given that way.
- * Microsoft: sending needs Mail.Send AND Mail.ReadWrite ("Mail.Send alone is insufficient"); offline_access keeps the
- *   connection alive after the first hour. Microsoft refuses the connection if fewer scopes are granted than requested.
+ *   for a threaded reply; gmail.send sends. Unipile's shared Google app expects "email" (not userinfo.email URL).
+ * Microsoft: sending needs Mail.Send AND Mail.ReadWrite ("Mail.Send alone is insufficient"); Unipile rejects
+ *   openid/offline_access in oauth_scope and adds them itself, accepting the Graph permission names below.
  * Sent on reconnects too, so an account linked earlier with calendar access drops it when it is reconnected.
  */
 export const MAIL_SCOPES = {
   google: [
-    "openid", "https://www.googleapis.com/auth/userinfo.email",
+    "openid", "email",
     "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send",
   ],
-  outlook: ["openid", "offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
+  outlook: ["User.Read", "Mail.ReadWrite", "Mail.Send"],
 } as const;
 
 /**
