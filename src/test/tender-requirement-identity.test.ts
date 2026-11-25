@@ -220,4 +220,13 @@ describe('requirement identity and deduplication', () => {
     expect(status(q, 'Hatthylla med infästning hall')).toMatchObject({ status: 'Ej relevant' });
     expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Hatthylla med infästning hall, Skohylla och klädstång/.test(a.description))).toBe(true);
   });
+  it('whole words decide the trade: "måla" is painting, "el" at a wardrobe is electrical work', () => {
+    const q = build([req('Måla om väggar', 'lägenhet', 1, { section: 4, source: src('Entreprenören ska måla om väggar efter ingrepp.') }),
+      req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') })]);
+    expect(rowsOf(q).map(i => i.post)).not.toContain('Måla om väggar');
+    expect(status(q, 'Måla om väggar')).toMatchObject({ status: 'Ej relevant' });
+    expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Måla om väggar\./.test(a.description))).toBe(true);
+    expect(rowsOf(q).find(i => i.post === 'El till garderob')).toMatchObject({ quantity: '6' });
+    expect(status(q, 'El till garderob')?.status).toBe('Saknar pris');
+  });
 });
