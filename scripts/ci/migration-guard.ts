@@ -1,21 +1,30 @@
+// Scope: this guard catches mistakes by agents, Lovable and people (a forgotten RLS, a permissive policy). Deliberate
+// lexical evasion is out of scope and needs review (for example \r line ends in comments, string continuation, tarball
+// or git dependencies, ALTER ... OWNER TO or SET SCHEMA). The follow-up is a real-database RLS check.
+//
 // Migration guard, against a base commit, for supabase/migrations/ and drizzle/migrations/ (.sql files):
+// - in supabase/migrations/ only <digits>_<name>.sql files are migrations (the Supabase CLI applies nothing else), so
+//   any other added or changed .sql file there fails, and nothing in it counts;
 // - a migration that exists on the base may not be modified, renamed or deleted, and nothing in those directories may
 //   be added or changed as a symbolic link or submodule (git would hand the guard the link, not the SQL that runs);
 // - in the added migrations (case-insensitive, any whitespace), read per directory in file-name order and statement by
 //   statement: every CREATE TABLE, CREATE TABLE ... AS and top-level SELECT ... INTO needs a later top-level
-//   ALTER TABLE ... ENABLE ROW LEVEL SECURITY for that table. Comments, strings, function bodies and DO blocks never
-//   count as enabling it. A later DROP TABLE or CREATE of the same name starts over; a rename or schema move before
-//   the ENABLE fails. A table created inside CREATE SCHEMA, or without a schema when the change creates a schema, fails;
+//   ALTER TABLE ... ENABLE ROW LEVEL SECURITY for that table (ENABLE right after the table name or after a top-level
+//   comma). Comments, strings, quoted names, function bodies and DO blocks never count as enabling it. A later DROP
+//   TABLE or CREATE of the same name starts over; a rename or schema move before the ENABLE fails. A table created
+//   inside CREATE SCHEMA, or without a schema when the change creates a schema, fails;
 // - DISABLE ROW LEVEL SECURITY fails, and so does a policy whose USING or WITH CHECK is a constant such as (true),
 //   (1=1) or (select true);
-// - EXECUTE of SQL built at run time fails in a DO block (except format() with %I/%L only, see isSafeFormat), and in a
-//   function body that mentions CREATE ... TABLE;
+// - temporary tables fail (CREATE TEMP TABLE, SELECT ... INTO TEMP): a migration never needs one;
+// - EXECUTE of SQL built at run time fails in a DO block (except format() with %I/%L only, see isSafeFormat), and so
+//   does EXECUTE in a DO block of any text that mentions a policy; in a function body EXECUTE fails when the body
+//   mentions CREATE ... TABLE;
 // - ROLLBACK and ABORT fail (they can undo a counted ENABLE), and so do settings that change how this guard must read
 //   the SQL: search_path set to anything that does not start with public, and standard_conforming_strings or
 //   backslash_quote set to anything but on, in any form (SET, set_config(), ALTER ROLE/DATABASE, a comment).
-// The guard is a lexical check, not a Postgres parser. It fails closed where it can tell it cannot read the SQL, but it
-// catches mistakes, not every deliberate way around it: SQL that runs later (a function called by a later statement)
-// or that Postgres reads differently in ways not listed above can still hide a table. Migrations need review too.
+// The guard is a lexical check, not a Postgres parser. It fails closed where it can tell it cannot read the SQL, but SQL
+// that runs later (a function called by a later statement) or that Postgres reads differently in ways not listed above
+// can still hide a table. Migrations need review too.
 // Exceptions only through scripts/ci/migration-allowlist.json, each with a reason.
 //
 // Usage: bun scripts/ci/migration-guard.ts --base <sha>   (or CI_BASE_SHA; no base: nothing to compare, passes)
@@ -24,7 +33,7 @@ import { type Finding, git, isMain, lineAt, readAllowlist, report, resolveBase }
 
 export const ALLOWLIST = 'scripts/ci/migration-allowlist.json';
 export const MIGRATION_DIRS = ['supabase/migrations', 'drizzle/migrations'];
-const RULES = ['changed-migration', 'create-table-without-rls', 'disable-rls', 'permissive-policy', 'dynamic-ddl', 'session-setting', 'transaction-control'] as const;
+const RULES = ['changed-migration', 'migration-name', 'create-table-without-rls', 'temporary-table', 'disable-rls', 'permissive-policy', 'dynamic-ddl', 'session-setting', 'transaction-control'] as const;
 type Rule = (typeof RULES)[number];
 export type Violation = { file: string; line: number; rule: Rule; table?: string; problem: string; fix: string };
 
@@ -253,16 +262,36 @@ export function isPermissiveConstant(expression: string): boolean {
 }
 
 const TABLE_MODIFIERS = String.raw`(?:(?:global|local)\s+)?(?:(?:temporary|temp|unlogged)\s+)?`;
-const CREATE_TABLE = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?${TABLE_MODIFIERS}table\s+(?:if\s+not\s+exists\s+)?(${QUALIFIED})`, 'gi');
-const SELECT_INTO = new RegExp(String.raw`\binto\s+${TABLE_MODIFIERS}(?:table\s+)?(${QUALIFIED})`, 'gi');
-const ALTER_TABLE = new RegExp(String.raw`\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(${QUALIFIED})`, 'gi');
-const DROP_TABLE = new RegExp(String.raw`^\s*drop\s+table\s+(?:if\s+exists\s+)?(${QUALIFIED}(?:\s*,\s*${QUALIFIED})*)`, 'i');
+// After TABLE, EXISTS, INTO and ONLY a quoted name may follow with no space: create table"x"(id int).
+const GAP = String.raw`(?:\s+|(?="))`;
+const CREATE_TABLE = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?${TABLE_MODIFIERS}table${GAP}(?:if\s+not\s+exists${GAP})?(${QUALIFIED})`, 'gi');
+const SELECT_INTO = new RegExp(String.raw`\binto${GAP}${TABLE_MODIFIERS}(?:table${GAP})?(${QUALIFIED})`, 'gi');
+const ALTER_TABLE = new RegExp(String.raw`\balter\s+table${GAP}(?:if\s+exists${GAP})?(?:only${GAP})?(${QUALIFIED})`, 'gi');
+const DROP_TABLE = new RegExp(String.raw`^\s*drop\s+table${GAP}(?:if\s+exists${GAP})?(${QUALIFIED}(?:\s*,\s*${QUALIFIED})*)`, 'i');
+const CREATE_TEMP_TABLE = /\bcreate\s+(?:or\s+replace\s+)?(?:(?:global|local)\s+)?(?:temporary|temp)\s+table\b/gi;
+const INTO_TEMP = /^into\s+(?:(?:global|local)\s+)?(?:temporary|temp)\b/i;
 // Where a statement can start: at the top, after a semicolon, or after a PL/pgSQL keyword that opens a block or branch.
 const STATEMENT_START = String.raw`(?:^|;|\b(?:begin|then|else|loop)\b)\s*`;
 // Settings that change how the guard must read the SQL: which schema an unqualified name means, and how strings end.
 const LEXER_SETTINGS = /standard_conforming_strings|backslash_quote/gi;
 
 const isQualified = (name: string) => [...name.matchAll(new RegExp(IDENT, 'g'))].length >= 2;
+
+/**
+ * True when one of an ALTER TABLE statement's subcommands is ENABLE ROW LEVEL SECURITY. `actions` is the text after the
+ * table name in a view where strings and quoted names are blanked; subcommands are split at top-level commas.
+ */
+function enablesRls(actions: string): boolean {
+  let depth = 0, start = 0;
+  const pieces: string[] = [];
+  for (let i = 0; i < actions.length; i++) {
+    if (actions[i] === '(') depth++;
+    else if (actions[i] === ')') depth--;
+    else if (actions[i] === ',' && depth === 0) { pieces.push(actions.slice(start, i)); start = i + 1; }
+  }
+  pieces.push(actions.slice(start));
+  return pieces.some(p => /^\s*enable\s+row\s+level\s+security\b/i.test(p));
+}
 
 /** Start of the top-level statement that contains `index`, in a view where strings, names and bodies are blanked. */
 const statementStart = (structure: string, index: number) => structure.lastIndexOf(';', index - 1) + 1;
@@ -310,6 +339,7 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
     const atStatementStart = (index: number) => topStructure.slice(statementStart(topStructure, index), index).trim() === '';
     const events: Event[] = [];
 
+    for (const m of all.matchAll(CREATE_TEMP_TABLE)) violations.push(temporaryTable(path, lineAt(all, m.index), 'CREATE TEMP TABLE'));
     for (const m of all.matchAll(CREATE_TABLE)) {
       const name = m[1] ?? '';
       const statement = top.slice(statementStart(topStructure, m.index), m.index);
@@ -322,6 +352,7 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
       if (/^[\s(]*(?:select|with)\b/i.test(statement)) {
         for (const m of statement.matchAll(SELECT_INTO)) {
           if (/\b(?:insert|merge)\s+$/i.test(statement.slice(0, m.index))) continue;
+          if (INTO_TEMP.test(m[0])) violations.push(temporaryTable(path, lineAt(top, start + m.index), 'SELECT ... INTO TEMP'));
           const name = m[1] ?? '';
           events.push({ at: start + m.index, kind: 'create', key: keyOf(name), name, line: lineAt(top, start + m.index), inSchema: false });
         }
@@ -332,11 +363,12 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
       start = end + 1;
     }
     // ENABLE ROW LEVEL SECURITY counts only as a top-level statement: not in a DO block, where a branch, an exception
-    // handler or a dynamic search_path can keep it from applying to the table.
+    // handler or a dynamic search_path can keep it from applying to the table. It must be a subcommand of its own,
+    // read with quoted names blanked, so a column or constraint named "enable row level security" does not count.
     for (const m of top.matchAll(ALTER_TABLE)) {
       if (!atStatementStart(m.index)) continue;
-      const statement = top.slice(m.index, statementEnd(topStructure, m.index));
-      if (/\benable\s+row\s+level\s+security\b/i.test(statement)) events.push({ at: m.index, kind: 'enable', key: keyOf(m[1] ?? '') });
+      const actions = topStructure.slice(m.index + m[0].length, statementEnd(topStructure, m.index));
+      if (enablesRls(actions)) events.push({ at: m.index, kind: 'enable', key: keyOf(m[1] ?? '') });
     }
     // A rename or schema move anywhere (even in a string or body, failing closed) ends the wait for that name's ENABLE.
     for (const m of all.matchAll(ALTER_TABLE)) {
@@ -386,6 +418,10 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
     for (const c of creates) failCreate(c, `Table ${c.name} is created without row level security.`, `Add "alter table ${isQualified(c.name) ? c.name : `public.${c.name}`} enable row level security;" after it in this change's migrations, as a top-level statement (not in a DO block).`);
   }
   return violations.sort((a, b) => (a.file === b.file ? 0 : a.file < b.file ? -1 : 1));
+}
+
+function temporaryTable(path: string, line: number, what: string): Violation {
+  return { file: path, line, rule: 'temporary-table', problem: `The migration creates a temporary table (${what}); a migration never needs one.`, fix: 'Remove it, or use a regular table with row level security, or a CTE.' };
 }
 
 /**
@@ -441,11 +477,11 @@ function sessionSettings(path: string, raw: string, running: string, runningStru
 /**
  * A format() string that is safe to EXECUTE in a DO block: one statement (no semicolon), only %I and %L placeholders
  * (which quote what they insert), no rename, schema move or SELECT INTO, and TABLE only as "alter table <a written
- * name>". Main's trigger loops (create trigger ... on public.%I) and constraint drops are of this kind.
+ * name>", and no mention of a policy. Main's trigger loops (create trigger ... on public.%I) and constraint drops are of this kind.
  */
 function isSafeFormat(literal: string): boolean {
   if (literal.includes(';') || /%(?!%|(?:\d+\$)?-?\d*[IL])/.test(literal.replace(/%%/g, ''))) return false;
-  if (/\b(?:rename|schema|into)\b/i.test(literal)) return false;
+  if (/\b(?:rename|schema|into)\b/i.test(literal) || /policy/i.test(literal)) return false;
   for (const m of literal.matchAll(/\btable\b/gi)) {
     if (!/\balter\s+$/i.test(literal.slice(0, m.index)) || !/^\s+[A-Za-z_"][A-Za-z0-9_."]*(?:\s|$)/.test(literal.slice(m.index + m[0].length))) return false;
   }
@@ -454,7 +490,8 @@ function isSafeFormat(literal: string): boolean {
 
 /**
  * EXECUTE of SQL known only at run time. In a DO block it runs during the migration, so every EXECUTE whose argument is
- * not one string literal (read as SQL above) or a safe format() fails. In a function body it runs later; it fails when
+ * not one string literal (read as SQL above) or a safe format() fails, and so does any whose text mentions a policy (the
+ * permissive-policy check cannot read it). In a function body it runs later; it fails when
  * the body's string literals, joined, mention CREATE and TABLE.
  */
 function dynamicDdl(path: string, sql: string, offset = 0, whole = sql): Violation[] {
@@ -472,6 +509,10 @@ function dynamicDdl(path: string, sql: string, offset = 0, whole = sql): Violati
     for (const m of code.matchAll(/\bexecute\b(?!\s+(?:function|procedure)\b)/gi)) {
       const argument = body.slice(m.index + m[0].length, statementEnd(code, m.index));
       const parts = lexSql(argument).filter(x => x.kind !== 'comment' && !(x.kind === 'code' && argument.slice(x.start, x.end).trim() === ''));
+      if (isDo && /policy/i.test(parts.map(x => argument.slice(x.start, x.end)).join(' '))) {
+        violations.push({ file: path, line: lineAt(whole, at + m.index), rule: 'dynamic-ddl', problem: 'EXECUTE in a DO block runs SQL that mentions a policy, so this guard cannot check that the policy does not let every row through.', fix: 'Write the policy statement out as plain SQL. An intended exception needs a reason in the allowlist.' });
+        continue;
+      }
       if (parts.length === 1 && (parts[0]?.kind === 'string' || parts[0]?.kind === 'dollar')) continue; // read as SQL above
       if (isDo) {
         const format = /^\s*format\s*\(\s*'((?:[^']|'')*)'\s*(?:,|\))/i.exec(argument);
@@ -499,6 +540,15 @@ export function migrationChanges(root: string, base: string): Change[] {
 }
 
 const LINK_MODES: Record<string, string> = { '120000': 'a symbolic link', '160000': 'a submodule' };
+const SUPABASE_DIR = 'supabase/migrations/';
+
+/** The Supabase CLI applies only <digits>_<name>.sql files directly in supabase/migrations/; drizzle reads every .sql. */
+export function isMigrationFile(path: string): boolean {
+  if (!path.endsWith('.sql')) return false;
+  if (!path.startsWith(SUPABASE_DIR)) return true;
+  const name = path.slice(SUPABASE_DIR.length);
+  return !name.includes('/') && /^[0-9]+_.*\.sql$/.test(name);
+}
 
 export function checkMigrations(root: string, base: string): Finding[] {
   const allow = readAllowlist(join(root, ALLOWLIST), ALLOWLIST, ['file', 'rule'] as const);
@@ -524,15 +574,23 @@ export function checkMigrations(root: string, base: string): Finding[] {
     if (change.path.endsWith('.sql') || change.oldPath?.endsWith('.sql')) changes.push(change);
   }
   for (const change of changes) {
-    if (change.status === 'A' || change.status === 'C') {
-      if (change.path.endsWith('.sql')) added.push({ path: change.path, sql: git(['show', `HEAD:${change.path}`], root) });
+    const isNew = change.status !== 'D';
+    if (isNew && change.path.endsWith('.sql') && !isMigrationFile(change.path)) {
+      // Not applied by the CLI, so nothing in it counts (not even an ENABLE ROW LEVEL SECURITY).
+      violations.push({ file: change.path, line: 1, rule: 'migration-name', problem: 'This is not a migration: the Supabase CLI never applies this file; name it <timestamp>_<name>.sql.', fix: 'Rename it to <timestamp>_<name>.sql directly in supabase/migrations/, or move it out of that directory.' });
+    }
+    const wasMigration = isMigrationFile(change.oldPath ?? change.path);
+    if (change.status === 'A' || change.status === 'C' || (change.status === 'R' && !wasMigration)) {
+      if (isMigrationFile(change.path)) added.push({ path: change.path, sql: git(['show', `HEAD:${change.path}`], root) });
       continue;
     }
+    if (!wasMigration) continue;
     const verb = change.status === 'D' ? 'deletes' : change.status === 'R' ? `renames (to ${change.path})` : 'modifies';
     const file = change.status === 'R' ? (change.oldPath ?? change.path) : change.path;
     violations.push({ file, line: 1, rule: 'changed-migration', problem: `The change ${verb} a migration that already exists on the base; applied migrations never run again.`, fix: 'Restore the file as it is on the base and put the change in a new migration.' });
   }
   violations.push(...checkAddedSql(added));
+  violations.sort((a, b) => (a.file === b.file ? 0 : a.file < b.file ? -1 : 1));
   for (const v of violations) {
     const exempt = allow.entries.find(e => e.file === v.file && e.rule === v.rule && (e['table'] === undefined || e['table'] === v.table));
     if (!exempt) findings.push({ file: v.file, line: v.line, problem: v.problem, fix: `${v.fix} An intended exception needs an entry with a reason in ${ALLOWLIST}.` });

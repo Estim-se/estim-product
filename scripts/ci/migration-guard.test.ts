@@ -79,7 +79,7 @@ describe('migration guard: row level security in added migrations', () => {
     expect(rules('create\n  table\n"Mixed Case"(id int);')).toEqual(['create-table-without-rls public.Mixed Case@1']);
     expect(rules('create table app."T"(id int);')).toEqual(['create-table-without-rls app.T@1']);
     expect(rules('create unlogged table u(id int);')).toEqual(['create-table-without-rls public.u@1']);
-    expect(rules('create temporary table t(id int);')).toEqual(['create-table-without-rls public.t@1']);
+    expect(rules('create temporary table t(id int);')).toEqual(['temporary-table@1', 'create-table-without-rls public.t@1']);
     expect(rules('create table p_2026 partition of p for values from (1) to (2);')).toEqual(['create-table-without-rls public.p_2026@1']);
     expect(rules('create table c as select * from x;')).toEqual(['create-table-without-rls public.c@1']);
   });
@@ -251,6 +251,69 @@ describe('migration guard: SQL that changes how the guard must read it', () => {
     expect(rules('create policy q on public.t for select using (exists (select 1));')).toEqual(['permissive-policy@1']);
     expect(rules('create policy q on public.t for select using ((select false));')).toEqual([]);
     expect(rules('create policy q on public.t for select using (exists (select 1 from public.members m where m.user_id = auth.uid()));')).toEqual([]);
+  });
+});
+
+describe('migration guard: final fix round', () => {
+  const NAME_FIX = 'Fix: Rename it to <timestamp>_<name>.sql directly in supabase/migrations/, or move it out of that directory. An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.';
+  it('1. fails a .sql file in supabase/migrations/ that the CLI never applies, and does not count an ENABLE in it', () => {
+    const { root, base } = repo();
+    writeFiles(root, {
+      [NEW]: 'create table public.b (id int);\n',
+      'supabase/migrations/20260201000001-enable.sql': 'alter table public.b enable row level security;\n',
+      'supabase/migrations/seed.sql': 'create table public.c (id int);\n',
+      'supabase/migrations/sub/20260201000002_x.sql': 'select 1;\n',
+    });
+    commitAll(root, 'add');
+    expect(run(root, base)).toEqual([
+      expect.stringMatching(new RegExp(`^${NEW}:1: Table public\\.b is created without row level security\\.`)),
+      `supabase/migrations/20260201000001-enable.sql:1: This is not a migration: the Supabase CLI never applies this file; name it <timestamp>_<name>.sql. ${NAME_FIX}`,
+      `supabase/migrations/seed.sql:1: This is not a migration: the Supabase CLI never applies this file; name it <timestamp>_<name>.sql. ${NAME_FIX}`,
+      `supabase/migrations/sub/20260201000002_x.sql:1: This is not a migration: the Supabase CLI never applies this file; name it <timestamp>_<name>.sql. ${NAME_FIX}`,
+    ]);
+  });
+  it('1. fails a changed non-migration .sql file in supabase/migrations/, and checks one renamed into a migration as added', () => {
+    const { root } = repo();
+    writeFiles(root, { 'supabase/migrations/notes.sql': 'select 1;\n', 'supabase/migrations/draft.sql': 'create table public.d (id int);\n' });
+    const base = commitAll(root, 'base with non-migrations');
+    writeFiles(root, { 'supabase/migrations/notes.sql': 'select 2;\n' });
+    git(root, 'mv', 'supabase/migrations/draft.sql', 'supabase/migrations/20260301000000_draft.sql');
+    commitAll(root, 'change');
+    expect(run(root, base)).toEqual([
+      expect.stringMatching(/^supabase\/migrations\/20260301000000_draft\.sql:1: Table public\.d is created without row level security\./),
+      `supabase/migrations/notes.sql:1: This is not a migration: the Supabase CLI never applies this file; name it <timestamp>_<name>.sql. ${NAME_FIX}`,
+    ]);
+  });
+  it('2. fails EXECUTE in a DO block of a literal or format() that mentions a policy', () => {
+    expect(rules("do $$ begin execute 'create policy p on public.t for select using (auth.uid() = owner)'; end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("do $$ begin execute $q$ALTER POLICY p ON public.t USING (owner = auth.uid())$q$; end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("DO $$ BEGIN EXECUTE format('CREATE POLICY %I ON public.t FOR SELECT USING (true)', 'p'); END $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("DO $$ DECLARE t text; BEGIN FOR t IN SELECT tablename FROM pg_tables LOOP EXECUTE format('DROP Policy IF EXISTS open ON public.%I', t); END LOOP; END $$;")).toEqual(['dynamic-ddl@1']);
+    // Without a policy, as on main: a safe format() and a literal read as SQL.
+    expect(rules("DO $$ DECLARE c text; BEGIN FOR c IN SELECT conname FROM pg_constraint LOOP EXECUTE format('ALTER TABLE public.threads DROP CONSTRAINT %I', c); END LOOP; END $$;")).toEqual([]);
+    expect(rules("do $$ begin execute 'select 1'; end $$;")).toEqual([]);
+  });
+  it('3. fails temporary tables', () => {
+    expect(rules('create temp table t(id int);')).toEqual(['temporary-table@1', 'create-table-without-rls public.t@1']);
+    expect(rules('create global temporary table t(id int);\nalter table t enable row level security;')).toEqual(['temporary-table@1']);
+    expect(rules('select 1 as id\n into temp t2;')).toEqual(['temporary-table@2', 'create-table-without-rls public.t2@2']);
+    expect(rules('select * into temporary table t3 from x; alter table t3 enable row level security;')).toEqual(['temporary-table@1']);
+    // In a function body INTO assigns a variable, which may be called temp.
+    expect(rules('create function f() returns int language plpgsql as $$ declare temp int; begin select count(*) into temp from a; return temp; end $$;')).toEqual([]);
+  });
+  it('4. reads a quoted name written right after TABLE, EXISTS, INTO or ONLY', () => {
+    expect(rules('create table"x"(id int);')).toEqual(['create-table-without-rls public.x@1']);
+    expect(rules('create table if not exists"x"(id int);')).toEqual(['create-table-without-rls public.x@1']);
+    expect(rules('select 1 into"x";')).toEqual(['create-table-without-rls public.x@1']);
+    expect(rules('create table"x"(id int); alter table"x" enable row level security;')).toEqual([]);
+    expect(rules('create table"x"(id int); alter table if exists only"x" enable row level security;')).toEqual([]);
+    expect(rules('create table"x"(id int); alter table"x" enable row level security; drop table"x"; create table"x"(id int);')).toEqual(['create-table-without-rls public.x@1']);
+  });
+  it('5. counts ENABLE only as an ALTER TABLE subcommand, not inside a quoted name', () => {
+    expect(rules('create table public.t (id int); alter table public.t add column "enable row level security" int;')).toEqual(['create-table-without-rls public.t@1']);
+    expect(rules('create table public.t (id int); alter table public.t add constraint "enable row level security" check (true);')).toEqual(['create-table-without-rls public.t@1']);
+    expect(rules('create table public.t (id int, a int); alter table public.t add constraint c check (a in (1, 2)), enable row level security;')).toEqual([]);
+    expect(rules('create table public.t (id int); alter table public.t enable row level security, add column b int;')).toEqual([]);
   });
 });
 
