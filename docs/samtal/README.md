@@ -11,10 +11,11 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 | # | File | What |
 |---|---|---|
 | 1 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket. **Done:** migration `20261125115209_7975c6d2-…`, identical to this file up to the bucket. Lovable's migration tool refuses to create buckets, so `samtal-audio` was created with Lovable's bucket tool instead, with the same settings (private, 50 MB, the nine audio types, no policies). |
-| 1b | [samtal-indekser.sql](samtal-indekser.sql) | Indexes for the seven foreign keys the Supabase linter reported |
-| 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft |
-| 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions (approved) |
-| 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault (approved) |
+| 1b | [samtal-indekser.sql](samtal-indekser.sql) | Indexes for the seven foreign keys the Supabase linter reported. **Done:** migration `20261125120452_db2afdc1-…`, identical. |
+| 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft. **Done:** migration `20261125120828_e9d2cb95-…`, identical. |
+| 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions. **Done:** migration `20261125121204_85ce6994-…`, identical. |
+| 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault. **Done:** migration `20261125121315_0faf7e7c-…`, identical; Vault holds `samtal_base_url` and `samtal_purge_secret`. |
+| 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. |
 
 All three prompts are below.
 
@@ -75,7 +76,7 @@ The only changes to existing objects, approved by the product owner:
 | pg_cron job `samtal-purge`, minute 17 of every hour | Calls `/api/public/samtal-purge` through pg_net, with the secret header `x-estim-secret`. |
 
 - **Why the route deletes the audio:** the route deletes the audio files through the Storage API, then marks the calls. Deleting `storage.objects` rows directly in SQL would leave the files behind in storage.
-- **Secrets:** the app's address and the secret are read from Supabase Vault (`samtal_base_url`, `samtal_purge_secret`) each time the job runs. The same secret is `SAMTAL_PURGE_SECRET` in the app. No secret value is ever written into a migration or the repository.
+- **Secrets:** the secret exists in one place only, Supabase Vault (`samtal_purge_secret`, at least 32 characters), next to the app's address (`samtal_base_url`). The job reads both from Vault each time it runs and sends the secret in the header `x-estim-secret`. The purge route never reads the secret: it passes the header it received to `samtal_purge_secret_valid`, a function only `service_role` may call, and gets only true or false back. No app secret is used, and no secret value is ever written into a migration or the repository.
 - **Private calls** are deleted at once by the processing, without waiting for the schedule.
 
 ## Tests
@@ -143,28 +144,22 @@ When done, report:
 3. That estim_receive and estim_split_thread still have the same grants as before.
 ```
 
-### 3. Automatic deletion (pg_cron, pg_net, Vault, SAMTAL_PURGE_SECRET)
+### 3. Automatic deletion (done)
+
+Run as migrations `20261125121204_85ce6994-…` and `20261125121315_0faf7e7c-…`, identical to the files. Vault holds `samtal_base_url` and `samtal_purge_secret`. The app secret SAMTAL_PURGE_SECRET was removed again: the secret lives only in Vault (3c).
+
+### 3c. The purge secret only in Vault
 
 ```
-Set up automatic deletion for estim Samtal (approved). Run this after the two earlier Samtal migrations.
-
-1. Create a new migration with exactly the SQL in docs/samtal/samtal-sletting.sql. It adds the server functions samtal_due_for_deletion and samtal_mark_deleted.
-2. Create a second new migration with exactly the SQL in docs/samtal/samtal-sletting-cron.sql. It enables pg_cron (and pg_net if not already enabled) and schedules the hourly job 'samtal-purge'.
-3. Generate one new random secret of at least 32 characters.
-   - Store it as the app secret SAMTAL_PURGE_SECRET.
-   - Store the same value in Supabase Vault under the name samtal_purge_secret.
-4. Store the published address of the app (https://..., no trailing slash) in Supabase Vault under the name samtal_base_url.
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-sletting-hemmelighet.sql in the repository (estim Samtal). It adds one function, samtal_purge_secret_valid, that only service_role may call. It checks a given value against the Vault secret samtal_purge_secret and returns true or false, never the secret.
 
 Rules:
-- Never write the value of a secret into a migration, a file in the repository, a log or a chat message. Create the Vault secrets directly in the database (vault.create_secret), not in a migration file.
-- Run the SQL files unchanged.
-- Change nothing else: no existing table, function, policy, cron job, edge function or n8n flow.
-- Do not change any code in the app.
+- Run the SQL unchanged.
+- Do not create or change any secret. Vault already holds samtal_purge_secret and samtal_base_url, and the app secret SAMTAL_PURGE_SECRET must stay removed.
+- Change nothing else and do not change any code in the app.
 
-When done, report (names only, never secret values):
-1. The names of the two migration files.
-2. The row for 'samtal-purge' in cron.job: schedule, active, and that it is the only job with that name.
-3. That vault.secrets contains samtal_base_url and samtal_purge_secret.
-4. That the app secret SAMTAL_PURGE_SECRET is set.
-5. That no migration file contains a secret value.
+When done, report:
+1. The name of the migration file.
+2. That samtal_purge_secret_valid exists and only service_role has EXECUTE on it.
+3. The result of SELECT public.samtal_purge_secret_valid('wrong'), which must be false.
 ```
