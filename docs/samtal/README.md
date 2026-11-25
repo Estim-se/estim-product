@@ -24,6 +24,32 @@ All three prompts are below.
 1. **Real SMS delivery is missing.** The inbox has no SMS provider today: an approved SMS reply is saved as *sent* without leaving estim (`deliverChannel` only delivers WhatsApp and e-mail). A call's reply draft is an SMS, so until an SMS provider is connected the owner must contact the customer in another way. This applies to all SMS in the inbox, not only Samtal.
 2. **The purge route `/api/public/samtal-purge` is not built yet.** It comes with the processing (step 4). Until then the hourly job reaches the app, gets 404 and deletes nothing. Retention therefore starts to work when that route is merged and published.
 
+## Code: standard call and adapters (src/lib/samtal/)
+
+| File | What |
+|---|---|
+| [call.ts](../../src/lib/samtal/call.ts) | The standard call every adapter delivers: provider and call id, receiving number, caller (if given), start, end and duration, and the recording (a file or a provider link). Phone numbers are normalised to E.164, with Swedish numbers as the default. Browser-safe. |
+| [adapter.ts](../../src/lib/samtal/adapter.ts) | The adapter interface: `receive(input)` gives standard calls; `openAudio(call)` gives the recording. A provider (Lynes, Telavox, Telia Touchpoint, 46elks) is one new adapter, with no change elsewhere. |
+| [test-adapter.server.ts](../../src/lib/samtal/test-adapter.server.ts) | The test adapter: reads `<name>.json` and `<name>.<ext>` pairs from a folder outside the repository. It never reads outside that folder. |
+| [ingest.server.ts](../../src/lib/samtal/ingest.server.ts) | Receiving (processing steps 1–2): registers through `samtal_register_call`, then stores the recording in `samtal-audio/<company_id>/<call_id>.<ext>`. |
+| [flag.ts](../../src/lib/samtal/flag.ts) | The flag `SAMTAL`. |
+
+**Receiving a call:**
+- **Company and employee** come from the receiving number in the database, never from the adapter.
+- **What is not stored:** an unknown number, or the same provider call a second time. Neither reads or stores audio.
+- **After registration,** every write is bound to the company the database returned.
+- **A failing call** gets an error code and never stops the others.
+- **Logging:** codes only, never numbers, names, audio or text.
+
+Test adapter metadata (`<name>.json`, next to `<name>.mp3`, `.m4a`, `.wav` …):
+
+```json
+{ "call_id": "rollspel-01", "to": "070-111 11 11", "from": "+46 70 999 99 99",
+  "started_at": "2026-11-25T08:00:00+01:00", "ended_at": "2026-11-25T08:02:30+01:00" }
+```
+
+`from` may be left out (withheld number); `duration_seconds` may replace `ended_at`.
+
 ## Tables
 
 | Table | Content | Who reads | Who writes |
