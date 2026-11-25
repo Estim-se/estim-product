@@ -52,6 +52,31 @@ export async function verifyNylasSignature(raw: Uint8Array, header: string | nul
   return await crypto.subtle.verify("HMAC", key, signature, raw as BufferSource); // constant-time
 }
 
+/**
+ * Reads a request body of at most `maxBytes`, or returns null (answer 413). A too large content-length is refused
+ * before reading anything; otherwise the stream is read and cancelled as soon as the limit is passed, so a missing or
+ * lying content-length cannot make us buffer more than `maxBytes`.
+ */
+export async function readBounded(req: Request, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = req.headers.get("content-length");
+  if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared.trim()) > maxBytes) return null;
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) { await reader.cancel().catch(() => undefined); return null; }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  return out;
+}
+
 /** Decompress ONLY after the signature has been verified. Capped to stop decompression bombs. */
 export async function gunzip(raw: Uint8Array, maxBytes = 2_000_000): Promise<Uint8Array> {
   const source = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(raw); c.close(); } });

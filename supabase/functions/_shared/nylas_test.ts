@@ -8,7 +8,7 @@ async function assertRejects(fn: () => Promise<unknown>, _cls: unknown, includes
   throw new Error("expected rejection");
 }
 import {
-  errCode, gunzip, htmlToText, isNoReplySender, parseMessage, parseNotification, pointer, shouldSkip, stripQuoted, verifyNylasSignature,
+  errCode, gunzip, htmlToText, isNoReplySender, parseMessage, parseNotification, pointer, readBounded, shouldSkip, stripQuoted, verifyNylasSignature,
   type NylasMessage,
 } from "./nylas.ts";
 
@@ -97,4 +97,28 @@ Deno.test("errCode never returns message text", () => {
   assertEquals(errCode(new Error("dispatch_500")), "dispatch_500");
   assertEquals(errCode(new Error("secret@customer.se failed")), "Error");
   assertEquals(errCode("x"), "unknown");
+});
+
+Deno.test("readBounded: refuses a large content-length at once and stops reading a stream past the limit", async () => {
+  const small = new Uint8Array(10).fill(1);
+  assertEquals((await readBounded(new Request("http://x", { method: "POST", body: small }), 100))?.length, 10);
+  // declared too large: refused without reading
+  let pulled = 0;
+  const lazy = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(10)); } }, { highWaterMark: 0 });
+  const declared = new Request("http://x", { method: "POST", body: lazy, headers: { "content-length": "5000" } });
+  assertEquals(await readBounded(declared, 100), null);
+  assertEquals(pulled, 0);
+  // no or lying content-length: the stream is cancelled as soon as the limit is passed
+  let cancelled = false, chunks = 0;
+  const endless = () => new ReadableStream<Uint8Array>({ pull(c) { chunks++; c.enqueue(new Uint8Array(64)); }, cancel() { cancelled = true; } });
+  assertEquals(await readBounded(new Request("http://x", { method: "POST", body: endless() }), 1000), null);
+  assert(cancelled, "stream not cancelled");
+  assert(chunks <= 20, `read too much: ${chunks} chunks`);
+  cancelled = false; chunks = 0;
+  const lying = new Request("http://x", { method: "POST", body: endless(), headers: { "content-length": "10" } });
+  assertEquals(await readBounded(lying, 1000), null);
+  assert(cancelled, "stream not cancelled");
+  // exactly at the limit is accepted; an empty body is empty
+  assertEquals((await readBounded(new Request("http://x", { method: "POST", body: new Uint8Array(100) }), 100))?.length, 100);
+  assertEquals((await readBounded(new Request("http://x", { method: "POST" }), 100))?.length, 0);
 });

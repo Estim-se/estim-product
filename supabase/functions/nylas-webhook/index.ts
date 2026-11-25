@@ -23,7 +23,7 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
-  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, htmlToText, parseNotification, pointer,
+  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, htmlToText, parseNotification, pointer, readBounded,
   sha256Hex, shouldSkip, stripQuoted, verifyNylasSignature,
 } from "../_shared/nylas.ts";
 import * as unipile from "../_shared/unipile.ts";
@@ -33,6 +33,7 @@ import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
 const MAX_BODY_CHARS = 8000;
+const MAX_WEBHOOK_BYTES = 1_000_000;
 const UNIPILE_RETRY_DELAYS_MS = [0, 5_000, 20_000];
 
 const text = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain" } });
@@ -54,8 +55,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return text("Method not allowed", 405);
 
   // 1) Authenticate BEFORE parsing or decompressing: the signature covers the raw (possibly gzipped) bytes.
-  const raw = new Uint8Array(await req.arrayBuffer());
-  if (raw.length > 1_000_000) return text("Too large", 413);
+  const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
+  if (!raw) return text("Too large", 413);
   let secret: string;
   try { secret = env("NYLAS_WEBHOOK_SECRET"); } catch { console.error("[nylas] webhook secret missing"); return text("Not configured", 503); }
   if (!(await verifyNylasSignature(raw, req.headers.get("x-nylas-signature"), secret))) return text("Invalid signature", 401);
@@ -154,8 +155,8 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
 /* ---------- Unipile ---------- */
 
 async function handleUnipile(req: Request): Promise<Response> {
-  const raw = new Uint8Array(await req.arrayBuffer());
-  if (raw.length > 1_000_000) return text("Too large", 413);
+  const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
+  if (!raw) return text("Too large", 413);
   let secret: string;
   try { secret = env("UNIPILE_WEBHOOK_SECRET"); } catch { console.error("[unipile] webhook secret missing"); return text("Not configured", 503); }
   if (!(await unipile.verifyUnipileSignature(raw, req.headers.get("unipile-signature"), secret))) return text("Invalid signature", 401);
