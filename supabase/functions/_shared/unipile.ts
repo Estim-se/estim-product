@@ -245,20 +245,3 @@ export function bounceEventOf(payload: Record<string, unknown>): string | null {
   if (typeof payload.error_persistence === "string" && payload.error_persistence !== "permanent") return null;
   return normalizeMessageId(payload.email_id);
 }
-
-/**
- * The Message-ID of OUR mail that a delivery failure report refers to, or null if `msg` is not such a report.
- * Checked on a real Gmail bounce (2026-11-25): sender mailer-daemon, Auto-Submitted, multipart/report and
- * In-Reply-To = the Message-ID of the mail that could not be delivered.
- */
-export function bounceReferenceOf(msg: Pick<MailMessage, "from" | "headers">): string | null {
-  const from = msg.from[0]?.email.trim().toLowerCase() ?? "";
-  if (!/^(mailer-daemon|postmaster)@/.test(from)) return null;
-  const header = (name: string) => msg.headers.find((h) => h.name.toLowerCase() === name)?.value ?? "";
-  const isReport = /multipart\/report/i.test(header("content-type")) || /^auto-/i.test(header("auto-submitted").trim()) || Boolean(header("x-failed-recipients"));
-  if (!isReport) return null;
-  const inReplyTo = normalizeMessageId(header("in-reply-to").split(/\s+/)[0]);
-  if (inReplyTo) return inReplyTo;
-  const references = header("references").trim().split(/\s+/);
-  return normalizeMessageId(references[references.length - 1]);
-}

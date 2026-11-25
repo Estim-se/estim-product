@@ -8,7 +8,7 @@ function assertThrows(fn: () => unknown, includes: string) {
   throw new Error("expected an error");
 }
 import {
-  accountEventOf, bounceEventOf, bounceReferenceOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
+  accountEventOf, bounceEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
   parseEvent, shouldHandleEmailEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
@@ -117,20 +117,6 @@ Deno.test("bounces point at the Message-ID of our reply, ordinary mail does not"
   assertEquals(normalizeMessageId(" CA+HPZ=ab@mail.gmail.com "), "CA+HPZ=ab@mail.gmail.com");
   assertEquals(normalizeMessageId("not an id"), null);
   assertEquals(normalizeMessageId(42), null);
-  // headers as in a real Gmail bounce (2026-11-25)
-  const bounce = parseEmail({
-    id: "em_b", from: [{ email: "mailer-daemon@googlemail.com" }],
-    headers: [
-      { name: "Content-Type", value: 'multipart/report; boundary="x"; report-type=delivery-status' },
-      { name: "Auto-Submitted", value: "auto-replied" },
-      { name: "References", value: "<CA+HPZ=ab@mail.gmail.com>" },
-      { name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" },
-      { name: "X-Failed-Recipients", value: "finns-inte@example.com" },
-    ],
-  });
-  assertEquals(bounceReferenceOf(bounce), "CA+HPZ=ab@mail.gmail.com");
-  // only References: the last id is the bounced mail
-  assertEquals(bounceReferenceOf({ from: bounce.from, headers: [{ name: "Auto-Submitted", value: "auto-replied" }, { name: "References", value: "<a@x.se> <b@x.se>" }] }), "b@x.se");
   // the email.new.bounce event as Unipile really sends it (2026-11-25): no email object, email_id is our Message-ID
   const event = {
     reason: "The email account that you tried to reach does not exist.", addresses: "finns-inte@example.com", type: "action_not_taken",
@@ -139,9 +125,18 @@ Deno.test("bounces point at the Message-ID of our reply, ordinary mail does not"
   assertEquals(bounceEventOf(event), "CA+HPZ=ab@mail.gmail.com");
   assertEquals(bounceEventOf({ ...event, error_persistence: "transient" }), null);
   assertEquals(bounceEventOf({ code: 550 }), null);
-  // a customer's reply with In-Reply-To is not a bounce, and a daemon mail without a report is ignored
-  assertEquals(bounceReferenceOf({ from: [{ name: null, email: "kund@example.com" }], headers: [{ name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" }] }), null);
-  assertEquals(bounceReferenceOf({ from: [{ name: null, email: "mailer-daemon@googlemail.com" }], headers: [{ name: "In-Reply-To", value: "<a@x.se>" }] }), null);
+  // the bounce MAIL (also a "delayed" report, which looks the same) never marks anything and never becomes a request:
+  // headers as in a real Gmail report (2026-11-25)
+  const report = parseEmail({
+    id: "em_b", from: [{ email: "mailer-daemon@googlemail.com" }], to: [{ email: "info@foretag.se" }],
+    headers: [
+      { name: "Subject", value: "Delivery Status Notification (Delay)" },
+      { name: "Content-Type", value: 'multipart/report; boundary="x"; report-type=delivery-status' },
+      { name: "Auto-Submitted", value: "auto-replied" },
+      { name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" },
+    ],
+  });
+  assertEquals(shouldSkip(report, "info@foretag.se"), "automated_sender");
 });
 
 Deno.test("provider routing: connections keep their provider, new ones follow EMAIL_PROVIDER", () => {

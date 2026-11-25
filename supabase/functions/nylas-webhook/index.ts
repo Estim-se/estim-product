@@ -102,22 +102,21 @@ async function handle(db: SupabaseClient, type: string, object: Record<string, u
 
 /* ---------- Shared inbound path (both providers) ---------- */
 
-interface MailSource {
-  tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array>;
-  /** Unipile only: the Message-ID of our reply that a delivery failure report refers to (Nylas has its own bounce event). */
-  bounceOf?: (msg: unipile.MailMessage) => string | null;
-}
+interface MailSource { tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array> }
 
 const nylasSource = (grantId: string, messageId: string): MailSource => ({
   tag: "nylas", fetch: () => getMessage(grantId, messageId), download: (m, a) => downloadAttachment(grantId, m, a),
 });
 const unipileSource = (accountId: string, emailId: string): MailSource => ({
   tag: "unipile", fetch: () => unipile.getEmail(accountId, emailId), download: (m, a) => unipile.downloadAttachment(accountId, m, a),
-  bounceOf: unipile.bounceReferenceOf,
 });
 
 const BOUNCE_ERROR = "Mejlet kunde inte levereras (studsade).";
-/** Marks our sent reply as not delivered. The reply is found by the Message-ID stored when it was sent. */
+/**
+ * Marks our sent reply as not delivered. The reply is found by the Message-ID stored when it was sent. Only the signed
+ * email.new.bounce event does this: it says whether the failure is permanent, which the bounce mail itself does not
+ * reliably show (a "delayed" report looks like a failure). Bounce mails from mailer-daemon are skipped by shouldSkip.
+ */
 async function markBounced(db: SupabaseClient, connectionId: string, messageId: string): Promise<Outcome> {
   const res = await db.rpc("estim_email_status", { p_grant: connectionId, p_msg: messageId, new_status: "not_sent", err: BOUNCE_ERROR });
   return res.error ? { retry: true } : {};
@@ -136,8 +135,6 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
 
   let msg: unipile.MailMessage;
   try { msg = await source.fetch(); } catch { return { retry: true }; }
-  const bounced = source.bounceOf?.(msg);
-  if (bounced) return await markBounced(db, connectionId, bounced); // a delivery report is never a customer request
   const reason = shouldSkip(msg, conn.data.email, conn.data.watch_address);
   if (reason) { console.info(`[${source.tag}] skipped message:`, reason); return {}; }
 
