@@ -205,4 +205,19 @@ describe('requirement identity and deduplication', () => {
       req('Fastighetscentral i elrum', 'fastighet', null, { fixed_quantity: 2, type_id: T.riv, scope: 'tekniska_utrymmen', section: 7, source: src('Matning till hiss.') })]);
     expect(rowsOf(q).filter(i => i.type_id === T.riv)).toHaveLength(1);
   });
+  it('the same work in different named spaces is one delivery per space, each with its own quote', () => {
+    const q = build([req('LED-armatur lägenhetsförråd och källargångar', 'fastighet', null, { fixed_quantity: 1, type_id: T.riv, scope: 'källare', section: 6, source: src('Lägenhetsförråd och källargångar Nya armaturer monteras i tak') }),
+      req('Belysning tekniska utrymmen', 'fastighet', null, { fixed_quantity: 1, type_id: T.riv, scope: 'tekniska_utrymmen', section: 6, source: src('Tekniska utrymmen Ny belysningsinstallation') })]);
+    expect(rowsOf(q).filter(i => i.type_id === T.riv).map(i => i.post).sort()).toEqual(['Belysning tekniska utrymmen', 'LED-armatur lägenhetsförråd och källargångar']);
+  });
+  it('work of other trades is never a calculation row or a warning; electrical work at the same place stays', () => {
+    const q = build([req('Hatthylla med infästning hall', 'lägenhet', 1, { section: 4, source: src('Ny hatthylla monteras i hall, Essem Nostalgi krom/alu inkl. 3st ankarkrokar.') }),
+      req('Skohylla och klädstång', 'fast_antal', null, { fixed_quantity: 82, section: 4, source: null }),
+      req('Uttag vid hatthylla', 'lägenhet', 1, { section: 4, source: src('Vägguttag monteras vid hatthylla i hall.') })]);
+    expect(rowsOf(q).map(i => i.post)).not.toContain('Hatthylla med infästning hall');
+    expect(rowsOf(q).map(i => i.post)).not.toContain('Skohylla och klädstång');
+    expect(rowsOf(q).map(i => i.post)).toContain('Uttag vid hatthylla');
+    expect(status(q, 'Hatthylla med infästning hall')).toMatchObject({ status: 'Ej relevant' });
+    expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Hatthylla med infästning hall, Skohylla och klädstång/.test(a.description))).toBe(true);
+  });
 });

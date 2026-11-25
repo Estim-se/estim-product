@@ -16,7 +16,7 @@ import { TenderInsightsSections } from './tender-insights';
 import { getTenderQuantities } from '@/lib/tender-quantities.functions';
 import { TenderQuantitiesSections } from './tender-quantities';
 import { TenderCalculationSettings } from './tender-calculation-settings';
-import { TenderCalculation } from './tender-calculation';
+import { TenderCalculation, TenderCostOverview } from './tender-calculation';
 import { TenderExport } from './tender-export';
 import { TenderWatch, useTenderWatchEnabled } from './tender-watch';
 import { updateTenderWatchHit, type TenderWatchHitRow } from '@/lib/tender-watch.functions';
@@ -248,6 +248,7 @@ export function TendersPage() {
       {detailTab==='overview'&&<div className="tender-panel">
         <section className="tender-todo" aria-labelledby="tender-todo"><h2 id="tender-todo">Att göra</h2>{todos.length ? <ul>{todos.map(t=><li key={t.label}><button type="button" className="tender-todo-item" onClick={()=>setDetailTab(t.tab)}><span className={`tender-dot ${t.tone}`}/><span className="grow">{t.label}</span><span className="small muted">Visa →</span></button></li>)}</ul> : <p className="small muted mt8">Inget att åtgärda just nu.</p>}</section>
         <div className="tender-kpis mt16">{([['Filer',fileRows.length,'files'],['Mängdposter',counts.items,'calc'],['Risker',counts.risks,'risks'],['Frågor',counts.questions,'questions']] as const).map(([l,v,t])=><button type="button" key={l} className="tender-kpi" onClick={()=>setDetailTab(t)}><span className="small muted">{l}</span><b>{v}</b></button>)}</div>
+        {real && quantities.data?.status === 'analysed' && <TenderCostOverview id={selected.id} company={company} quantities={quantities.data.result} onOpen={()=>setDetailTab('calc')}/>}
         {insights.data?.result && <TenderInsightsSections part="key" result={insights.data.result} documents={fileRows} />}
         {insights.isError && <p role="alert" className="small mt16">Anbudsanalysen kunde inte hämtas.</p>}
       </div>}

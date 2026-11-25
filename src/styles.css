@@ -889,3 +889,109 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-aside .tender-list-row .grow{min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
 .tender-aside .tender-list-row .grow>*{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
 .tender-aside .tender-list-row .chip{flex:none}
+
+/* Tender workspace visual refresh (mockup-inspired, presentation only) */
+.tender-workspace{--tw-accent:oklch(0.58 0.12 160);--tw-soft:color-mix(in oklab,var(--foreground) 4%,var(--background));font-family:"Instrument Sans",system-ui,sans-serif;gap:0;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--background)}
+.tender-workspace .tender-aside{border:0;border-right:1px solid var(--border);border-radius:0;background:var(--tw-soft);padding:20px 14px;top:0;max-height:none;min-height:calc(100vh - 140px)}
+.tender-workspace .tender-aside .tender-toolbar{border-bottom:0;padding-bottom:12px}
+.tender-workspace .tender-aside input{border-radius:10px;background:var(--background)}
+.tender-workspace .tender-aside .tender-list-row{padding:10px 12px;font-size:15px}
+.tender-workspace .tender-aside .tender-list-row:hover{background:color-mix(in oklab,var(--foreground) 5%,transparent)}
+.tender-workspace .tender-list-row.on{background:color-mix(in oklab,var(--foreground) 7%,transparent);font-weight:500}
+.tender-workspace .tender-main{padding:24px 32px}
+.tender-workspace .tender-detail h2{font-family:"Instrument Sans",system-ui,sans-serif;font-weight:600;font-size:28px;letter-spacing:-.01em}
+.tender-workspace .tender-body{grid-template-columns:1fr;gap:20px}
+.tender-workspace .tender-subnav{position:static;flex-direction:row;gap:28px;border-bottom:1px solid var(--border);overflow-x:auto}
+.tender-workspace .tender-subnav-item{border-radius:0;padding:12px 0;gap:8px;font-size:15px;font-weight:400;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent}
+.tender-workspace .tender-subnav-item:hover{background:transparent}
+.tender-workspace .tender-subnav-item.on{background:transparent;color:var(--foreground);font-weight:500;border-bottom-color:var(--tw-accent)}
+.tender-workspace .tender-subnav-count{background:var(--tw-soft);border-radius:999px;padding:1px 7px}
+.tender-workspace .tender-kpi,.tender-workspace .tender-todo{border-radius:12px;box-shadow:0 1px 2px color-mix(in oklab,var(--foreground) 6%,transparent)}
+.tender-workspace .tender-kpi b{font-weight:600}
+.tender-workspace .tender-filter,.tender-workspace .tender-content input[type=search],.tender-workspace .tender-content input[type=text]{border-radius:10px;background:var(--tw-soft);border:1px solid var(--border)}
+.tender-workspace .tender-panel table{border-radius:12px;overflow:hidden}
+.tender-workspace .tender-panel table thead tr{background:var(--tw-soft)}
+.tender-workspace .tender-panel table th{text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted-foreground)}
+@media (max-width:1024px){.tender-workspace .tender-aside{border-right:0;border-bottom:1px solid var(--border);min-height:0}.tender-workspace .tender-main{padding:18px}}
+
+/* Anbud: spreadsheet-like overview inside every tab (visual only) */
+.tender-workspace .tender-panel>h2,.tender-workspace .tender-panel section>h2,.tender-workspace .tender-panel .row>h2{font-size:18px;font-weight:600;padding-bottom:8px;border-bottom:2px solid var(--foreground);margin-bottom:4px}
+.tender-workspace .tender-panel .overflow-x-auto{border:1px solid var(--border);border-radius:10px;max-height:70vh;overflow:auto;background:var(--background)}
+.tender-workspace .tender-panel .overflow-x-auto>table{border-radius:0;overflow:visible;border-collapse:separate;border-spacing:0}
+.tender-workspace .tender-panel table{font-size:13px}
+.tender-workspace .tender-panel table thead th{position:sticky;top:0;z-index:2;background:color-mix(in oklab,var(--foreground) 7%,var(--background));color:var(--foreground);font-weight:600;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--border)}
+.tender-workspace .tender-panel table th,.tender-workspace .tender-panel table td{padding:6px 10px;border-right:1px solid color-mix(in oklab,var(--border) 70%,transparent)}
+.tender-workspace .tender-panel table tr>*:last-child{border-right:0}
+.tender-workspace .tender-panel table tbody tr{border-bottom:1px solid color-mix(in oklab,var(--border) 80%,transparent)}
+.tender-workspace .tender-panel table tbody tr:nth-child(even){background:color-mix(in oklab,var(--foreground) 2.5%,var(--background))}
+.tender-workspace .tender-panel table tbody tr:hover{background:color-mix(in oklab,var(--primary) 7%,var(--background))}
+.tender-workspace .tender-panel table td.tabular-nums,.tender-workspace .tender-panel table th.tabular-nums{text-align:right;font-variant-numeric:tabular-nums}
+.tender-workspace .tender-panel table tfoot tr,.tender-workspace .tender-panel table tbody tr:last-child:has(.font-semibold){background:color-mix(in oklab,var(--foreground) 6%,var(--background));font-weight:600;border-top:2px solid var(--foreground)}
+.tender-workspace .tender-panel table .small.muted{font-size:12px;line-height:1.35}
+.tender-workspace .tender-panel table .chip{font-size:11px;padding:1px 8px;border-radius:4px}
+.tender-workspace .tender-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.tender-workspace .tender-kpi{border-radius:0;border:0;border-right:1px solid var(--border);text-align:left;padding:14px 16px}
+.tender-workspace .tender-kpi:last-child{border-right:0}
+.tender-workspace .tender-kpi b{display:block;font-size:24px;font-variant-numeric:tabular-nums;margin-top:2px}
+.tender-workspace .tender-panel .space-y-8>*+*{margin-top:28px}
+@media (max-width:720px){.tender-workspace .tender-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-workspace .tender-kpi:nth-child(2){border-right:0}.tender-workspace .tender-kpi:nth-child(-n+2){border-bottom:1px solid var(--border)}}
+
+/* Anbud: spreadsheet-style calculation overview (visual only) */
+.tender-kpi-strip{display:grid;grid-template-columns:1.4fr repeat(4,minmax(0,1fr));border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--background)}
+.tender-kpi-cell{padding:14px 16px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:4px;min-width:0}
+.tender-kpi-cell:last-child{border-right:0}
+.tender-kpi-cell span{font-size:12px;color:var(--muted-foreground)}
+.tender-kpi-cell b{font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tender-kpi-cell.main{background:var(--foreground);color:var(--background)}
+.tender-kpi-cell.main span{color:color-mix(in oklab,var(--background) 70%,transparent)}
+.tender-kpi-cell.main b{font-size:24px}
+@media (max-width:900px){.tender-kpi-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-kpi-cell{border-bottom:1px solid var(--border)}.tender-kpi-cell.main{grid-column:1/-1}}
+.tender-grid-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;position:sticky;top:0;z-index:4;background:var(--background);padding:8px 0}
+.tender-grid-bar .tender-filter{max-width:280px}
+.tender-legend{display:flex;gap:6px;flex-wrap:wrap;margin-right:auto}
+.tender-level{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.lv-ok{background:color-mix(in oklab,oklch(0.72 0.15 150) 22%,var(--background));color:oklch(0.38 0.1 150)}
+.lv-calc{background:color-mix(in oklab,oklch(0.7 0.12 240) 20%,var(--background));color:oklch(0.4 0.12 240)}
+.lv-assumed{background:color-mix(in oklab,oklch(0.78 0.14 60) 28%,var(--background));color:oklch(0.45 0.12 50)}
+.lv-missing{background:color-mix(in oklab,var(--foreground) 8%,var(--background));color:var(--muted-foreground)}
+.tender-workspace .tender-grid tr.tender-sec-head th{position:sticky;top:33px;z-index:1;background:color-mix(in oklab,var(--foreground) 88%,var(--background));color:var(--background);padding:0;border-right:0}
+.tender-sec-head button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;font-weight:600;font-size:13px;text-align:left;color:inherit;background:none;border:0;cursor:pointer}
+.tender-sec-meta{margin-left:auto;font-weight:500;opacity:.75;font-variant-numeric:tabular-nums}
+.tender-caret{width:12px}
+.tender-workspace .tender-grid tr.tender-sec-sum{background:color-mix(in oklab,var(--foreground) 6%,var(--background))!important;font-weight:600;border-top:1px solid var(--foreground)}
+.tender-workspace .tender-grid tr.tender-sec-sum>*{padding:8px 10px;text-align:right}
+.tender-workspace .tender-grid tr.tender-sec-sum>th{text-align:left}
+.tender-workspace .tender-grid tr.tender-grand{background:var(--foreground)!important;color:var(--background);font-weight:700}
+.tender-workspace .tender-grid tr.tender-grand td{text-align:right}
+.tender-nr{color:var(--muted-foreground);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tender-num-input{text-align:right;color:oklch(0.45 0.15 255);font-variant-numeric:tabular-nums;min-width:90px}
+.tender-share{display:inline-block;width:70px;height:6px;border-radius:3px;background:color-mix(in oklab,var(--foreground) 10%,var(--background));margin-right:8px;vertical-align:middle;overflow:hidden}
+.tender-share>span{display:block;height:100%;background:var(--primary)}
+.tender-link{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-align:left}
+.tender-link:hover{text-decoration:underline}
+.tender-totals{display:none}
+
+/* Anbud: tender list as a compact top bar so the detail gets full width */
+.tender-workspace{grid-template-columns:1fr;gap:0}
+.tender-workspace .tender-aside{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 16px;border-radius:0;min-height:0;border-right:0;border-bottom:1px solid var(--border)}
+.tender-workspace .tender-aside>.tender-toolbar{order:3;margin-left:auto}
+.tender-workspace .tender-aside>.tender-toolbar>.small{display:none}
+.tender-workspace .tender-aside>input[type=search]{order:1;margin:0;width:200px;height:36px}
+.tender-workspace .tender-aside>.tender-list,.tender-workspace .tender-aside>p{order:2;margin:0;flex:1;min-width:0}
+.tender-workspace .tender-aside .tender-list{flex-direction:row;gap:6px;overflow-x:auto}
+.tender-workspace .tender-aside .tender-file-item{width:auto;flex:none}
+.tender-workspace .tender-aside .tender-list-row{width:auto;padding:6px 12px;border:1px solid var(--border);border-bottom:1px solid var(--border);border-radius:999px;gap:8px;white-space:nowrap}
+.tender-workspace .tender-aside .tender-list-row .grow{flex-direction:row;align-items:baseline;gap:8px}
+.tender-workspace .tender-aside .tender-list-row svg{display:none}
+
+/* Anbud: no nested scroll areas or overlapping sticky rows; the page scrolls as one */
+.tender-workspace .tender-panel .overflow-x-auto{max-height:none;overflow-x:auto;overflow-y:visible}
+.tender-workspace .tender-panel table thead th{position:static}
+.tender-workspace .tender-grid tr.tender-sec-head th{position:static}
+.tender-grid-bar{position:static;padding:0}
+.tender-kpi-strip{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.tender-kpi-cell.main{grid-column:auto}
+.tender-workspace .tender-grid table{min-width:1100px}
+.tender-workspace .tender-grid td .input{min-width:0}
+.tender-workspace .tender-grid td.min-w-56{min-width:200px}
+.tender-workspace .tender-grid td.min-w-32{min-width:100px}

@@ -122,6 +122,15 @@ function localWorkNotPremises(r: Requirement) {
 }
 
 // Options ("Option timer på handdukstork", "tillval") are their own rows, never priced as the main post.
+// Work of other trades (furniture, joinery, shelves, painting, flooring, tiling, plumbing fixtures) is no electrical
+// post: a requirement without catalog type that names such an object, while neither its quote nor (without a quote) its
+// name speaks of electrical work, never becomes a calculation row or a warning.
+const OTHER_TRADE = /hatthyll|skohyll|hyll(?:a|or|an)|klädstång|ankarkrok|krokar|möbl|möbel|garderob|snickeri|(?:golv|tak|dörr|fönster)?list(?:er|verk)?|målning|måla|tapet|spackl|kakel|klinker|plattsättning|golvbeläggning|plastmatta|parkett|innerdörr|dörrblad|fönster|bänkskiv|köksinredning|köksskåp|skåpsluck|tätskikt|vvs|blandare|duschvägg|toalettstol|badkar|diskbänk/;
+const ELECTRICAL_WORDS = /el|el-|uttag|kabel|ledning|belysning|armatur|lamp|strömställ|dimmer|central|matning|anslut|givare|detektor|brandvarn|ladd|tomrör|jordning|säkring|mätar|mätning|motor|golvvärme|värmekabel|handdukstork|spegelskåp|fläkt|spis|ugn|timer|automatik|porttelefon|data|tele|larm|ström|elektr|dosa|brytare/;
+export function otherTradeWork(r: Pick<Requirement, 'post' | 'source'>) {
+  const name = r.post.toLocaleLowerCase('sv'), quote = r.source?.evidence.toLocaleLowerCase('sv') ?? '';
+  return OTHER_TRADE.test(`${name} ${quote}`) && !ELECTRICAL_WORDS.test(quote || name);
+}
 const CONTRACTOR_DUTY = /\bbas-?[pu]\b|byggarbetsmiljö|arbetsmiljösamordn|arbetsplatsorganisation|samordning av arbetarskydd/i;
 const APARTMENT_WORDS = /lägenhet|\blgh\b|bostad|\bkök|badrum|våtrum|\bwc\b|sovrum|vardagsrum|\bhall\b|samtliga rum|varje rum/i;
 const ROOM_WIDE = /övriga rum|samtliga rum|alla rum|varje rum|resterande rum/i;
@@ -154,6 +163,10 @@ const QUOTED_BASIS: [RegExp, string][] = [[/\b(?:i varje|i respektive|respektive
   [/\b(?:i varje|i respektive|respektive|per|i samtliga|samtliga)\s+(?:lokal|lokaler)\b/i, 'lokal'], [/\b(?:i varje|per|för varje)\s+etapp/i, 'etapp']];
 const BASIS_OF_UNIT: Partial<Record<RequirementUnit, string>> = { 'lägenhet': 'lägenhet', 'kök': 'lägenhet', 'badrum': 'lägenhet', 'wc': 'lägenhet', 'vardagsrum': 'lägenhet', 'sovrum': 'lägenhet', 'halvrum': 'lägenhet', 'sovrum_och_halvrum': 'lägenhet', 'hall': 'lägenhet', 'per_area': 'lägenhet', 'trapphus': 'trapphus', 'trapphusplan': 'trapphus', 'entré': 'trapphus', 'lokal': 'lokal', 'etapp': 'etapp' };
 const PROPERTY_UNITS = new Set(['post', 'fast_antal', 'fastighet', 'huskropp', 'etapp']);
+// The common spaces a text names (storage and basement corridors, technical rooms, laundry, garage, stairwells, outside).
+const PLACES: [RegExp, string][] = [[/källar/, 'källare'], [/förråd|cykelrum|soprum|barnvagnsrum/, 'förråd'], [/tekni(?:sk\w*|k)\s*utrymm|tekniska_utrymmen|teknikrum|undercentral/, 'teknik'],
+  [/tvättstug/, 'tvättstuga'], [/garage/, 'garage'], [/trapphus|entré|uppgång/, 'trapphus'], [/fasad|utomhus/, 'utomhus']];
+export const placesOf = (text: string) => new Set(PLACES.filter(([re]) => re.test(text.toLocaleLowerCase('sv'))).map(([, p]) => p));
 // "2st lamputtag per lägenhet": a number stated per apartment is always multiplied by the number of apartments.
 const PER_APARTMENT_COUNT = /(\d+)\s*(?:st\b|stycken\b)?[^.\d]{0,40}?\bper\s+(?:lägenhet|lgh|bostad)\b/i;
 // Units counted inside the apartments (sections 1–4) and the premises unit (section 5).
@@ -253,7 +266,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     operands.push({ id, label: `${post}: ${calculation}`, value: String(quantity ?? 0), basis: level === 'Antagen' || level === 'Saknar mängd' ? 'Antagande' : 'Text', source: sources[0] ?? null });
     ruleItems.push({ post, unit, rule, terms: [{ factors: [id] }], assumption: level === 'Antagen' || level === 'Saknar mängd' ? (note ?? rule) : null });
   };
-  const covered = new Set<string>(), counterLength: { r: Requirement; sources: Source[]; cov: Coverage }[] = [], contractorDuties: string[] = [];
+  const covered = new Set<string>(), counterLength: { r: Requirement; sources: Source[]; cov: Coverage }[] = [], contractorDuties: string[] = [], otherTrades: string[] = [];
   const roomWideCoverage: Record<'sockets' | 'lamps', Coverage[]> = { sockets: [], lamps: [] };
   const roomWideSources: Record<'sockets' | 'lamps', Source[]> = { sockets: [], lamps: [] }, roomWidePosts: Record<'sockets' | 'lamps', string[]> = { sockets: [], lamps: [] };
   const typeName = new Map(canonical.types.map(t => [t.id, t.name]));
@@ -284,6 +297,16 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
   // The units each catalog type is counted in by the requirements (to recognise the same delivery at another unit).
   const unitsOfType = new Map<string, Set<string>>();
   for (const r of input.requirements) { const t = ownType(typeOf(r.type_id), r.post); if (t) unitsOfType.set(t, new Set([...unitsOfType.get(t) ?? [], r.unit_of_count])); }
+  // The same delivery at property level is one row whatever place the model names, except when posts of the same
+  // catalog type name different spaces ("armaturer i lägenhetsförråd och källargångar", "belysning i tekniska
+  // utrymmen", each with its own quote): then each space named in the post is its own delivery. Two posts whose names
+  // or quotes share a space stay one delivery.
+  const placesOfType = new Map<string, string[][]>();
+  for (const r of input.requirements) {
+    const t = ownType(typeOf(r.type_id), r.post), places = [...placesOf(`${r.post} ${r.source?.evidence ?? ''}`)];
+    if (t && PROPERTY_UNITS.has(r.unit_of_count) && placesOf(r.post).size) placesOfType.set(t, [...placesOfType.get(t) ?? [], places]);
+  }
+  const spaceSplit = new Set([...placesOfType].filter(([, sets]) => sets.some(a => sets.some(b => !a.some(p => b.includes(p))))).map(([t]) => t));
   for (const stated of input.requirements) {
     // Work at the worktop stated per counter length that is not a socket (a luminaire above the worktop): one worktop
     // per kitchen, Antagen with the reason, before the identity is formed.
@@ -325,7 +348,8 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     const beyondType = (text: string) => normalWords(text.replace(/\([^)]*\)/g, ' ')).split(' ').filter(w => w && !typeWords.has(w)).join(' ');
     const delivery = ownMeaning && !GENERIC_MEANINGS.has(ownMeaning) ? `betydelse:${ownMeaning}` : raw.work ? beyondType(raw.work) : beyondType(raw.post);
     const what = !type ? `utan-typ:${normalWords(raw.post)}` : coversSeveral(type) ? `${type}:${delivery}` : type;
-    const rid = stableRequirementId(`${option ? `option:${normalWords(raw.post)}|` : ''}${what}|${scope}|${typeFamily(countUnit)}|${raw.room_type ? normalWords(raw.room_type) : ''}`);
+    const space = type && spaceSplit.has(type) && PROPERTY_UNITS.has(countUnit) ? [...placesOf(raw.post)].sort().join(',') : '';
+    const rid = stableRequirementId(`${option ? `option:${normalWords(raw.post)}|` : ''}${what}|${scope}|${typeFamily(countUnit)}|${raw.room_type ? normalWords(raw.room_type) : ''}${space ? `|plats:${space}` : ''}`);
     const validation = [...(raw.type_id && !modelType ? [`okänd katalog-ID ${raw.type_id.slice(0, 40)}`] : []), ...(meaningType ? ['katalogtyp vald efter postens betydelse'] : []), ...(!raw.source ? ['källa saknas'] : !source ? ['källan kunde inte verifieras'] : [])];
     const cov: Coverage = { requirement_id: rid, post: raw.post.slice(0, 240), status: 'Kräver avklaring', row: null, reason: null, validation };
     coverage.push(cov);
@@ -345,6 +369,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
     // The general contractor's own duties (site safety coordination BAS-P/BAS-U, work environment, site organisation)
     // are not electrical posts for the electrical contractor; they are noted, not priced.
     if (CONTRACTOR_DUTY.test(`${raw.post} ${raw.note ?? ''}`)) { contractorDuties.push(raw.post); Object.assign(cov, { status: 'Ej relevant', reason: 'Totalentreprenörens eget ansvar, ingen elpost.' }); continue; }
+    if (!type && otherTradeWork(raw)) { otherTrades.push(raw.post); Object.assign(cov, { status: 'Ej relevant', reason: 'Annan yrkesgrupps arbete (bygg, inredning, VVS), ingen elpost.' }); continue; }
     // Room equipment stated for "övriga rum"/"samtliga rum" is what the room recipes count room by room: the requirement
     // confirms the recipe posts (its source is added to them) instead of becoming a post of its own.
     const roomWide = equipment(raw.post);
@@ -426,6 +451,7 @@ export function buildRequirementQuantities(input: Requirements, model: ObjectMod
       + (model.ambiguous_codes.length ? ` Ej kopplade eftersom typkoderna för samma rumsantal skiljer sig: ${model.ambiguous_codes.join('; ')}.` : '')
       + (!linked && model.unmatched_codes.length ? ` Ej kopplade: ${model.unmatched_codes.join('; ')}.` : ''), sources: listSource ? [listSource] : [], item: null });
   }
+  if (otherTrades.length) assumptions.push({ description: `Ingår inte i elentreprenaden (annan yrkesgrupps arbete): ${[...new Set(otherTrades)].sort().join(', ')}.`, sources: [], item: null });
   if (contractorDuties.length) assumptions.push({ description: `Ingår inte i elentreprenaden (totalentreprenörens eget ansvar): ${[...contractorDuties].sort().join(', ')}.`, sources: [], item: null });
   for (const c of roomWideCoverage.sockets.concat(roomWideCoverage.lamps)) if (!c.row) Object.assign(c, { reason: 'Utrustning för övriga rum utan objektlista eller typrecept – fyll i mängd.' });
   // Categories the documents name that no requirement covers, and that could not be listed as a row: visible here.

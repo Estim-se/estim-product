@@ -14,6 +14,16 @@ describe('requirements stay the same between runs', () => {
     expect(Object.fromEntries(missing.map(([m, lines]) => [m, lines[0]!.line]))).toEqual({ 'central-garage': 'Nya gruppcentraler monteras i: Garage', 'kanalisation': '61 EL- OCH TELEKANALISATIONSSYSTEM' });
     expect(missing.find(([m]) => m === 'kanalisation')?.[1][0]).toMatchObject({ document_id: 'd1', page: 4 });
   });
+  it('reads a line under a space heading as that space\'s category; the same work listed for another space does not cover it', () => {
+    const text = 'Fysisk sida: 12\nLägenhetsförråd och källargångar\nNya ledningar och nya armaturer monteras i tak\nBelysning skall närvarostyras\nTekniska utrymmen\nNy belysningsinstallation med armaturer enligt armaturspecifikation';
+    const docs = [{ id: 'd1', file_name: 'El.pdf', doc_type: 'Teknisk beskrivning', text }], catalog = [{ id: 'k1', name: 'LED-armatur källare' }, { id: 'k2', name: 'Närvarogivare' }];
+    const listed = (...posts: string[]) => decodeRequirements({ counts: [], requirements: posts.map(p => req(p, 'fastighet', 1, { type_id: /Närvaro/.test(p) ? 'k2' : 'k1' })) });
+    // Only the presence detectors and the technical rooms' lighting are listed: the storage/basement lighting is missing.
+    // A presence detector post whose name speaks of the lighting is priced as a detector and does not cover the luminaires.
+    const missing = missingDocumentedCategories(docs, listed('Närvarostyrning belysning källargångar/förråd', 'Belysning tekniska utrymmen'), catalog);
+    expect(missing.map(([m, lines]) => [m, lines[0]!.place])).toEqual([['armatur-kallare', 'Lägenhetsförråd och källargångar']]);
+    expect(missingDocumentedCategories(docs, listed('Närvarogivare förråd', 'Belysning tekniska utrymmen', 'Armaturer källargångar och förråd'), catalog)).toEqual([]);
+  });
   it.each([
     ['Handhavandebeskrivning vid central', null], ['Rivning/demontering av gruppcentraler och huvudledningar', 'rivning'], ['Demontering gruppcentraler och huvudledningar i lägenhet', 'rivning'],
     ['Demontering och återmontering av belysningsarmaturer', 'demontering'], ['Mätartavla lägenhet', 'matarplats'], ['Mätartavla total fastighetsmätning', 'totalmatare'],
@@ -53,7 +63,8 @@ describe('the catalog binding and calculation do not depend on wording', () => {
     expect([qty('Debiteringsmätare per lägenhet'), qty('Mätartavla, mätarblock'), qty('Mätartavla lokal')]).toEqual(['5', '0', '2']);
     // A row at 0 is never Bekräftad.
     expect(rows.find(r => r.post === 'Mätartavla, mätarblock')?.level).toBe('Antagen');
-  });  it('a post for apartments and premises counts the premises part when the type has only its own apartment rows', () => {
+  });
+  it('a post for apartments and premises counts the premises part when the type has only its own apartment rows', () => {
     const item = (post: string, quantity: string, count_unit: string) => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level: 'Bekräftad' as const, count_unit, type_id: id(3) });
     const apartments = Array.from({ length: 5 }, (_, i) => ({ row: i + 2, number: `10${i}`, address: 'Gata 1', floor: '1', label: '2 rok', rooms: 2, area: 50, bedrooms: 1, half_rooms: 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default' as const, code: null }));
     const q: TenderQuantities = { rules: { operands: [], items: [], assumptions: [] }, assumptions: [], object_model: { document_id: id(99), sheet: 'Lista', premises: 9, apartments },
@@ -61,6 +72,17 @@ describe('the catalog binding and calculation do not depend on wording', () => {
     const rows = calculateTenderCost(q, settings, { bindings: q.items.map(i => ({ post: i.post, type_id: id(3), manual_hours: null, manual_list_price: null })), demolition: null }).rows;
     expect(rows.find(r => r.post === 'Tomrör för framtida mätning i lägenheter och lokaler')).toMatchObject({ quantity: '9', level: 'Bekräftad' });
     expect(rows.find(r => r.post === 'Tomrör för framtida mätning i lägenheter och lokaler')?.rule).toMatch(/Lokaldelen: 9 lokaler/);
+  });
+  it('a post for apartments and premises counts the apartment part when the type has only its own premises rows, so premises count once', () => {
+    const item = (post: string, quantity: string, count_unit: string) => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level: 'Bekräftad' as const, count_unit, type_id: id(3) });
+    const apartments = Array.from({ length: 5 }, (_, i) => ({ row: i + 2, number: `10${i}`, address: 'Gata 1', floor: '1', label: '2 rok', rooms: 2, area: 50, bedrooms: 1, half_rooms: 0, kitchens: 1, bathrooms: 1, wc: 0, basis: 'default' as const, code: null }));
+    const q: TenderQuantities = { rules: { operands: [], items: [], assumptions: [] }, assumptions: [], object_model: { document_id: id(99), sheet: 'Lista', premises: 9, apartments },
+      items: [item('Tomrör för framtida vattenmätning lokal', '9', 'lokal'), item('Tomrör för framtida mätning vattenförbrukning', '14', 'lägenhet_och_lokal')] };
+    const rows = calculateTenderCost(q, settings, { bindings: q.items.map(i => ({ post: i.post, type_id: id(3), manual_hours: null, manual_list_price: null })), demolition: null }).rows;
+    expect(rows.find(r => r.post === 'Tomrör för framtida mätning vattenförbrukning')).toMatchObject({ quantity: '5', level: 'Bekräftad' });
+    expect(rows.find(r => r.post === 'Tomrör för framtida mätning vattenförbrukning')?.rule).toMatch(/Lägenhetsdelen: 5 lägenheter/);
+    // 5 apartments + 9 premises, each counted once.
+    expect(rows.filter(r => /Tomrör/.test(r.post)).reduce((n, r) => n + Number(r.quantity), 0)).toBe(14);
   });
   it('a one-off requirement on a per-apartment catalog type that already has its own per-apartment row is not counted again', () => {
     const item = (post: string, quantity: string, count_unit: string, level: 'Bekräftad' | 'Saknar mängd' = 'Bekräftad') => ({ post, unit: 'st' as const, quantity, calculation: quantity, rule: 'r', sources: [], certainty: 'Hög' as const, level, count_unit, type_id: id(9) });
