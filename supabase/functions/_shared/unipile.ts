@@ -206,9 +206,36 @@ export async function sendEmail(args: {
   });
   if (!res.ok) throw new Error(`unipile_send_${res.status}`); // never log the body
   const json = await res.json() as { id?: unknown; message_id?: unknown };
-  // `id` may be empty when the provider keeps no copy; fall back to the RFC id, then to a unique marker
-  // (provider_message_id is unique per company, and the app requires one to record the delivery).
-  if (typeof json.id === "string" && json.id) return json.id;
-  if (typeof json.message_id === "string" && json.message_id) return json.message_id.slice(0, 500);
+  // Stored as provider_message_id. The RFC Message-ID comes first: a bounce names it in In-Reply-To, so the reply can be
+  // marked as not delivered. Then Unipile's id, then a unique marker (the app requires an id to record the delivery).
+  const rfc = normalizeMessageId(json.message_id);
+  if (rfc) return rfc;
+  if (typeof json.id === "string" && json.id) return json.id.slice(0, 500);
   return `unipile_${crypto.randomUUID()}`;
+}
+
+/* ---------- Bounces ---------- */
+
+/** An RFC Message-ID without angle brackets or whitespace, so the stored id and a bounce's In-Reply-To compare equal. */
+export function normalizeMessageId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim().replace(/^<|>$/g, "").trim();
+  return id && id.length <= 500 && /^[^\s<>]+@[^\s<>]+$/.test(id) ? id : null;
+}
+
+/**
+ * The Message-ID of OUR mail that a delivery failure report refers to, or null if `msg` is not such a report.
+ * Checked on a real Gmail bounce (2026-11-25): sender mailer-daemon, Auto-Submitted, multipart/report and
+ * In-Reply-To = the Message-ID of the mail that could not be delivered.
+ */
+export function bounceReferenceOf(msg: Pick<MailMessage, "from" | "headers">): string | null {
+  const from = msg.from[0]?.email.trim().toLowerCase() ?? "";
+  if (!/^(mailer-daemon|postmaster)@/.test(from)) return null;
+  const header = (name: string) => msg.headers.find((h) => h.name.toLowerCase() === name)?.value ?? "";
+  const isReport = /multipart\/report/i.test(header("content-type")) || /^auto-/i.test(header("auto-submitted").trim()) || Boolean(header("x-failed-recipients"));
+  if (!isReport) return null;
+  const inReplyTo = normalizeMessageId(header("in-reply-to").split(/\s+/)[0]);
+  if (inReplyTo) return inReplyTo;
+  const references = header("references").trim().split(/\s+/);
+  return normalizeMessageId(references[references.length - 1]);
 }

@@ -8,7 +8,8 @@ function assertThrows(fn: () => unknown, includes: string) {
   throw new Error("expected an error");
 }
 import {
-  accountEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, parseAccount, parseEmail, parseEvent, verifyUnipileSignature,
+  accountEventOf, bounceReferenceOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
+  parseEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
 import { shouldSkip } from "./nylas.ts";
@@ -101,6 +102,30 @@ Deno.test("sent, draft and spam folders never become requests, and own mail is s
   assert(isNonInboxFolder(["SENT"])); assert(isNonInboxFolder(["INBOX", "SPAM"])); assertFalse(isNonInboxFolder(["INBOX", "Label_5"]));
   const own = parseEmail({ id: "em_3", from: [{ email: "info@foretag.se" }], to: [{ email: "kund@example.com" }] });
   assertEquals(shouldSkip(own, "info@foretag.se"), "own_message");
+});
+
+Deno.test("bounces point at the Message-ID of our reply, ordinary mail does not", () => {
+  assertEquals(normalizeMessageId("<CA+HPZ=ab@mail.gmail.com>"), "CA+HPZ=ab@mail.gmail.com");
+  assertEquals(normalizeMessageId(" CA+HPZ=ab@mail.gmail.com "), "CA+HPZ=ab@mail.gmail.com");
+  assertEquals(normalizeMessageId("not an id"), null);
+  assertEquals(normalizeMessageId(42), null);
+  // headers as in a real Gmail bounce (2026-11-25)
+  const bounce = parseEmail({
+    id: "em_b", from: [{ email: "mailer-daemon@googlemail.com" }],
+    headers: [
+      { name: "Content-Type", value: 'multipart/report; boundary="x"; report-type=delivery-status' },
+      { name: "Auto-Submitted", value: "auto-replied" },
+      { name: "References", value: "<CA+HPZ=ab@mail.gmail.com>" },
+      { name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" },
+      { name: "X-Failed-Recipients", value: "finns-inte@example.com" },
+    ],
+  });
+  assertEquals(bounceReferenceOf(bounce), "CA+HPZ=ab@mail.gmail.com");
+  // only References: the last id is the bounced mail
+  assertEquals(bounceReferenceOf({ from: bounce.from, headers: [{ name: "Auto-Submitted", value: "auto-replied" }, { name: "References", value: "<a@x.se> <b@x.se>" }] }), "b@x.se");
+  // a customer's reply with In-Reply-To is not a bounce, and a daemon mail without a report is ignored
+  assertEquals(bounceReferenceOf({ from: [{ name: null, email: "kund@example.com" }], headers: [{ name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" }] }), null);
+  assertEquals(bounceReferenceOf({ from: [{ name: null, email: "mailer-daemon@googlemail.com" }], headers: [{ name: "In-Reply-To", value: "<a@x.se>" }] }), null);
 });
 
 Deno.test("provider routing: connections keep their provider, new ones follow EMAIL_PROVIDER", () => {

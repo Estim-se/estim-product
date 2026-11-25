@@ -102,14 +102,26 @@ async function handle(db: SupabaseClient, type: string, object: Record<string, u
 
 /* ---------- Shared inbound path (both providers) ---------- */
 
-interface MailSource { tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array> }
+interface MailSource {
+  tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array>;
+  /** Unipile only: the Message-ID of our reply that a delivery failure report refers to (Nylas has its own bounce event). */
+  bounceOf?: (msg: unipile.MailMessage) => string | null;
+}
 
 const nylasSource = (grantId: string, messageId: string): MailSource => ({
   tag: "nylas", fetch: () => getMessage(grantId, messageId), download: (m, a) => downloadAttachment(grantId, m, a),
 });
 const unipileSource = (accountId: string, emailId: string): MailSource => ({
   tag: "unipile", fetch: () => unipile.getEmail(accountId, emailId), download: (m, a) => unipile.downloadAttachment(accountId, m, a),
+  bounceOf: unipile.bounceReferenceOf,
 });
+
+const BOUNCE_ERROR = "Mejlet kunde inte levereras (studsade).";
+/** Marks our sent reply as not delivered. The reply is found by the Message-ID stored when it was sent. */
+async function markBounced(db: SupabaseClient, connectionId: string, messageId: string): Promise<Outcome> {
+  const res = await db.rpc("estim_email_status", { p_grant: connectionId, p_msg: messageId, new_status: "not_sent", err: BOUNCE_ERROR });
+  return res.error ? { retry: true } : {};
+}
 
 async function processInbound(db: SupabaseClient, connectionId: string, messageId: string, source: MailSource): Promise<Outcome> {
   // Unknown or inactive connection: ignore without spending an API call.
@@ -124,6 +136,8 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
 
   let msg: unipile.MailMessage;
   try { msg = await source.fetch(); } catch { return { retry: true }; }
+  const bounced = source.bounceOf?.(msg);
+  if (bounced) return await markBounced(db, connectionId, bounced); // a delivery report is never a customer request
   const reason = shouldSkip(msg, conn.data.email, conn.data.watch_address);
   if (reason) { console.info(`[${source.tag}] skipped message:`, reason); return {}; }
 
@@ -191,9 +205,17 @@ async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEven
     return res.error ? { retry: true } : {};
   }
   if (type === "email.new.bounce") {
-    // Not yet mapped to the sent message: the payload format must be confirmed against a real bounce first.
-    console.info("[unipile] bounce received");
-    return {};
+    // The report itself is in payload.email; it is fetched by id like any mail, then matched on In-Reply-To.
+    const ref = unipile.emailEventOf(payload);
+    if (!accountId || !ref) return {};
+    const conn = await db.from("email_connections").select("status").eq("grant_id", accountId).maybeSingle();
+    if (conn.error) return { retry: true };
+    if (conn.data?.status !== "active") return {};
+    let report: unipile.MailMessage;
+    try { report = await unipile.getEmail(accountId, ref.emailId); } catch { return { retry: true }; }
+    const bounced = unipile.bounceReferenceOf(report);
+    if (!bounced) { console.info("[unipile] bounce without a reference"); return {}; }
+    return await markBounced(db, accountId, bounced);
   }
   return {};
 }
