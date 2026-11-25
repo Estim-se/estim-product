@@ -224,6 +224,16 @@ export function normalizeMessageId(value: unknown): string | null {
 }
 
 /**
+ * The Message-ID of our reply from an email.new.bounce event. Real payload (2026-11-25): { reason, addresses, type, code,
+ * error_persistence: "permanent" | ..., email_id: "<Message-ID of the bounced mail>", date } with no email object.
+ * Only permanent failures count; a temporary one may still be delivered by the mail server's own retries.
+ */
+export function bounceEventOf(payload: Record<string, unknown>): string | null {
+  if (typeof payload.error_persistence === "string" && payload.error_persistence !== "permanent") return null;
+  return normalizeMessageId(payload.email_id);
+}
+
+/**
  * The Message-ID of OUR mail that a delivery failure report refers to, or null if `msg` is not such a report.
  * Checked on a real Gmail bounce (2026-11-25): sender mailer-daemon, Auto-Submitted, multipart/report and
  * In-Reply-To = the Message-ID of the mail that could not be delivered.

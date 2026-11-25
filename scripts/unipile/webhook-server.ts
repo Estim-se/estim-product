@@ -44,8 +44,7 @@ Deno.serve({ port: 8787 }, async (req) => {
     const ref = unipile.emailEventOf(event.payload);
     console.log("appen skulle hämta mejlet:", ref, ref && unipile.isNonInboxFolder(ref.folders) ? "→ hoppas över (skickat/utkast/skräp)" : "→ behandlas");
   } else if (event.type === "email.new.bounce") {
-    // The bounce format is what we still need, so it is printed in full (your own test mailbox only).
-    console.log("studs, hela payload:", JSON.stringify(event.payload, null, 2));
+    console.log("appen skulle markera svaret med Message-ID", unipile.bounceEventOf(event.payload), "som ej levererat");
   } else {
     console.log("payload:", JSON.stringify(event.payload));
   }

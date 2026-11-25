@@ -8,7 +8,7 @@ function assertThrows(fn: () => unknown, includes: string) {
   throw new Error("expected an error");
 }
 import {
-  accountEventOf, bounceReferenceOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
+  accountEventOf, bounceEventOf, bounceReferenceOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
   parseEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
@@ -123,6 +123,14 @@ Deno.test("bounces point at the Message-ID of our reply, ordinary mail does not"
   assertEquals(bounceReferenceOf(bounce), "CA+HPZ=ab@mail.gmail.com");
   // only References: the last id is the bounced mail
   assertEquals(bounceReferenceOf({ from: bounce.from, headers: [{ name: "Auto-Submitted", value: "auto-replied" }, { name: "References", value: "<a@x.se> <b@x.se>" }] }), "b@x.se");
+  // the email.new.bounce event as Unipile really sends it (2026-11-25): no email object, email_id is our Message-ID
+  const event = {
+    reason: "The email account that you tried to reach does not exist.", addresses: "finns-inte@example.com", type: "action_not_taken",
+    code: 550, error_persistence: "permanent", email_id: "<CA+HPZ=ab@mail.gmail.com>", date: "Tue, 24 Nov 2026 16:08:07 -0800 (PST)",
+  };
+  assertEquals(bounceEventOf(event), "CA+HPZ=ab@mail.gmail.com");
+  assertEquals(bounceEventOf({ ...event, error_persistence: "transient" }), null);
+  assertEquals(bounceEventOf({ code: 550 }), null);
   // a customer's reply with In-Reply-To is not a bounce, and a daemon mail without a report is ignored
   assertEquals(bounceReferenceOf({ from: [{ name: null, email: "kund@example.com" }], headers: [{ name: "In-Reply-To", value: "<CA+HPZ=ab@mail.gmail.com>" }] }), null);
   assertEquals(bounceReferenceOf({ from: [{ name: null, email: "mailer-daemon@googlemail.com" }], headers: [{ name: "In-Reply-To", value: "<a@x.se>" }] }), null);

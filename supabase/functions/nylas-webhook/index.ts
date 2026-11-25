@@ -205,16 +205,10 @@ async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEven
     return res.error ? { retry: true } : {};
   }
   if (type === "email.new.bounce") {
-    // The report itself is in payload.email; it is fetched by id like any mail, then matched on In-Reply-To.
-    const ref = unipile.emailEventOf(payload);
-    if (!accountId || !ref) return {};
-    const conn = await db.from("email_connections").select("status").eq("grant_id", accountId).maybeSingle();
-    if (conn.error) return { retry: true };
-    if (conn.data?.status !== "active") return {};
-    let report: unipile.MailMessage;
-    try { report = await unipile.getEmail(accountId, ref.emailId); } catch { return { retry: true }; }
-    const bounced = unipile.bounceReferenceOf(report);
-    if (!bounced) { console.info("[unipile] bounce without a reference"); return {}; }
+    // The event names our bounced mail by Message-ID (email_id). The update is scoped to this account's company
+    // inside estim_email_status, so a forged id could at most mark one of that company's own replies.
+    const bounced = unipile.bounceEventOf(payload);
+    if (!accountId || !bounced) return {};
     return await markBounced(db, accountId, bounced);
   }
   return {};
