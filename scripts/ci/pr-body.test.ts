@@ -19,6 +19,13 @@ describe('issue-link: which links count', () => {
     expect(linkedIssues('Encloses #4, see #5, closes #6abc, closes other/repo#7', REPO)).toEqual([]);
     expect(linkedIssues(`closes https://github.com/${REPO}/pull/8`, REPO)).toEqual([]);
   });
+  it('ignores links in fenced code blocks and inline code, and accepts a trailing slash on the URL', () => {
+    expect(linkedIssues('```\nCloses #38\n```', REPO)).toEqual([]);
+    expect(linkedIssues('~~~md\nCloses #38\n~~~\nand `Closes #39`\n```unterminated\nCloses #40', REPO)).toEqual([]);
+    expect(linkedIssues('```\ncode\n```\nPart of #41', REPO)).toEqual([41]);
+    expect(linkedIssues(`Closes https://github.com/${REPO}/issues/38/`, REPO)).toEqual([38]);
+    expect(linkedIssues(`Closes https://github.com/${REPO}/issues/38/comments`, REPO)).toEqual([]);
+  });
 });
 
 describe('issue-link: the check', () => {
@@ -29,7 +36,7 @@ describe('issue-link: the check', () => {
   it('fails without a link, naming where and how to fix it', () => {
     const result = check('<!-- Closes #38 -->\nCloses #');
     expect(result.ok).toBe(false);
-    expect(result.message).toBe(`PR description:1: no issue is linked. Fix: Add a line such as "Closes #123" or "Part of #123" (or https://github.com/${REPO}/issues/123) to the PR description, outside HTML comments.`);
+    expect(result.message).toBe(`PR description:1: no issue is linked. Fix: Add a line such as "Closes #123" or "Part of #123" (or https://github.com/${REPO}/issues/123) to the PR description, outside HTML comments and code.`);
   });
   it('fails a link to a pull request or a missing issue', () => {
     expect(check('Closes #59').message).toMatch(/^PR description:1: #59 is a pull request, not an issue\. Fix:/);

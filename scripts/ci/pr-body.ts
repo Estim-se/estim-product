@@ -1,6 +1,6 @@
 // Pull request issue-link check (workflow pr-body.yml, job issue-link). The PR description must link an issue of this
 // repository: "Closes", "Fixes", "Resolves" or "Part of" (any case) followed by #N or this repository's full issue URL.
-// HTML comments do not count, nor does the template's bare "Closes #". #N must be an issue, not a pull request.
+// HTML comments and code do not count, nor does the template's bare "Closes #". #N must be an issue, not a pull request.
 // Exempt only when the head repository is this repository and the head branch is lovable (a fork may name a branch
 // lovable too). This file imports nothing local: the workflow runs the base branch's copy of it.
 //
@@ -13,18 +13,22 @@ export type IssueKind = 'issue' | 'pull_request' | 'missing';
 export type Lookup = (repo: string, number: number) => IssueKind;
 export type Input = { body: string; headRepo: string; headRef: string; repo: string };
 
-/** Issue numbers the body links with a closing or "part of" keyword, outside HTML comments. */
+/** Issue numbers the body links with a closing or "part of" keyword, outside HTML comments and code. */
 export function linkedIssues(body: string, repo: string): number[] {
-  const text = body.replace(/<!--[\s\S]*?(?:-->|$)/g, ' ');
+  const text = body
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+    // Fenced code blocks (``` or ~~~, to the matching fence or the end) and inline code are examples, not links.
+    .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm, ' ')
+    .replace(/(`+)[^`]*?\1/g, ' ');
   const url = `https://github\\.com/${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/issues/`;
-  const pattern = new RegExp(`(?<![\\w-])(?:closes|fixes|resolves|part\\s+of)\\s*:?\\s+(?:#(\\d+)|${url}(\\d+))(?![\\w/#-])`, 'gi');
+  const pattern = new RegExp(`(?<![\\w-])(?:closes|fixes|resolves|part\\s+of)\\s*:?\\s+(?:#(\\d+)|${url}(\\d+)\\/?)(?![\\w/#-])`, 'gi');
   const numbers = [...text.matchAll(pattern)].map(m => Number(m[1] ?? m[2]));
   return [...new Set(numbers.filter(n => Number.isSafeInteger(n) && n > 0))];
 }
 
 export function checkPrBody(input: Input, lookup: Lookup): { ok: boolean; message: string } {
   if (input.headRepo === input.repo && input.headRef === 'lovable') return { ok: true, message: 'issue-link: the lovable branch of this repository is exempt.' };
-  const how = `Add a line such as "Closes #123" or "Part of #123" (or https://github.com/${input.repo}/issues/123) to the PR description, outside HTML comments.`;
+  const how = `Add a line such as "Closes #123" or "Part of #123" (or https://github.com/${input.repo}/issues/123) to the PR description, outside HTML comments and code.`;
   const candidates = linkedIssues(input.body, input.repo);
   if (candidates.length === 0) return { ok: false, message: `PR description:1: no issue is linked. Fix: ${how}` };
   const problems: string[] = [];
