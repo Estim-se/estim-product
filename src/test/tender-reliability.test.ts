@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { streamTenderTool } from '@/lib/tender-tool-call.server';
+import { TenderAi } from '@/lib/tender-tool-call.server';
 import { validateTenderInsights, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
 import { calculateTenderQuantities } from '@/lib/tender-quantities';
 import { validateTenderRiskReview } from '@/lib/tender-risk-checklist';
@@ -19,7 +19,7 @@ it('saves unlinked Risk rows as flagged warnings instead of failing the risk cal
  const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
  const raw={risks:[],risk_checklist:areas.map(area=>({area,assessment:'Risk',af_code:'AFC.999'}))};
  vi.stubGlobal('fetch',vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''))));
- const result=await extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFC.46 Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ const result=await extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFC.46 Garantitid 10 år',bytes:new Uint8Array()}],new TenderAi('test','test'),{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
  const risks=result.map(risk=>{if(!('title' in risk))throw Error('Expected a risk result');return risk;});
  expect(risks.map(r=>r.title).sort()).toEqual([...areas].sort());expect(risks.every(r=>r.source.flag==='Källa saknas – kontrollera')).toBe(true);
 });
@@ -27,23 +27,23 @@ it('retries a risk call without a checklist twice, narrowing the retry to AFC/AF
  vi.useFakeTimers();vi.spyOn(console,'warn').mockImplementation(()=>{});const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
  const raw={risks:[{title:'Placeholder',description:'placeholder'}]};
  const fetch=vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join('')));vi.stubGlobal('fetch',fetch);
- const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFA.1 Beställare\nAFC.46 Garantitid 10 år\nAFB.1 Anbud',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ const pending=extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFA.1 Beställare\nAFC.46 Garantitid 10 år\nAFB.1 Anbud',bytes:new Uint8Array()}],new TenderAi('test','test'),{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
  const rejected=expect(pending).rejects.toThrow('saknar riskchecklistan');await vi.runAllTimersAsync();await rejected;expect(fetch).toHaveBeenCalledTimes(3);
  const retry=JSON.parse(String((fetch.mock.calls[1] as unknown as [unknown,RequestInit]|undefined)?.[1]?.body));
  const input=retry.messages[0].content.map((c:{text?:string})=>c.text??'').join('\n'); expect(input).toContain('AFC.46 Garantitid 10 år'); expect(input).not.toContain('AFA.1 Beställare'); expect(input).not.toContain('AFB.1 Anbud');
 });
 it('retries transient 503 and 429 responses twice before saving usable output',async()=>{
  vi.useFakeTimers();const fetch=vi.fn().mockResolvedValueOnce(new Response('',{status:503})).mockResolvedValueOnce(new Response('',{status:429,headers:{'Retry-After':'2'}})).mockResolvedValueOnce(streamed());vi.stubGlobal('fetch',fetch);
- const pending=streamTenderTool({key:'test',model:'test',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw);await vi.runAllTimersAsync();expect(await pending).toEqual({ok:true});expect(fetch).toHaveBeenCalledTimes(3);
+ const pending=new TenderAi('test','test').tool({tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw);await vi.runAllTimersAsync();expect(await pending).toEqual({ok:true});expect(fetch).toHaveBeenCalledTimes(3);
 });
 it('forces the structured tool on older configured models too',async()=>{
  const fetch=vi.fn(async()=>streamed());vi.stubGlobal('fetch',fetch);
- await streamTenderTool({key:'test',model:'anthropic/claude-sonnet-4-6',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',raw=>raw);
+ await new TenderAi('test','anthropic/claude-sonnet-4-6').tool({tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',raw=>raw);
  const init=fetch.mock.calls[0] as unknown as [unknown,RequestInit]|undefined;
  expect(JSON.parse(String(init?.[1]?.body)).tool_choice).toEqual({type:'tool',name:'test'});
 });
 it.each([400,401,402,403])('does not retry unchanged terminal HTTP %i requests',async status=>{
- const fetch=vi.fn(async()=>new Response('',{status}));vi.stubGlobal('fetch',fetch);await expect(streamTenderTool({key:'test',model:'test',tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw)).rejects.toThrow();expect(fetch).toHaveBeenCalledTimes(1);
+ const fetch=vi.fn(async()=>new Response('',{status}));vi.stubGlobal('fetch',fetch);await expect(new TenderAi('test','test').tool({tool:'test',schema:{},description:'Test',system:'test',content:[],label:'Test'},'Test misslyckades',(raw:unknown)=>raw)).rejects.toThrow();expect(fetch).toHaveBeenCalledTimes(1);
 });
 it('invalid internal checklist indexes retain every usable risk',()=>{const result=validateTenderRiskReview({key_data:[],risks:[risk],questions:[],risk_checklist:[{risk_indexes:[999]}]},[doc],undefined,true);expect(result.risks).toHaveLength(1);expect(result.risks[0]?.title).toBe('Håltagning');});
 it('foreign documents and pages are flagged rather than discarding insights',()=>{const result=validateTenderInsights({key_data:[{field:'Beställare',value:'Beställaren',source:{...source,document_id:'foreign'}}],risks:[{...risk,source:{...source,page:999}}],questions:[{question:'Vem utför håltagning?',source:{...source,page:999}}]},[doc],true);expect(result.key_data).toHaveLength(TENDER_KEY_FIELDS.length);expect(result.key_data[0]?.source?.flag).toBe('Källa saknas – kontrollera');expect(result.risks[0]?.severity).toBe('Låg');expect(result.questions[0]?.source.flag).toBe('Källa saknas – kontrollera');});

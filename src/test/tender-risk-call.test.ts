@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { extractTenderInsightStep } from '@/lib/tender-insights-ai.server';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, type TenderInsights } from '@/lib/tender-insights';
 import { TENDER_RISK_GROUPS } from '@/lib/tender-risk-checklist';
-import { TenderRejectedOutput } from '@/lib/tender-tool-call.server';
+import { TenderAi, TenderRejectedOutput } from '@/lib/tender-tool-call.server';
 
 // Stored example responses replace the live gateway; no keys or network are needed.
 const samples = JSON.parse(readFileSync(path.join(__dirname, 'fixtures/tender-risk-call-responses.json'), 'utf8')) as Record<string, unknown>;
@@ -35,7 +35,7 @@ function gateway(json: string, stop = 'tool_use') {
   return fetch;
 }
 const run = async () => {
-  const result = await extractTenderInsightStep('risks', [af], 'test-key', 'test-model', { key_data }, areas);
+  const result = await extractTenderInsightStep('risks', [af], new TenderAi('test-key', 'test-model'), { key_data }, areas);
   return result.map(risk => {
     if (!('title' in risk)) throw Error('Expected a risk result');
     return risk;
@@ -140,7 +140,7 @@ describe('risk call instructions', () => {
 
     const keyFetch = vi.fn(async () => new Response(wire(JSON.stringify({ key_data }), 'tool_use', 'nyckeldata')));
     vi.stubGlobal('fetch', keyFetch);
-    await extractTenderInsightStep('key_data', [af], 'test-key', 'test-model');
+    await extractTenderInsightStep('key_data', [af], new TenderAi('test-key', 'test-model'));
     expect(JSON.parse(String((keyFetch.mock.calls[0] as unknown as [unknown, RequestInit])[1].body)).system).toContain('evidence-citat från källsidan');
   });
 });

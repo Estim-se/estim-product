@@ -1,4 +1,5 @@
 // Shared streamed Claude extraction with status-aware bounded recovery.
+import { tenderAiRequest } from './tender-ai-config.server';
 export const TENDER_MAX_OUTPUT_TOKENS = 64000;
 
 export class TenderIncompleteOutput extends Error {}
@@ -8,9 +9,53 @@ export type TenderRejectedAttempt = { attempt: number; reason: string; stop_reas
 export class TenderRejectedOutput extends Error {
   constructor(message: string, readonly attempts: TenderRejectedAttempt[]) { super(message); }
 }
+export class TenderRefusal extends TenderRejectedOutput {}
 type Capture = { raw: string; stop: string };
 export class TenderGatewayError extends Error {
   constructor(message: string, readonly status: number, readonly waitMs = 0) { super(message); }
+}
+const TRANSIENT_STREAM_ERRORS = new Map<unknown, number>(
+  Object.entries({ rate_limit_error: 429, api_error: 500, overloaded_error: 529 }),
+);
+const streamFailure = (type: unknown, message: string) => {
+  const status = TRANSIENT_STREAM_ERRORS.get(type);
+  return status ? new TenderGatewayError(message, status) : new Error(message);
+};
+const stopsAnalysis = (e: unknown) =>
+  e instanceof TenderRefusal ||
+  (e instanceof TenderGatewayError && [401, 402, 403, 404].includes(e.status));
+export class TenderAi {
+  readonly #key: string;
+  readonly #model: string;
+  #failed = false;
+  constructor(key: string, model: string) {
+    this.#key = key;
+    this.#model = model;
+  }
+  get failed() {
+    return this.#failed;
+  }
+  async tool<T>(c: ToolRequest, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
+    try {
+      return await streamTenderTool(
+        { ...c, key: this.#key, model: this.#model },
+        incomplete,
+        validate,
+      );
+    } catch (e) {
+      this.#failed = true;
+      throw e;
+    }
+  }
+  async fallback<T>(call: () => Promise<T>, otherwise: () => T): Promise<T> {
+    try {
+      return await call();
+    } catch (e) {
+      if (stopsAnalysis(e)) throw e;
+      this.#failed = true;
+      return otherwise();
+    }
+  }
 }
 
 export function tenderDocumentBlock(bytes: Uint8Array) {
@@ -18,17 +63,19 @@ export function tenderDocumentBlock(bytes: Uint8Array) {
   return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: btoa(binary) } };
 }
 
-type ToolCall = { key: string; model: string; system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
+type ToolRequest = { system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
+type ToolCall = ToolRequest & { key: string; model: string };
 
 async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
   const content = [...c.content];
   // Cache the large document prefix so a retry does not pay for the documents twice.
   const last = content.length - 1;
   if (last >= 0) content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/messages', {
-    method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json', 'X-Lovable-AIG-SDK': 'fetch' },
+  const route = tenderAiRequest(c.key, c.model);
+  const response = await fetch(route.url, {
+    method: 'POST', headers: route.headers,
     signal: AbortSignal.timeout(150_000),
-    body: JSON.stringify({ model: c.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'tool', name: c.tool } }),
+    body: JSON.stringify({ model: route.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'tool', name: c.tool } }),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { message?: string; error?: { message?: string } } | null;
@@ -51,7 +98,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
         const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
         const raw = frame.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n'); if (!raw) continue;
         const event = JSON.parse(raw);
-        if (event.type === 'error') throw new Error('AI-analysen avbröts av leverantören.');
+        if (event.type === 'error') throw streamFailure(event.error?.type, 'AI-analysen avbröts av leverantören.');
         if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') blocks.set(event.index, event.content_block.name);
         if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta' && blocks.get(event.index) === c.tool) output.set(event.index, (output.get(event.index) ?? '') + event.delta.partial_json);
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') prose += event.delta.text ?? '';
@@ -66,7 +113,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
     capture.raw = prose ? `${tool}${tool ? '\n' : ''}[text]\n${prose}` : tool;
     capture.stop = stop;
   }
-  if (stop === 'refusal') throw new Error('AI:n avböjde att analysera anbudet.');
+  if (stop === 'refusal') throw new TenderRefusal('AI:n avböjde att analysera anbudet.', []);
   const json = [...output.values()];
   if (stop === 'max_tokens') throw new TenderIncompleteOutput('svaret klipptes vid maxgränsen för svarslängd');
   if (!finished) throw new TenderIncompleteOutput('svaret avbröts innan det var klart');
@@ -77,7 +124,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
 const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError';
 
 // Three attempts with backoff; access denials, refusals and malformed requests are terminal.
-export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
+async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
   let retryIncomplete = false;
   const rejected: TenderRejectedAttempt[] = [];
@@ -108,7 +155,8 @@ export async function streamTenderTool<T>(c: ToolCall, incomplete: string, valid
         // Terminal rejections of a received answer keep the raw output too; other failures pass through unchanged.
         if (!capture.raw || !(e instanceof Error)) throw e;
         reason = e.message; keep();
-        throw new TenderRejectedOutput(e.message, rejected);
+        const Rejected = e instanceof TenderRefusal ? TenderRefusal : TenderRejectedOutput;
+        throw new Rejected(e.message, rejected);
       }
       if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** i));
     }

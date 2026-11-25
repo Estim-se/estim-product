@@ -1,5 +1,6 @@
 // POST /email-send   body: { message_id }     (verify_jwt = false; system mode only)
-// Delivers an approved e-mail reply through the company's connected mailbox (Nylas), in the same mail thread.
+// Delivers an approved e-mail reply through the company's connected mailbox (Nylas or Unipile, see mail-provider.ts),
+// in the same mail thread.
 // Called ONLY by the app server (sendMessage, after estim_prepare_send has saved the approved reply with
 // delivery_status "sending" and approved_by set) with the internal key. It never writes delivery status itself:
 // the app calls estim_finish_send with the answer, exactly as for WhatsApp.
@@ -11,7 +12,8 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import { json } from "../_shared/cors.ts";
-import { env, optNumber, sendReply } from "../_shared/nylas.ts";
+import { env, optNumber } from "../_shared/nylas.ts";
+import { sendReply } from "../_shared/mail-provider.ts";
 import { renderHtml } from "../_shared/mail-format.ts";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

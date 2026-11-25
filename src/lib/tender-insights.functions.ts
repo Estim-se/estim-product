@@ -35,10 +35,9 @@ export const analyzeTenderInsights = createServerFn({ method: 'POST' }).middlewa
       if (read.tooLarge) throw new Error('En källfil har ändrats. Analysera igen.');
       inputs.push({ ...d, bytes, text: read.text, page_count: read.pageCount });
     }
-    const key = process.env['LOVABLE_API_KEY'];
-    if (!key) throw new Error('AI-anslutningen saknar nyckel.');
-    const configured = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
-    value = await extractTenderInsightStep(data.step, inputs, key, configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`, previous);
+    const { tenderAiConfig } = await import('./tender-ai-config.server');
+    const { key, model } = tenderAiConfig();
+    value = await extractTenderInsightStep(data.step, inputs, new (await import('./tender-tool-call.server')).TenderAi(key, model), previous);
   } catch (e) { error = e instanceof Error ? e.message.slice(0, 500) : 'Anbudsanalysen misslyckades.'; }
   const rpc = db.rpc.bind(db) as unknown as (name: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
   if (error) {
