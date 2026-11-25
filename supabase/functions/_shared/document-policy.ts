@@ -27,5 +27,5 @@ export function documentPromiseWithoutAttachment(text: string, count: number): b
 export function documentFilename(doc: LibraryDocument): string {
   const extension = doc.file_name.match(/\.(pdf|jpe?g|png|webp|heic)$/i)?.[0];
   if (!extension) throw new Error('Unsupported document extension');
-  return doc.name.replace(/\.(pdf|jpe?g|png|webp|heic)$/i, '').replace(/[\/\\\r\n]/g, '_') + extension.toLowerCase();
+  return doc.name.replace(/\.(pdf|jpe?g|png|webp|heic)$/i, '').replace(/[/\\\r\n]/g, '_') + extension.toLowerCase();
 }

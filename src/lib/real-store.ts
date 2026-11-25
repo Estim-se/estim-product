@@ -46,8 +46,8 @@ export function createRealStore() {
   const aiFailed=async(id:string)=>{
     update(s=>{const t=s.threads.find(t=>t.id===id);if(t&&t.status==='analys')t.status='svar';});
     toast('AI kunde inte svara just nu');
-    try{await persist({kind:'thread',id,status:'svar'});}catch{}
-    try{await reload?.();}catch{}
+    try{await persist({kind:'thread',id,status:'svar'});}catch{/* persist has already shown its own error toast */}
+    try{await reload?.();}catch{/* a failed refresh keeps the local state; the next reload catches up */}
   };
   // Runs one AI reply for a thread; failures keep the thread usable for manual writing.
   const aiReply=async(id:string,v:Draft['v'])=>{
@@ -80,7 +80,7 @@ export function createRealStore() {
     update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.status='analys';});
     try{await withTimeout(ai.interpret(id));const channel=state.drafts[id]?.ch;await withTimeout(ai.write(id,'std',channel==='sms'||channel==='wa'?channel:'email'));}
     catch{await aiFailed(id);return;}
-    try{await reload?.();}catch{}
+    try{await reload?.();}catch{/* a failed refresh keeps the local state; the next reload catches up */}
   }
   const actions={
     update,toast,

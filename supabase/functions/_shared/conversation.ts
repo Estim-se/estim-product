@@ -1,3 +1,5 @@
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
+
 export interface ConversationMessage {
   id: string;
   from: string;
@@ -8,7 +10,7 @@ export interface ConversationMessage {
 
 // Fetch every page; PostgREST's row limit must never silently truncate a thread.
 // Failed/pending outbound attempts and system notices are not things the customer heard.
-export async function loadConversation(db: any, threadId: string, companyId: string): Promise<ConversationMessage[]> {
+export async function loadConversation(db: SupabaseClient, threadId: string, companyId: string): Promise<ConversationMessage[]> {
   const messages: ConversationMessage[] = [];
   const pageSize = 500;
   for (let offset = 0; ; offset += pageSize) {

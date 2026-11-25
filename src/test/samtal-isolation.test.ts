@@ -239,7 +239,7 @@ describe('estim Samtal: every foreign key has an index', () => {
   it('each foreign key of a samtal_ table is covered by an index that starts with its columns (as the Supabase linter checks)', async () => {
     const uncovered = await db.query<{ table: string; key: string }>(`
       SELECT c.conrelid::regclass::text AS table, c.conname AS key FROM pg_constraint c
-       WHERE c.contype = 'f' AND c.conrelid::regclass::text LIKE 'samtal\_%'
+       WHERE c.contype = 'f' AND c.conrelid::regclass::text LIKE 'samtal\\_%'
          AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid
                AND (i.indkey::int2[])[0:cardinality(c.conkey) - 1] @> c.conkey AND (i.indkey::int2[])[0:cardinality(c.conkey) - 1] <@ c.conkey)`);
     expect(uncovered.rows).toEqual([]);

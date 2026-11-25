@@ -1,7 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Database, Json, Tables } from '../src/integrations/supabase/types';
+import type { TenderInsights } from '../src/lib/tender-insights';
+import type { TenderQuantities } from '../src/lib/tender-quantities';
 import { calculateTenderCost } from '../src/lib/tender-calculation';
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { checkTenderFasit } from '../src/test/helpers/tender-fasit';
+import { checkTenderFasit, type FasitSnapshot } from '../src/test/helpers/tender-fasit';
 import { compareWithV2 } from '../src/test/helpers/v2-comparison';
 // Privileged test-tender pipeline verification only; this does not establish signed-in page E2E proof.
 //
@@ -17,13 +20,22 @@ import { compareWithV2 } from '../src/test/helpers/v2-comparison';
 mkdirSync('/tmp/anbud-verification',{recursive:true});
 const url=process.env['SUPABASE_URL'],key=process.env['SUPABASE_SERVICE_ROLE_KEY'];
 if(!url||!key)throw Error('Verification credentials unavailable');
-const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const h=new Headers(init?.headers);if(key.startsWith('sb_')&&h.get('Authorization')===`Bearer ${key}`)h.delete('Authorization');h.set('apikey',key);return fetch(input,{...init,headers:h});}}});
+const db=createClient<Database>(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const h=new Headers(init?.headers);if(key.startsWith('sb_')&&h.get('Authorization')===`Bearer ${key}`)h.delete('Authorization');h.set('apikey',key);return fetch(input,{...init,headers:h});}}});
 const args=process.argv.slice(2),fresh=!args.includes('--no-fresh'),targets=args.filter(a=>!a.startsWith('--'));
 if(targets.length!==3)throw Error('Supply exactly the Testlärkan, Provbänken and Baggen test tender IDs.');
-const report:any[]=[];
+type Tender=Pick<Tables<'tenders'>,'id'|'name'|'company_id'>;
+type TenderDocument=Tables<'tender_documents'>;
+type CostRow=ReturnType<typeof calculateTenderCost>['rows'][number];
+type Excluded=Pick<CostRow,'post'|'quantity'|'certainty'>&{reason:string;unsourced:boolean};
+type V2Summary={found:number;of:number;counts:Record<string,number>;extras:number;total_at_v2_prices:number;v2_total:number};
+// One analysis run; a failed run has no rows, a successful one has no failure details.
+type RunEntry={status:string;total:number|null;minutes:number;fasit:string[]|null;step?:string|null;error?:string|null;rejected?:Json|null;rows?:number;excluded?:Excluded[];errors?:number;v2?:V2Summary|null};
+type ReportEntry=RunEntry&{tender:string;mode:'same'|'fresh';run:number;identical?:boolean|null;tender_id?:string;deviation_from_same?:number|null};
+const report:ReportEntry[]=[];
 const reportPath=`/tmp/anbud-verification/runs-${targets.join('_')}.json`;
-async function checked(q:any){const r=await q;if(r.error)throw Error(r.error.message);return r.data;}
-const fasitFor=(name:string,snapshot:any)=>/testlärkan/i.test(name)?checkTenderFasit('Testlärkan',snapshot):/prov/i.test(name)?checkTenderFasit('Provbänken',snapshot):/baggen/i.test(name)?checkTenderFasit('Baggen',snapshot):[];
+// Awaits a Supabase query and returns its data, or throws its error.
+async function checked<R extends {data:unknown;error:{message:string}|null}>(q:PromiseLike<R>):Promise<NonNullable<R['data']>>{const r=await q;if(r.error)throw Error(r.error.message);return r.data as NonNullable<R['data']>;}
+const fasitFor=(name:string,snapshot:FasitSnapshot)=>/testlärkan/i.test(name)?checkTenderFasit('Testlärkan',snapshot):/prov/i.test(name)?checkTenderFasit('Provbänken',snapshot):/baggen/i.test(name)?checkTenderFasit('Baggen',snapshot):[];
 
 // A signed-in client for the test company: tenders and documents can only be created through the app's RLS flow.
 async function userClient(){
@@ -33,10 +45,11 @@ async function userClient(){
  const s=await user.auth.signInWithPassword({email,password});if(s.error)throw Error(`Sign-in failed: ${s.error.message}`);
  return user;
 }
-let user:any=null;
+let user:SupabaseClient<Database>|null=null;
 
 // Creates a new tender with copies of the given documents, exactly as an upload in the app.
-async function copyTender(t:any,docs:any[],n:number){
+async function copyTender(t:Tender,docs:TenderDocument[],n:number){
+ if(!user)throw Error('Fresh-tender runs need a signed-in user.');
  const stamp=new Date().toISOString().slice(0,16).replace('T',' ');
  const created=await checked(user.from('tenders').insert({company_id:t.company_id,name:`${t.name} – verifiering ${stamp} #${n}`.slice(0,160),status:'uploading'}).select('id,name,company_id').single());
  const files=[];
@@ -51,9 +64,9 @@ async function copyTender(t:any,docs:any[],n:number){
 }
 
 // One full analysis of a tender through the private job pipeline; returns the report entry.
-async function analyse(t:any,docs:any[],settings:any,label:string){
+async function analyse(t:Tender,docs:Pick<TenderDocument,'id'>[],settings:unknown,label:string):Promise<{ok:boolean;rows:string;entry:RunEntry}>{
  const tid=t.id,rid=crypto.randomUUID(),token=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');
- const plan=[...docs.map((d:any)=>`doc:${d.id}`),'key_data','risks:1','risks:2','risks:3','questions','quantities','calculation'];
+ const plan=[...docs.map(d=>`doc:${d.id}`),'key_data','risks:1','risks:2','risks:3','questions','quantities','calculation'];
  await checked(db.from('tenders').update({analysis_run:rid,status:'analyzing',error:null,analysis_started_at:new Date().toISOString()}).eq('id',tid).eq('company_id',t.company_id));
  await checked(db.from('tender_documents').update({analysis_status:'pending',error:null,doc_type:null,summary:null,page_count:null}).eq('tender_id',tid).eq('company_id',t.company_id));
  await checked(db.from('tender_jobs').upsert({tender_id:tid,company_id:t.company_id,analysis_run:rid,status:'running',plan,steps:{},parts:{},error:null,failed_step:null,lease_until:null,kicked_at:null,hops:0}));
@@ -61,36 +74,37 @@ async function analyse(t:any,docs:any[],settings:any,label:string){
  const started=Date.now();
  const hop=await fetch('http://localhost:8080/api/public/tender-job',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tender:tid,token})});
  console.log(label,'started',hop.status);
- const deadline=Date.now()+30*60_000;let j:any;let lastStep='';
+ const deadline=Date.now()+30*60_000;let j:Pick<Tables<'tender_jobs'>,'status'|'steps'|'plan'|'error'|'failed_step'|'lease_until'>|null=null;let lastStep='';
  while(Date.now()<deadline){
   j=await checked(db.from('tender_jobs').select('status,steps,plan,error,failed_step,lease_until').eq('tender_id',tid).single());
-  const step=Object.entries(j.steps).find(([,state])=>state==='running')?.[0]??'';if(step!==lastStep){console.log(label,'step',step);lastStep=step;}
+  const step=Object.entries(j.steps as Record<string,Json>).find(([,state])=>state==='running')?.[0]??'';if(step!==lastStep){console.log(label,'step',step);lastStep=step;}
   if(j.status!=='running')break;
   if(!j.lease_until){await fetch('http://localhost:8080/api/public/tender-job',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tender:tid,token})});}
   await Bun.sleep(5000);
  }
+ if(!j)throw Error(`${label}: the job status was never read.`);
  const minutes=Math.round((Date.now()-started)/600)/100;
  const saved=await checked(db.from('tenders').select('status,error').eq('id',tid).single());
- if(j.status!=='done'||saved.status!=='analysed'){const parts=(await checked(db.from('tender_jobs').select('parts').eq('tender_id',tid).single())).parts??{};return {ok:false,rows:'',entry:{status:saved.status,total:null as number|null,minutes,step:j.failed_step,error:j.error??saved.error,rejected:parts[`rejected:${j.failed_step}`]??null,fasit:null as string[]|null}};}
+ if(j.status!=='done'||saved.status!=='analysed'){const parts=((await checked(db.from('tender_jobs').select('parts').eq('tender_id',tid).single())).parts??{}) as Record<string,Json|undefined>;return {ok:false,rows:'',entry:{status:saved.status,total:null as number|null,minutes,step:j.failed_step,error:j.error??saved.error,rejected:parts[`rejected:${j.failed_step}`]??null,fasit:null as string[]|null}};}
  const iq=await checked(db.from('tender_insights').select('result,status').eq('tender_id',tid).single());
  const q=await checked(db.from('tender_quantities').select('result,status').eq('tender_id',tid).single());
  const m=await checked(db.from('tender_calculation_matches').select('result').eq('tender_id',tid).single());
  const ds=await checked(db.from('tender_documents').select('id,file_name,file_type,page_count,content_hash,doc_type,summary,analysis_status,error').eq('tender_id',tid).order('file_name'));
  const cost=calculateTenderCost(q.result,settings,m.result);
- const snapshot={tender:t.name,insights:iq.result,quantities:q.result,matches:m.result,documents:ds,settings,cost,steps:j.steps};
+ const snapshot={tender:t.name,insights:iq.result as TenderInsights,quantities:q.result as TenderQuantities,matches:m.result,documents:ds,settings,cost,steps:j.steps};
  writeFileSync(`/tmp/anbud-verification/${tid}-${rid}.json`,JSON.stringify(snapshot,null,2));
  // Post names and certainty only: shows which rows are left out of the total and why, without tender text.
- const excluded=[...cost.rows,...cost.proposals].filter((r:any)=>r.total===null).map((r:any)=>({post:r.post,quantity:r.quantity,certainty:r.certainty,reason:!r.type_id?'Ingen katalogtyp':r.awaiting_confirmation?'Låg säkerhet – väntar på bekräftad mängd':'Saknar tid eller pris',unsourced:/Källa saknas/.test(r.rule)}));
+ const excluded=[...cost.rows,...cost.proposals].filter(r=>r.total===null).map(r=>({post:r.post,quantity:r.quantity,certainty:r.certainty,reason:!r.type_id?'Ingen katalogtyp':r.awaiting_confirmation?'Låg säkerhet – väntar på bekräftad mängd':'Saknar tid eller pris',unsourced:/Källa saknas/.test(r.rule)}));
  // Baggen is also compared post by post with the reference calculation v2 (counts and totals only).
- const v2=/baggen/i.test(t.name)?(c=>({found:c.found,of:c.lines.length,counts:c.counts,extras:c.extras.length,total_at_v2_prices:c.at_v2_prices.total,v2_total:5483340.94}))(compareWithV2(snapshot as any)):null;
- return {ok:true,rows:JSON.stringify(cost.rows),entry:{status:'Analyserat',rows:cost.rows.length,total:cost.total as number|null,minutes,excluded,errors:ds.filter((d:any)=>d.error).length,fasit:fasitFor(t.name,snapshot) as string[]|null,v2}};
+ const v2=/baggen/i.test(t.name)?(c=>({found:c.found,of:c.lines.length,counts:c.counts,extras:c.extras.length,total_at_v2_prices:c.at_v2_prices.total,v2_total:5483340.94}))(compareWithV2(snapshot)):null;
+ return {ok:true,rows:JSON.stringify(cost.rows),entry:{status:'Analyserat',rows:cost.rows.length,total:cost.total as number|null,minutes,excluded,errors:ds.filter(d=>d.error).length,fasit:fasitFor(t.name,snapshot) as string[]|null,v2}};
 }
 
 async function run(tid:string){
  const t=await checked(db.from('tenders').select('*').eq('id',tid).single());
  if(!/^(?:Testlärkan|Provbänken|Provbanken(?:_underlag)?|Baggen)$/.test(t.name))throw Error('Only the three named test tenders are allowed.');
  const docs=await checked(db.from('tender_documents').select('*').eq('tender_id',tid).eq('company_id',t.company_id).order('file_name'));
- if(docs.some((d:any)=>/fasit/i.test(d.file_name)))throw Error('Fasit documents must never be analysis material.');
+ if(docs.some(d=>/fasit/i.test(d.file_name)))throw Error('Fasit documents must never be analysis material.');
  const previous={tender:t,documents:docs,insights:await checked(db.from('tender_insights').select('*').eq('tender_id',tid)),quantities:await checked(db.from('tender_quantities').select('*').eq('tender_id',tid)),matches:await checked(db.from('tender_calculation_matches').select('*').eq('tender_id',tid))};
  if(!existsSync(`/tmp/anbud-verification/${tid}-before.json`))writeFileSync(`/tmp/anbud-verification/${tid}-before.json`,JSON.stringify(previous));
  const settings=await checked(db.from('tender_calculation_settings').select('hourly_rate,material_markup,list_discount,establishment,contingency,post_types,example_values,room_recipes').eq('company_id',t.company_id).single());
@@ -118,5 +132,5 @@ async function run(tid:string){
 if(fresh)user=await userClient();
 await Promise.all(targets.map(run));
 const expected=fresh?18:9;
-if(report.length!==expected||report.some((r:any)=>r.status!=='Analyserat'||r.identical===false||r.errors!==0||r.fasit?.length))throw Error(`${expected}-run pipeline/fasit proof failed. See the temporary run report.`);
+if(report.length!==expected||report.some(r=>r.status!=='Analyserat'||r.identical===false||r.errors!==0||r.fasit?.length))throw Error(`${expected}-run pipeline/fasit proof failed. See the temporary run report.`);
 console.log(`${expected} pipeline runs passed${fresh?' (9 on the existing test tenders, 9 on fresh tenders)':''}. Signed-in page verification is still required.`);
