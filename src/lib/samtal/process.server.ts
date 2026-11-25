@@ -17,7 +17,7 @@ import type { Transcript } from './transcript';
 
 type Db = SupabaseClient<Database>;
 type Job = Database['public']['Functions']['samtal_claim_jobs']['Returns'][number];
-type Call = { id: string; company_id: string; user_id: string | null; audio_path: string | null; caller_phone: string | null; transcript: Json | null };
+type Call = { id: string; company_id: string; user_id: string | null; audio_path: string | null; caller_phone: string | null; transcript: Json | null; extraction: Json | null };
 export type InboxStep = (input: { db: Db; call: Call; interpretation: Interpretation; match: CustomerMatch }) => Promise<void>;
 export type SamtalDeps = { stt: SpeechToText; ai: SamtalAi; today?: () => string; inbox?: InboxStep };
 
@@ -45,12 +45,12 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
   const updateCall = (values: Database['public']['Tables']['samtal_calls']['Update']) => db.from('samtal_calls').update(values).eq('id', job.call_id).eq('company_id', company);
   let step = job.step;
   try {
-    const found = await db.from('samtal_calls').select('id, company_id, user_id, audio_path, caller_phone, transcript').eq('id', job.call_id).eq('company_id', company).maybeSingle();
+    const found = await db.from('samtal_calls').select('id, company_id, user_id, audio_path, caller_phone, transcript, extraction').eq('id', job.call_id).eq('company_id', company).maybeSingle();
     if (found.error) throw new StepError('call_read_failed', true);
     if (!found.data) throw new StepError('call_missing');
     const call = found.data as Call;
     let transcript = call.transcript as Transcript | null;
-    if (step === 'transkribera' || !transcript) {
+    if (step === 'transkribera' || !transcript && step !== 'inkorg') {
       step = 'transkribera';
       await updateCall({ status: 'bearbetas', error_code: null });
       const path = call.audio_path;
@@ -65,6 +65,7 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
     }
     if (step === 'tolka' || step === 'klassificera') {
       step = 'tolka';
+      if (!transcript) throw new StepError('transcript_missing');
       const interpretation = validateInterpretation(await deps.ai.interpret(transcript, { today: (deps.today ?? (() => new Date().toISOString().slice(0, 10)))() }), transcript);
       if (interpretation.classification === 'privat') { await forgetPrivate(db, company, call); await release('done', 'klar', null); return 'privat'; }
       const candidates = await db.from('customers').select('id, name, phone, address, place').eq('company_id', company).order('created_at', { ascending: false }).limit(5000);
@@ -78,7 +79,17 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
       await release('done', 'klar', null);
       return 'done';
     }
-    if (step === 'inkorg') { await release('done', 'klar', null); return 'done'; }
+    if (step === 'inkorg') {
+      // A retried inbox step runs again from the saved extraction (estim_receive and the tasks are idempotent per call).
+      const saved = call.extraction as { interpretation?: Interpretation; customer_match?: CustomerMatch } | null;
+      if (deps.inbox) {
+        if (!saved?.interpretation || !saved.customer_match) throw new StepError('extraction_missing');
+        await deps.inbox({ db, call, interpretation: saved.interpretation, match: saved.customer_match });
+      }
+      await updateCall({ status: 'klar' });
+      await release('done', 'klar', null);
+      return 'done';
+    }
     throw new StepError('unknown_step');
   } catch (error) {
     const code = codeOf(error);

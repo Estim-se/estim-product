@@ -10,7 +10,9 @@ export const Route = createFileRoute('/api/public/samtal-worker')({
     const { runSamtalJobs } = await import('@/lib/samtal/process.server');
     const { bergetSpeechToText } = await import('@/lib/samtal/stt.server');
     const { gatewaySamtalAi } = await import('@/lib/samtal/ai.server');
-    try { const { claimed, results } = await runSamtalJobs(db, { stt: bergetSpeechToText(), ai: gatewaySamtalAi() }); return Response.json({ ok: true, claimed, results }); }
+    const { samtalInboxStep } = await import('@/lib/samtal/inbox.server');
+    const { dispatchAiJob } = await import('@/lib/channel.server');
+    try { const { claimed, results } = await runSamtalJobs(db, { stt: bergetSpeechToText(), ai: gatewaySamtalAi(), inbox: samtalInboxStep(dispatchAiJob) }); return Response.json({ ok: true, claimed, results }); }
     catch { console.error('[samtal-worker]', JSON.stringify({ code: 'worker_error' })); return Response.json({ error: 'Bearbetningen misslyckades.' }, { status: 500 }); }
   } } },
 });
