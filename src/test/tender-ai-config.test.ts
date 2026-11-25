@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { tenderAiConfig } from "@/lib/tender-ai-config.server";
-import { streamTenderTool } from "@/lib/tender-tool-call.server";
+import { TenderAi } from "@/lib/tender-tool-call.server";
 
 const answer = () =>
   new Response(
@@ -23,8 +23,6 @@ async function sentRequest() {
   vi.stubGlobal("fetch", fetch);
   const { key, model } = tenderAiConfig();
   const call = {
-    key,
-    model,
     system: "Test",
     content: [],
     tool: "test",
@@ -32,7 +30,7 @@ async function sentRequest() {
     schema: {},
     label: "Test",
   };
-  await streamTenderTool(call, "Testet misslyckades", (raw) => raw);
+  await new TenderAi(key, model).tool(call, "Testet misslyckades", (raw) => raw);
   expect(fetch).toHaveBeenCalledTimes(1);
   const [url, init] = fetch.mock.calls[0] ?? [];
   const body = JSON.parse(String(init?.body)) as { model?: unknown };

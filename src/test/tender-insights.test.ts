@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, validateTenderInsights, type TenderInsights } from '@/lib/tender-insights';
 import { extractTenderInsightStep } from '@/lib/tender-insights-ai.server';
+import { TenderAi } from '@/lib/tender-tool-call.server';
 import { TENDER_RISK_AREAS } from '@/lib/tender-risk-checklist';
 
 const id = '00000000-0000-4000-8000-000000000001';
@@ -70,10 +71,10 @@ describe('Tender-wide extraction rules', () => {
     });
     vi.stubGlobal('fetch', call);
     const docs = [doc, { ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Övrigt', text: 'Kontext' }];
-    const key_data = await extractTenderInsightStep('key_data', docs, 'test-key', 'anthropic/claude-sonnet-5') as ReturnType<typeof empty>['key_data'];
+    const key_data = await extractTenderInsightStep('key_data', docs, new TenderAi('test-key', 'anthropic/claude-sonnet-5')) as ReturnType<typeof empty>['key_data'];
     expect(key_data).toHaveLength(17);
-    expect(await extractTenderInsightStep('risks', [{...doc,text:'Fysisk sida: 2\nAFC.45 Vite gäller.'}, ...docs.slice(1)], 'test-key', 'anthropic/claude-sonnet-5', { key_data })).toEqual([]);
-    expect(await extractTenderInsightStep('questions', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data, risks: [] })).toEqual([]);
+    expect(await extractTenderInsightStep('risks', [{...doc,text:'Fysisk sida: 2\nAFC.45 Vite gäller.'}, ...docs.slice(1)], new TenderAi('test-key', 'anthropic/claude-sonnet-5'), { key_data })).toEqual([]);
+    expect(await extractTenderInsightStep('questions', docs, new TenderAi('test-key', 'anthropic/claude-sonnet-5'), { key_data, risks: [] })).toEqual([]);
     expect(call).toHaveBeenCalledTimes(3);
     const body = JSON.parse(call.mock.calls[0]?.[1]?.body as string);
     expect(body.stream).toBe(true); expect(body.max_tokens).toBe(64000);
@@ -81,16 +82,16 @@ describe('Tender-wide extraction rules', () => {
   });
   it('retries twice when the output is cut off at the token limit', async () => {
     const call = vi.fn(async () => stream('nyckeldata', { key_data: [] }, 'max_tokens')); vi.stubGlobal('fetch', call);
-    await expect(extractTenderInsightStep('key_data', [doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('maxgränsen');
+    await expect(extractTenderInsightStep('key_data', [doc], new TenderAi('test-key', 'anthropic/claude-sonnet-5'))).rejects.toThrow('maxgränsen');
     expect(call).toHaveBeenCalledTimes(3);
   });
   it('refuses risks without saved key data', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => stream('risker', { risks: [], risk_checklist: [] })));
-    await expect(extractTenderInsightStep('risks', [doc], 'k', 'm')).rejects.toThrow('Nyckeldata saknas');
+    await expect(extractTenderInsightStep('risks', [doc], new TenderAi('k', 'm'))).rejects.toThrow('Nyckeldata saknas');
   });
   it('never retries a provider denial and preserves the safe reason', async () => {
     const call = vi.fn(async () => new Response(JSON.stringify({ message: 'Åtkomst nekad.' }), { status: 403 })); vi.stubGlobal('fetch', call);
-    await expect(extractTenderInsightStep('key_data', [doc], 'test-key', 'anthropic/claude-sonnet-5')).rejects.toThrow('Åtkomst nekad.');
+    await expect(extractTenderInsightStep('key_data', [doc], new TenderAi('test-key', 'anthropic/claude-sonnet-5'))).rejects.toThrow('Åtkomst nekad.');
     expect(call).toHaveBeenCalledTimes(1);
   });
 });

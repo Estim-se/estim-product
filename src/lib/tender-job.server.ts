@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { nextTenderJobStep, type TenderStepState } from './tender-analysis';
 import type { TenderInsightInput } from './tender-insights-ai.server';
 import type { TenderInsights } from './tender-insights';
+import { TenderAi, TenderRejectedOutput } from './tender-tool-call.server';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, 'public', any>;
@@ -59,17 +60,20 @@ async function loadInputs(db: Db, job: Job, afFirst: boolean) {
   }
   return inputs;
 }
-async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, work: () => Promise<T>): Promise<T> {
+async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, work: (ai: TenderAi) => Promise<T>): Promise<T> {
   const docs = await db.from('tender_documents').select('id,content_hash,doc_type').eq('tender_id', job.tender_id).eq('company_id', job.company_id).order('id');
   if (docs.error) throw Error('Kontrollsummorna kunde inte läsas.');
   const { tenderHash } = await import('./tender-source-parts');
+  const { key, model } = tenderAiConfig();
   // Keyed by file content and document type, not document ids: the same files give the same result in a new tender.
   // ANBUD_CACHE_SALT (server env) forces fresh model answers, e.g. to verify robustness.
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v7` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: tenderAiConfig().model, context: toCacheForm(context, docs.data) }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v7` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model, context: toCacheForm(context, docs.data) }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);
-  const result = await work();
+  const ai = new TenderAi(key, model);
+  const result = await work(ai);
+  if (ai.failed) return result;
   const saved = await db.from('tender_result_cache').upsert({ company_id: job.company_id, fingerprint, step, result: toCacheForm(result, docs.data) as never }, { onConflict: 'company_id,fingerprint,step' });
   if (saved.error) throw Error('Analysreglerna kunde inte sparas.');
   return result;
@@ -123,25 +127,24 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     await saveClass(c);
     return {};
   }
-  const { key, model } = tenderAiConfig();
   if (step === 'key_data' || step === 'questions' || step.startsWith('risks:')) {
     const { extractTenderInsightStep } = await import('./tender-insights-ai.server');
     const inputs = await loadInputs(db, job, true);
     const current = await insightRow(db, job);
     if (step === 'key_data') {
-      const value = await cachedStep(db, job, step, {}, () => extractTenderInsightStep('key_data', inputs, key, model, {}));
+      const value = await cachedStep(db, job, step, {}, ai => extractTenderInsightStep('key_data', inputs, ai, {}));
       await saveInsights(db, job, { key_data: value as TenderInsights['key_data'] }, { key_data: 'done' }, 'analyzing');
       return {};
     }
     if (step === 'questions') {
-      const value = await cachedStep(db, job, step, { key_data: current.result.key_data, risks: current.result.risks }, () => extractTenderInsightStep('questions', inputs, key, model, current.result));
+      const value = await cachedStep(db, job, step, { key_data: current.result.key_data, risks: current.result.risks }, ai => extractTenderInsightStep('questions', inputs, ai, current.result));
       await saveInsights(db, job, { ...current.result, questions: value as TenderInsights['questions'] }, { ...current.steps, questions: 'done' }, 'analysed');
       return {};
     }
     const { TENDER_RISK_GROUPS } = await import('./tender-risk-checklist');
     const index = Number(step.slice(6)) - 1, areas = TENDER_RISK_GROUPS[index];
     if (!areas) throw new Error('Okänt riskavsnitt.');
-    const value = await cachedStep(db, job, step, { key_data: current.result.key_data }, () => extractTenderInsightStep('risks', inputs, key, model, current.result, areas));
+    const value = await cachedStep(db, job, step, { key_data: current.result.key_data }, ai => extractTenderInsightStep('risks', inputs, ai, current.result, areas));
     const parts = { ...job.parts, [step]: value };
     const riskSteps = job.plan.filter(k => k.startsWith('risks:'));
     const merged = riskSteps.flatMap(k => (parts[k] as TenderInsights['risks'] | undefined) ?? []);
@@ -150,7 +153,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const allDone = riskSteps.every(k => k === step || job.steps[k] === 'done');
     const { mergeTenderRisks, reconcileTenderIndexRisks } = await import('./tender-risk-merging');
     sorted=mergeTenderRisks(sorted);
-    if(allDone){const {mergeTenderRiskGroups,reviewTenderRiskFacts}=await import('./tender-insights-ai.server');sorted=await cachedStep(db,job,'risk_merge',sorted,()=>mergeTenderRiskGroups(sorted,key,model));sorted=reconcileTenderIndexRisks(sorted,current.result.key_data??[]);sorted=await cachedStep(db,job,'risk_facts',{risks:sorted,key_data:current.result.key_data},()=>reviewTenderRiskFacts(sorted,current.result.key_data??[],inputs,key,model));}
+    if(allDone){const {mergeTenderRiskGroups,reviewTenderRiskFacts}=await import('./tender-insights-ai.server');sorted=await cachedStep(db,job,'risk_merge',sorted,ai=>mergeTenderRiskGroups(sorted,ai));sorted=reconcileTenderIndexRisks(sorted,current.result.key_data??[]);sorted=await cachedStep(db,job,'risk_facts',{risks:sorted,key_data:current.result.key_data},ai=>reviewTenderRiskFacts(sorted,current.result.key_data??[],inputs,ai));}
     await saveInsights(db, job, { ...current.result, risks: sorted }, { ...current.steps, risks: allDone ? 'done' : 'running' }, 'analyzing');
     return { [step]: value };
   }
@@ -162,7 +165,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     // Feature flag: the requirements engine (model lists requirements, code counts) replaces the operand engine when on.
     const requirementsEngine = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1';
     const { extractRequirementQuantities } = await import('./tender-requirements-ai.server');
-    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v16', engine: requirementsEngine ? 'requirements-catalog-v4' : 'operands', catalog: requirementsEngine ? catalogOf(settings.data?.post_types) : null }, () => requirementsEngine ? extractRequirementQuantities(inputs, key, model, settings.data?.room_recipes ?? null, catalogOf(settings.data?.post_types)) : extractTenderQuantities(inputs, key, model, settings.data?.room_recipes ?? null));
+    const result = await cachedStep(db, job, step, { room_recipes: settings.data?.room_recipes ?? null, quantity_version: 'complete-source-audit-v16', engine: requirementsEngine ? 'requirements-catalog-v4' : 'operands', catalog: requirementsEngine ? catalogOf(settings.data?.post_types) : null }, ai => requirementsEngine ? extractRequirementQuantities(inputs, ai, settings.data?.room_recipes ?? null, catalogOf(settings.data?.post_types)) : extractTenderQuantities(inputs, ai, settings.data?.room_recipes ?? null));
     const r = await db.from('tender_quantities').upsert({ tender_id: job.tender_id, company_id: job.company_id, analysis_run: job.analysis_run, status: 'analysed', result, error: null }, { onConflict: 'tender_id' });
     if (r.error) throw new Error('Mängderna kunde inte sparas.');
     return {};
@@ -176,7 +179,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const s = await db.from('tender_calculation_settings').select('hourly_rate,material_markup,list_discount,establishment,contingency,post_types,example_values,room_recipes').eq('company_id', job.company_id).maybeSingle();
     if (s.error) throw new Error('Kalkylinställningarna kunde inte hämtas.');
     const inputs = await loadInputs(db, job, false);
-    const result = await cachedStep(db, job, step, { quantities: q.data.result, settings: s.data }, () => matchTenderCost(tenderQuantitiesSchema.parse(q.data.result), s.data ? validateSettingsInput(s.data) : emptyCalculationSettings, inputs, key, model));
+    const result = await cachedStep(db, job, step, { quantities: q.data.result, settings: s.data }, ai => matchTenderCost(tenderQuantitiesSchema.parse(q.data.result), s.data ? validateSettingsInput(s.data) : emptyCalculationSettings, inputs, ai));
     if (result.demolition?.flag) {
       // Flagged posts are also listed under Antaganden so they are checked before the bid is sent.
       const quantities = tenderQuantitiesSchema.parse(q.data.result);
@@ -221,7 +224,6 @@ export async function runTenderJobStep(tid: string, token: string): Promise<'bus
   let parts: Record<string, unknown>;
   try { parts = await runStep(db, job, step); }
   catch (e) {
-    const { TenderRejectedOutput } = await import('./tender-tool-call.server');
     return fail(step, e instanceof Error ? e.message.slice(0, 500) : 'Analyssteget misslyckades.', e instanceof TenderRejectedOutput ? e.attempts : undefined);
   }
   const steps = { ...job.steps, [step]: 'done' as const };

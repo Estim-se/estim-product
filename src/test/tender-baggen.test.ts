@@ -5,6 +5,7 @@ import { emptyCalculationSettings, calculateTenderCost } from '@/lib/tender-calc
 import { calculateTenderQuantities } from '@/lib/tender-quantities';
 import { resolveObjectCount } from '@/lib/tender-object-counts';
 import { matchTenderCost } from '@/lib/tender-calculation-ai.server';
+import { TenderAi } from '@/lib/tender-tool-call.server';
 import { uniqueQuantityAssumptions } from '@/lib/tender-quantity-display';
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const settings={...emptyCalculationSettings,hourly_rate:650,post_types:[{id:id(1),name:'Uttag diskmaskin',hours:0.8,list_price:120},{id:id(2),name:'Lägenhetscentral',hours:4,list_price:2500}]};
@@ -37,7 +38,7 @@ it('includes assumed posts in the AI matching request and fills omitted semantic
  const q={rules:{operands:[],items:[],assumptions:[]},items:[],assumptions:[{description:'Quantity estimate',sources:[],item:{post:'Vägguttag för diskmaskin',unit:'st' as const,quantity:'2',calculation:'2',rule:'Ett per kök',sources:[],certainty:'Medel' as const}}]};
  const events=[{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'matcha'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify({matches:[],demolition:null})}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}];
  const call=vi.fn(async()=>new Response(events.map(e=>`data: ${JSON.stringify(e)}\n\n`).join('')));vi.stubGlobal('fetch',call);
- const m=await matchTenderCost(q,settings,[],'test','test');expect(m.bindings[0]?.type_id).toBe(id(1));
+ const m=await matchTenderCost(q,settings,[],new TenderAi('test','test'));expect(m.bindings[0]?.type_id).toBe(id(1));
 });
 it('merges a shared assumption once while retaining both calculation posts',()=>{
  const item={post:'Uttag diskmaskin',unit:'st' as const,quantity:'2',calculation:'2',rule:'Standard',sources:[],certainty:'Medel' as const};

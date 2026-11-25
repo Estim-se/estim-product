@@ -37,7 +37,7 @@ export const analyzeTenderInsights = createServerFn({ method: 'POST' }).middlewa
     }
     const { tenderAiConfig } = await import('./tender-ai-config.server');
     const { key, model } = tenderAiConfig();
-    value = await extractTenderInsightStep(data.step, inputs, key, model, previous);
+    value = await extractTenderInsightStep(data.step, inputs, new (await import('./tender-tool-call.server')).TenderAi(key, model), previous);
   } catch (e) { error = e instanceof Error ? e.message.slice(0, 500) : 'Anbudsanalysen misslyckades.'; }
   const rpc = db.rpc.bind(db) as unknown as (name: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
   if (error) {
