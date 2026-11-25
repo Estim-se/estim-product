@@ -159,7 +159,8 @@ export function InboxScreen() {
                   onNewConversation={() => {
                     if (!real) { actions.simNew(); return; }
                     const known = (v: string) => (v === '—' ? '' : v);
-                    const channel = current.ch === 'wa' || current.ch === 'sms' || current.ch === 'form' ? current.ch : 'email';
+                    // A call (estim Samtal) is followed up by SMS, as its reply draft.
+                    const channel = current.ch === 'wa' || current.ch === 'sms' || current.ch === 'form' ? current.ch : current.ch === 'samtal' ? 'sms' : 'email';
                     setNewRequest({ prefill: { name: current.name, email: known(current.email), phone: known(current.phone), address: known(current.addr), place: current.place, channel } });
                   }}
                 />
