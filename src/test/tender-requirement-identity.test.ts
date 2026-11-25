@@ -220,13 +220,14 @@ describe('requirement identity and deduplication', () => {
     expect(status(q, 'Hatthylla med infästning hall')).toMatchObject({ status: 'Ej relevant' });
     expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Hatthylla med infästning hall, Skohylla och klädstång/.test(a.description))).toBe(true);
   });
-  it('whole words decide the trade: "måla" is painting, "el" at a wardrobe is electrical work', () => {
-    const q = build([req('Måla om väggar', 'lägenhet', 1, { section: 4, source: src('Entreprenören ska måla om väggar efter ingrepp.') }),
-      req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') })]);
-    expect(rowsOf(q).map(i => i.post)).not.toContain('Måla om väggar');
-    expect(status(q, 'Måla om väggar')).toMatchObject({ status: 'Ej relevant' });
-    expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Måla om väggar\./.test(a.description))).toBe(true);
-    expect(rowsOf(q).find(i => i.post === 'El till garderob')).toMatchObject({ quantity: '6' });
-    expect(status(q, 'El till garderob')?.status).toBe('Saknar pris');
+  it('whole words decide the trade: "hela" and "eller" are no electrical work, "el" and el-compounds are', () => {
+    const q = build([req('Måla om hela väggen', 'lägenhet', 1, { section: 4, source: src('Entreprenören ska måla om hela väggen eller laga den efter ingrepp.') }),
+      req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') }),
+      req('Kanalisation i golvlist', 'lägenhet', 1, { section: 4, source: src('Kanalisation i golvlist i vardagsrum.') }),
+      req('Elanslutning av VVS-utrustning', 'fastighet', null, { fixed_quantity: 3, section: 7, source: src('Elanslutning av VVS-utrustning enligt VVS-handling.') })]);
+    expect(status(q, 'Måla om hela väggen')).toMatchObject({ status: 'Ej relevant' });
+    expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Måla om hela väggen\./.test(a.description))).toBe(true);
+    expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toEqual(expect.arrayContaining(['El till garderob: 6', 'Kanalisation i golvlist: 6', 'Elanslutning av VVS-utrustning: 3']));
+    expect(['El till garderob', 'Kanalisation i golvlist', 'Elanslutning av VVS-utrustning'].map(p => status(q, p)?.status)).toEqual(['Saknar pris', 'Saknar pris', 'Saknar pris']);
   });
 });

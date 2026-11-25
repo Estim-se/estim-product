@@ -126,7 +126,7 @@ function localWorkNotPremises(r: Requirement) {
 // post: a requirement without catalog type that names such an object, while neither its quote nor (without a quote) its
 // name speaks of electrical work, never becomes a calculation row or a warning.
 const OTHER_TRADE = /hatthyll|skohyll|\bhyll(?:a|or|an)\b|klädstång|ankarkrok|\bkrokar\b|\bmöbl|\bmöbel|garderob|snickeri|\b(?:golv|tak|dörr|fönster)?list(?:er|verk)?\b|\bmålning|\bmåla\b|\btapet|spackl|\bkakel|klinker|plattsättning|golvbeläggning|plastmatta|\bparkett|innerdörr|dörrblad|\bfönster\b|bänkskiv|köksinredning|köksskåp|skåpsluck|tätskikt|\bvvs\b|blandare|duschvägg|toalettstol|badkar|diskbänk/;
-const ELECTRICAL_WORDS = /\bel\b|\bel-|uttag|kabel|ledning|belysning|armatur|\blamp|strömställ|dimmer|central|matning|\banslut|givare|detektor|brandvarn|\bladd|tomrör|jordning|säkring|mätar|mätning|\bmotor|golvvärme|värmekabel|handdukstork|spegelskåp|fläkt|\bspis|\bugn\b|timer|automatik|porttelefon|\bdata|\btele|larm|\bström|elektr|\bdosa|\bbrytare/;
+const ELECTRICAL_WORDS = /\bel(?:\b|anslut|install|arbet|drag|kanal|radiator|värm|utrustning|rum|schakt|system)|kanalisation|uttag|kabel|ledning|belysning|armatur|\blamp|strömställ|dimmer|central|matning|\banslut|givare|detektor|brandvarn|\bladd|tomrör|jordning|säkring|mätar|mätning|\bmotor|golvvärme|värmekabel|handdukstork|spegelskåp|fläkt|\bspis|\bugn\b|timer|automatik|porttelefon|\bdata|\btele|larm|\bström|elektr|\bdosa|\bbrytare/;
 export function otherTradeWork(r: Pick<Requirement, 'post' | 'source'>) {
   const name = r.post.toLocaleLowerCase('sv'), quote = r.source?.evidence.toLocaleLowerCase('sv') ?? '';
   return OTHER_TRADE.test(`${name} ${quote}`) && !ELECTRICAL_WORDS.test(quote || name);
