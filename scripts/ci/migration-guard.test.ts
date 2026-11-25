@@ -72,7 +72,7 @@ describe('migration guard: row level security in added migrations', () => {
     const { root, base } = repo();
     writeFiles(root, { [NEW]: '-- new table\n\ncreate table public.b (id int);\n' });
     commitAll(root, 'add');
-    expect(run(root, base)).toEqual([`${NEW}:3: Table public.b is created without row level security. Fix: Add "alter table public.b enable row level security;" in this change's migrations, at top level or in a DO block. An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.`]);
+    expect(run(root, base)).toEqual([`${NEW}:3: Table public.b is created without row level security. Fix: Add "alter table public.b enable row level security;" after it in this change's migrations, as a top-level statement (not in a DO block). An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.`]);
   });
   it('matches every form of CREATE TABLE', () => {
     expect(rules('CREATE TABLE IF NOT EXISTS public.a(id int);')).toEqual(['create-table-without-rls public.a@1']);
@@ -128,9 +128,12 @@ describe('migration guard: SQL that hides from a lexical check', () => {
     expect(rules('create table foo(id int); create function f() returns void language sql as $$ alter table foo enable row level security $$;')).toEqual(['create-table-without-rls public.foo@1']);
     expect(rules("create table foo(id int); do $$ begin execute 'alter table foo enable row level security'; end $$;")).toEqual(['create-table-without-rls public.foo@1']);
   });
-  it('counts ENABLE ROW LEVEL SECURITY at top level and in DO blocks', () => {
-    expect(rules('create table foo(id int); do $$ begin alter table foo enable row level security; end $$;')).toEqual([]);
-    expect(rules('create table foo(id int); DO LANGUAGE plpgsql $body$ BEGIN ALTER TABLE public.foo ENABLE ROW LEVEL SECURITY; END $body$;')).toEqual([]);
+  it('counts ENABLE ROW LEVEL SECURITY only as a top-level statement, not in a DO block', () => {
+    expect(rules('create table foo(id int);\nALTER TABLE IF EXISTS ONLY public.foo ENABLE ROW LEVEL SECURITY;')).toEqual([]);
+    expect(rules('create table foo(id int); do $$ begin alter table foo enable row level security; end $$;')).toEqual(['create-table-without-rls public.foo@1']);
+    expect(rules('create table foo(id int); DO LANGUAGE plpgsql $body$ BEGIN ALTER TABLE public.foo ENABLE ROW LEVEL SECURITY; END $body$;')).toEqual(['create-table-without-rls public.foo@1']);
+    // A branch that never runs (review finding): the guard cannot tell, so it does not count.
+    expect(rules('create table public.secrets (id int); do $$ begin if false then alter table public.secrets enable row level security; end if; end $$;')).toEqual(['create-table-without-rls public.secrets@1']);
   });
   it('detects top-level SELECT ... INTO, but not INSERT INTO or INTO in a function body', () => {
     expect(rules('select * into public.secrets_copy from auth.users;')).toEqual(['create-table-without-rls public.secrets_copy@1']);
@@ -178,6 +181,76 @@ describe('migration guard: SQL that hides from a lexical check', () => {
     expect(isPermissiveConstant("'t'::boolean")).toBe(true);
     expect(isPermissiveConstant('1 = 1 or x')).toBe(false);
     expect(isConstantExpression('current_user = owner')).toBe(false);
+  });
+});
+
+describe('migration guard: statement order', () => {
+  it('counts ENABLE only after the CREATE TABLE it protects, across files in file-name order', () => {
+    expect(rules('alter table if exists public.secrets enable row level security; create table public.secrets (id int);')).toEqual(['create-table-without-rls public.secrets@1']);
+    expect(checkAddedSql([{ path: 'supabase/migrations/2_create.sql', sql: 'create table public.s2 (id int);' }, { path: 'supabase/migrations/1_enable.sql', sql: 'alter table if exists public.s2 enable row level security;' }]).map(v => `${v.file}:${v.line} ${v.rule}`)).toEqual(['supabase/migrations/2_create.sql:1 create-table-without-rls']);
+    // Separate tools apply supabase/ and drizzle/ migrations, so an ENABLE in one does not count for the other.
+    expect(checkAddedSql([{ path: 'drizzle/migrations/0001.sql', sql: 'alter table public.t enable row level security;' }, { path: 'supabase/migrations/1.sql', sql: 'create table public.t (id int);' }]).map(v => v.rule)).toEqual(['create-table-without-rls']);
+  });
+  it('starts over when a table is dropped or renamed and created again under the same name', () => {
+    const enabled = 'create table public.secrets (id int); alter table public.secrets enable row level security;\n';
+    expect(rules(`${enabled}drop table public.secrets;\ncreate table public.secrets (id int, token text);`)).toEqual(['create-table-without-rls public.secrets@3']);
+    expect(rules(`${enabled}alter table public.secrets rename to secrets_old;\ncreate table public.secrets (id int, token text);`)).toEqual(['create-table-without-rls public.secrets@3']);
+    expect(rules(`${enabled}drop table if exists public.other, public.secrets cascade;\ncreate table public.secrets (id int);\nalter table public.secrets enable row level security;`)).toEqual([]);
+  });
+  it('fails a table renamed or moved before its RLS is enabled, so a reused name cannot cover it', () => {
+    expect(rules('create table a (id int);\nalter table a rename to secrets;\ncreate table a (id int);\nalter table a enable row level security;')).toEqual(['create-table-without-rls public.a@1']);
+    expect(rules('create table public.a (id int);\nalter table public.a set schema api;\ncreate table public.a (id int);\nalter table public.a enable row level security;')).toEqual(['create-table-without-rls public.a@1']);
+    expect(rules('create table a (id int);\nalter table a enable row level security;\nalter table a rename to b;')).toEqual([]);
+  });
+  it('fails closed on tables created inside CREATE SCHEMA and on unqualified names when the change creates a schema', () => {
+    expect(rules('create schema s create table t (id int); alter table public.t enable row level security;')).toEqual(['create-table-without-rls ?.t@1']);
+    expect(rules('create schema postgres; create table public.secrets (id int); create table postgres.secrets (id int); alter table secrets enable row level security;')).toEqual(['create-table-without-rls public.secrets@1', 'create-table-without-rls postgres.secrets@1']);
+    expect(rules('create schema if not exists api; create table secrets (id int); alter table if exists public.secrets enable row level security;')).toEqual(['create-table-without-rls ?.secrets@1']);
+    expect(rules('create schema api; create table api.t (id int); alter table api.t enable row level security;')).toEqual([]);
+  });
+});
+
+describe('migration guard: SQL that changes how the guard must read it', () => {
+  it('fails turning standard_conforming_strings off, which hides a CREATE TABLE from the lexer (review finding)', () => {
+    const sql = "set standard_conforming_strings = off;\nselect '\\'; -- ';  create table public.secrets(id int);";
+    expect(rules(sql)).toEqual(['session-setting@1']);
+    expect(rules("set standard_conforming_strings = off;\nselect '\\' -- ', 1; create table public.secrets (id int);")).toEqual(['session-setting@1']);
+    expect(rules("select set_config('standard_conforming_strings', 'off', false);")).toEqual(['session-setting@1']);
+    expect(rules('alter database postgres set standard_conforming_strings = off;')).toEqual(['session-setting@1']);
+    expect(rules('set local "standard_conforming_strings" to off;')).toEqual(['session-setting@1', 'session-setting@1']);
+    expect(rules('set backslash_quote = on; set standard_conforming_strings to on; reset standard_conforming_strings;')).toEqual([]);
+  });
+  it('fails changing search_path to anything but public first, and set_config of a name built at run time', () => {
+    const sql = 'create table public.secrets (id int); create schema shadow; create table shadow.secrets (id int); alter table shadow.secrets enable row level security; set search_path = shadow; alter table secrets enable row level security;';
+    expect(rules(sql)).toEqual(['session-setting@1', 'create-table-without-rls public.secrets@1']);
+    expect(rules("do $$ begin set local search_path to shadow, public; end $$;")).toEqual(['session-setting@1']);
+    expect(rules("select set_config('search_path', 'shadow', false);")).toEqual(['session-setting@1']);
+    expect(rules("select set_config('search' || '_path', 'shadow', false);")).toEqual(['session-setting@1']);
+    expect(rules("alter role authenticator set search_path = shadow;")).toEqual(['session-setting@1']);
+    // As on main: a function's own SET clause, search_path set to public, and other settings pass.
+    expect(rules("CREATE FUNCTION public.f() RETURNS int LANGUAGE sql SECURITY DEFINER\nSET search_path = public AS $$ select 1 $$;\nset search_path to 'public', extensions; reset search_path; set statement_timeout = 0; select set_config('request.jwt.claims', '{}', true);")).toEqual([]);
+  });
+  it('fails ROLLBACK, which can undo a counted ENABLE (review finding)', () => {
+    expect(rules('create table public.secrets (id int); savepoint s; alter table public.secrets enable row level security; rollback to savepoint s;')).toEqual(['transaction-control@1']);
+    expect(rules('begin;\nselect 1;\nABORT;')).toEqual(['transaction-control@3']);
+    expect(rules('do $$ begin rollback; end $$;')).toEqual(['transaction-control@1']);
+    expect(rules('begin; savepoint a; release savepoint a; commit;')).toEqual([]);
+  });
+  it('fails EXECUTE of SQL built at run time in a DO block, however it is split (review finding)', () => {
+    expect(rules("do $$ begin execute 'cre' || 'ate tab' || 'le public.secrets (id int)'; end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("do $$ begin execute format('alter table %I rename to x', 'secrets'); end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("do $$ declare q text := 'select 1'; begin execute q; end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("do $$ begin execute format('alter table public.t drop constraint %s', 'c; create table x (id int)'); end $$;")).toEqual(['dynamic-ddl@1', 'create-table-without-rls public.x@1']);
+    // As on main: trigger loops and constraint drops through format() with %I.
+    expect(rules("DO $$ DECLARE c text; BEGIN FOR c IN SELECT conname FROM pg_constraint LOOP EXECUTE format('ALTER TABLE public.threads DROP CONSTRAINT %I', c); END LOOP; END $$;")).toEqual([]);
+    // In a function body (run later) the split pieces are joined before looking for CREATE and TABLE.
+    expect(rules("create function f() returns void language plpgsql as $$ begin execute 'cre' || 'ate tab' || 'le s (id int)'; end $$;")).toEqual(['dynamic-ddl@1']);
+  });
+  it('fails policies whose expression is an always-true subquery', () => {
+    expect(rules('create policy p on public.t for select using ((select true));')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy q on public.t for select using (exists (select 1));')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy q on public.t for select using ((select false));')).toEqual([]);
+    expect(rules('create policy q on public.t for select using (exists (select 1 from public.members m where m.user_id = auth.uid()));')).toEqual([]);
   });
 });
 

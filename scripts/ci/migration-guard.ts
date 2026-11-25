@@ -1,13 +1,21 @@
 // Migration guard, against a base commit, for supabase/migrations/ and drizzle/migrations/ (.sql files):
 // - a migration that exists on the base may not be modified, renamed or deleted, and nothing in those directories may
 //   be added or changed as a symbolic link or submodule (git would hand the guard the link, not the SQL that runs);
-// - in the added migrations (case-insensitive, any whitespace) every CREATE TABLE, CREATE TABLE ... AS and top-level
-//   SELECT ... INTO needs ENABLE ROW LEVEL SECURITY for that table in the added migrations. Only top-level code and
-//   DO blocks count as enabling it: comments, string literals and function bodies never do;
-// - DISABLE ROW LEVEL SECURITY fails, and so does a policy whose USING or WITH CHECK is a constant such as (true) or
-//   (1=1);
-// - EXECUTE of SQL built at run time that mentions CREATE ... TABLE fails, because this guard cannot read it.
-// The guard is a lexical check, not a Postgres parser; it fails closed where it cannot tell.
+// - in the added migrations (case-insensitive, any whitespace), read per directory in file-name order and statement by
+//   statement: every CREATE TABLE, CREATE TABLE ... AS and top-level SELECT ... INTO needs a later top-level
+//   ALTER TABLE ... ENABLE ROW LEVEL SECURITY for that table. Comments, strings, function bodies and DO blocks never
+//   count as enabling it. A later DROP TABLE or CREATE of the same name starts over; a rename or schema move before
+//   the ENABLE fails. A table created inside CREATE SCHEMA, or without a schema when the change creates a schema, fails;
+// - DISABLE ROW LEVEL SECURITY fails, and so does a policy whose USING or WITH CHECK is a constant such as (true),
+//   (1=1) or (select true);
+// - EXECUTE of SQL built at run time fails in a DO block (except format() with %I/%L only, see isSafeFormat), and in a
+//   function body that mentions CREATE ... TABLE;
+// - ROLLBACK and ABORT fail (they can undo a counted ENABLE), and so do settings that change how this guard must read
+//   the SQL: search_path set to anything that does not start with public, and standard_conforming_strings or
+//   backslash_quote set to anything but on, in any form (SET, set_config(), ALTER ROLE/DATABASE, a comment).
+// The guard is a lexical check, not a Postgres parser. It fails closed where it can tell it cannot read the SQL, but it
+// catches mistakes, not every deliberate way around it: SQL that runs later (a function called by a later statement)
+// or that Postgres reads differently in ways not listed above can still hide a table. Migrations need review too.
 // Exceptions only through scripts/ci/migration-allowlist.json, each with a reason.
 //
 // Usage: bun scripts/ci/migration-guard.ts --base <sha>   (or CI_BASE_SHA; no base: nothing to compare, passes)
@@ -16,7 +24,7 @@ import { type Finding, git, isMain, lineAt, readAllowlist, report, resolveBase }
 
 export const ALLOWLIST = 'scripts/ci/migration-allowlist.json';
 export const MIGRATION_DIRS = ['supabase/migrations', 'drizzle/migrations'];
-const RULES = ['changed-migration', 'create-table-without-rls', 'disable-rls', 'permissive-policy', 'dynamic-ddl'] as const;
+const RULES = ['changed-migration', 'create-table-without-rls', 'disable-rls', 'permissive-policy', 'dynamic-ddl', 'session-setting', 'transaction-control'] as const;
 type Rule = (typeof RULES)[number];
 export type Violation = { file: string; line: number; rule: Rule; table?: string; problem: string; fix: string };
 
@@ -162,7 +170,10 @@ export function evaluateConstant(expression: string): SqlValue | undefined {
     const t = tokens[i++];
     if (t === undefined) return fail();
     const lower = t.toLowerCase();
+    // (select <expr>) and exists (select <expr>) without FROM: a scalar subquery is its value, exists is true.
+    if (t === '(' && peek() === 'select') { i++; const v = or(); if (tokens[i++] !== ')') fail(); return v; }
     if (t === '(') { const v = or(); if (tokens[i++] !== ')') fail(); return v; }
+    if (lower === 'exists') { if (tokens[i++] !== '(' || tokens[i++]?.toLowerCase() !== 'select') fail(); or(); if (tokens[i++] !== ')') fail(); return true; }
     if (lower === 'true' || lower === 'false') return lower === 'true';
     if (lower === 'null') return null;
     if (/^\d/.test(t)) return Number(t);
@@ -221,8 +232,9 @@ export function evaluateConstant(expression: string): SqlValue | undefined {
   }
 }
 
-// Words that can appear in a constant expression. Anything else (a column, a function) makes it non-constant.
-const CONSTANT_WORDS = new Set(['true', 'false', 'not', 'and', 'or', 'null', 'is', 'isnull', 'notnull', 'unknown', 'distinct', 'from', 'in', 'between', 'symmetric', 'boolean', 'bool', 'int', 'integer', 'int2', 'int4', 'int8', 'smallint', 'bigint', 'numeric', 'decimal', 'real', 'float', 'text', 'varchar', 'char', 'character', 'varying', 'cast', 'as', 'case', 'when', 'then', 'else', 'end']);
+// Words that can appear in a constant expression. Anything else (a column, a function, a table) makes it non-constant.
+// A subquery without FROM, such as (select true) or exists (select 1), is constant too.
+const CONSTANT_WORDS = new Set(['true', 'false', 'not', 'and', 'or', 'null', 'is', 'isnull', 'notnull', 'unknown', 'distinct', 'from', 'in', 'between', 'symmetric', 'boolean', 'bool', 'int', 'integer', 'int2', 'int4', 'int8', 'smallint', 'bigint', 'numeric', 'decimal', 'real', 'float', 'text', 'varchar', 'char', 'character', 'varying', 'cast', 'as', 'case', 'when', 'then', 'else', 'end', 'select', 'exists', 'where']);
 
 /** True when a policy expression names no column and calls no function, so it is the same for every row. */
 export function isConstantExpression(expression: string): boolean {
@@ -240,48 +252,117 @@ export function isPermissiveConstant(expression: string): boolean {
   return value !== false && value !== null;
 }
 
-/** Problems in the added migrations, judged together: RLS may be enabled in a later migration of the same change. */
+const TABLE_MODIFIERS = String.raw`(?:(?:global|local)\s+)?(?:(?:temporary|temp|unlogged)\s+)?`;
+const CREATE_TABLE = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?${TABLE_MODIFIERS}table\s+(?:if\s+not\s+exists\s+)?(${QUALIFIED})`, 'gi');
+const SELECT_INTO = new RegExp(String.raw`\binto\s+${TABLE_MODIFIERS}(?:table\s+)?(${QUALIFIED})`, 'gi');
+const ALTER_TABLE = new RegExp(String.raw`\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(${QUALIFIED})`, 'gi');
+const DROP_TABLE = new RegExp(String.raw`^\s*drop\s+table\s+(?:if\s+exists\s+)?(${QUALIFIED}(?:\s*,\s*${QUALIFIED})*)`, 'i');
+// Where a statement can start: at the top, after a semicolon, or after a PL/pgSQL keyword that opens a block or branch.
+const STATEMENT_START = String.raw`(?:^|;|\b(?:begin|then|else|loop)\b)\s*`;
+// Settings that change how the guard must read the SQL: which schema an unqualified name means, and how strings end.
+const LEXER_SETTINGS = /standard_conforming_strings|backslash_quote/gi;
+
+const isQualified = (name: string) => [...name.matchAll(new RegExp(IDENT, 'g'))].length >= 2;
+
+/** Start of the top-level statement that contains `index`, in a view where strings, names and bodies are blanked. */
+const statementStart = (structure: string, index: number) => structure.lastIndexOf(';', index - 1) + 1;
+
+type Event =
+  | { at: number; kind: 'create'; key: string; name: string; line: number; inSchema: boolean }
+  | { at: number; kind: 'enable' | 'drop'; key: string }
+  | { at: number; kind: 'rename'; key: string; line: number };
+
+/**
+ * Problems in the added migrations. Each directory's migrations are read in file-name order (the order the CLI applies
+ * them), statement by statement, so ENABLE ROW LEVEL SECURITY counts only after the CREATE TABLE it protects, and a
+ * later DROP or CREATE of the same name starts over.
+ */
 export function checkAddedSql(files: { path: string; sql: string }[]): Violation[] {
+  const groups = new Map<string, { path: string; sql: string }[]>();
+  for (const file of files) {
+    const dir = file.path.slice(0, file.path.lastIndexOf('/') + 1);
+    groups.set(dir, [...(groups.get(dir) ?? []), file]);
+  }
   const violations: Violation[] = [];
-  const created: { file: string; line: number; name: string; key: string }[] = [];
-  const enabled = new Set<string>();
-  const createTable = new RegExp(String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:(?:global|local)\s+)?(?:(?:temporary|temp|unlogged)\s+)?table\s+(?:if\s+not\s+exists\s+)?(${QUALIFIED})`, 'gi');
-  const selectInto = new RegExp(String.raw`\binto\s+(?:(?:global|local)\s+)?(?:(?:temporary|temp|unlogged)\s+)?(?:table\s+)?(${QUALIFIED})`, 'gi');
-  const alterTable = new RegExp(String.raw`\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(${QUALIFIED})`, 'gi');
-  const policy = /\b(?:create|alter)\s+policy\b/gi;
+  for (const group of groups.values()) violations.push(...checkGroup([...group].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))));
+  return violations;
+}
+
+function checkGroup(files: { path: string; sql: string }[]): Violation[] {
+  const violations: Violation[] = [];
+  // A schema created in this change can take an unqualified name (search_path starts with "$user"), so unqualified
+  // names then match nothing: a table must be created and protected under its schema-qualified name.
+  const createsSchema = files.some(f => /\bcreate\s+schema\b/i.test(sqlView(f.sql, { strings: 'keep', idents: 'blank', bodies: 'recurse' })));
+  const keyOf = (name: string) => (createsSchema && !isQualified(name) ? `?.${tableKey(name).slice('public.'.length)}` : tableKey(name));
+  // Creates not yet followed by ENABLE ROW LEVEL SECURITY, by table key.
+  const pending = new Map<string, { file: string; line: number; name: string; key: string }[]>();
+  const failCreate = (c: { file: string; line: number; name: string; key: string }, problem: string, fix: string) => violations.push({ file: c.file, line: c.line, rule: 'create-table-without-rls', table: c.key, problem, fix });
+
   for (const { path, sql: raw } of files) {
     // Where a problem could hide, read everything (strings and every body, which fails closed). Where a statement
-    // satisfies the guard, read only code that runs: top level and DO blocks, without strings.
+    // satisfies the guard, read only top-level code without strings.
     const all = sqlView(raw, { strings: 'keep', idents: 'keep', bodies: 'recurse' });
     const allStructure = sqlView(raw, { strings: 'blank', idents: 'blank', bodies: 'recurse' });
-    const running = sqlView(raw, { strings: 'blank', idents: 'keep', bodies: 'do' });
+    const running = sqlView(raw, { strings: 'keep', idents: 'keep', bodies: 'do' });
     const runningStructure = sqlView(raw, { strings: 'blank', idents: 'blank', bodies: 'do' });
     const top = sqlView(raw, { strings: 'blank', idents: 'keep', bodies: 'none' });
     const topStructure = sqlView(raw, { strings: 'blank', idents: 'blank', bodies: 'none' });
+    const atStatementStart = (index: number) => topStructure.slice(statementStart(topStructure, index), index).trim() === '';
+    const events: Event[] = [];
 
-    for (const m of all.matchAll(createTable)) {
-      created.push({ file: path, line: lineAt(all, m.index), name: m[1] ?? '', key: tableKey(m[1] ?? '') });
+    for (const m of all.matchAll(CREATE_TABLE)) {
+      const name = m[1] ?? '';
+      const statement = top.slice(statementStart(topStructure, m.index), m.index);
+      events.push({ at: m.index, kind: 'create', key: keyOf(name), name, line: lineAt(all, m.index), inSchema: /^\s*create\s+schema\b/i.test(statement) });
     }
     // SELECT ... INTO creates a table at top level (inside a function body INTO assigns a variable instead).
     for (let start = 0; start < top.length;) {
       const end = statementEnd(topStructure, start);
       const statement = top.slice(start, end);
       if (/^[\s(]*(?:select|with)\b/i.test(statement)) {
-        for (const m of statement.matchAll(selectInto)) {
+        for (const m of statement.matchAll(SELECT_INTO)) {
           if (/\b(?:insert|merge)\s+$/i.test(statement.slice(0, m.index))) continue;
-          created.push({ file: path, line: lineAt(top, start + m.index), name: m[1] ?? '', key: tableKey(m[1] ?? '') });
+          const name = m[1] ?? '';
+          events.push({ at: start + m.index, kind: 'create', key: keyOf(name), name, line: lineAt(top, start + m.index), inSchema: false });
         }
       }
+      // DROP TABLE at top level removes the table, so a later CREATE of the name is a new table.
+      const drop = DROP_TABLE.exec(statement);
+      if (drop) for (const n of (drop[1] ?? '').matchAll(new RegExp(QUALIFIED, 'g'))) events.push({ at: start, kind: 'drop', key: keyOf(n[0]) });
       start = end + 1;
     }
-    for (const m of running.matchAll(alterTable)) {
-      const statement = running.slice(m.index, statementEnd(runningStructure, m.index));
-      if (/\benable\s+row\s+level\s+security\b/i.test(statement)) enabled.add(tableKey(m[1] ?? ''));
+    // ENABLE ROW LEVEL SECURITY counts only as a top-level statement: not in a DO block, where a branch, an exception
+    // handler or a dynamic search_path can keep it from applying to the table.
+    for (const m of top.matchAll(ALTER_TABLE)) {
+      if (!atStatementStart(m.index)) continue;
+      const statement = top.slice(m.index, statementEnd(topStructure, m.index));
+      if (/\benable\s+row\s+level\s+security\b/i.test(statement)) events.push({ at: m.index, kind: 'enable', key: keyOf(m[1] ?? '') });
     }
+    // A rename or schema move anywhere (even in a string or body, failing closed) ends the wait for that name's ENABLE.
+    for (const m of all.matchAll(ALTER_TABLE)) {
+      const statement = all.slice(m.index, statementEnd(allStructure, m.index));
+      if (/\brename\s+to\b|\bset\s+schema\b/i.test(statement)) events.push({ at: m.index, kind: 'rename', key: keyOf(m[1] ?? ''), line: lineAt(all, m.index) });
+    }
+
+    for (const event of events.sort((a, b) => a.at - b.at)) {
+      if (event.kind === 'create') {
+        const create = { file: path, line: event.line, name: event.name.replace(/\s+/g, ''), key: event.key };
+        if (event.inSchema) failCreate(create, `Table ${create.name} is created inside CREATE SCHEMA, which this guard cannot match to its RLS statement.`, 'Create the schema first, then create the table with a schema-qualified name in its own statement.');
+        else if (/^[Uu]&|\.\s*[Uu]&/.test(event.name)) failCreate(create, `Table ${create.name} has a U&"..." name, which this guard cannot match to its RLS statement.`, 'Write the table name without Unicode escapes.');
+        else if (event.key.startsWith('?.')) failCreate(create, `Table ${create.name} has no schema, and this change creates a schema, so the name may not mean public.${create.name}.`, `Write the schema: create table public.${create.name}, then "alter table public.${create.name} enable row level security;".`);
+        else pending.set(event.key, [...(pending.get(event.key) ?? []), create]);
+      } else if (event.kind === 'enable' || event.kind === 'drop') {
+        pending.delete(event.key);
+      } else if (event.kind === 'rename') {
+        for (const c of pending.get(event.key) ?? []) failCreate(c, `Table ${c.name} is renamed or moved (line ${event.line}) before row level security is enabled on it.`, `Enable row level security on ${c.name} right after creating it, before the rename.`);
+        pending.delete(event.key);
+      }
+    }
+
     for (const m of all.matchAll(/\bdisable\s+row\s+level\s+security\b/gi)) {
       violations.push({ file: path, line: lineAt(all, m.index), rule: 'disable-rls', problem: 'The migration disables row level security.', fix: 'Keep RLS enabled and change the policies instead.' });
     }
-    for (const m of all.matchAll(policy)) {
+    for (const m of all.matchAll(/\b(?:create|alter)\s+policy\b/gi)) {
       const end = statementEnd(allStructure, m.index);
       const clause = /\b(using|with\s+check)\s*\(/gi;
       clause.lastIndex = m.index;
@@ -293,23 +374,88 @@ export function checkAddedSql(files: { path: string; sql: string }[]): Violation
         break;
       }
     }
+    // ROLLBACK (to a savepoint, or of the whole transaction) can undo an ENABLE the guard has counted.
+    for (const m of runningStructure.matchAll(new RegExp(`${STATEMENT_START}(rollback|abort)\\b`, 'gi'))) {
+      const at = m.index + m[0].length - (m[1] ?? '').length;
+      violations.push({ file: path, line: lineAt(raw, at), rule: 'transaction-control', problem: `The migration runs ${(m[1] ?? '').toUpperCase()}, which can undo statements this guard counted (such as enabling row level security).`, fix: 'Remove it; each migration runs in its own transaction.' });
+    }
+    violations.push(...sessionSettings(path, raw, running, runningStructure, all, allStructure));
     violations.push(...dynamicDdl(path, raw));
   }
-  for (const table of created) {
-    const name = table.name.replace(/\s+/g, '');
-    if (/^[Uu]&|\.\s*[Uu]&/.test(table.name)) {
-      violations.push({ file: table.file, line: table.line, rule: 'create-table-without-rls', table: table.key, problem: `Table ${name} has a U&"..." name, which this guard cannot match to its RLS statement.`, fix: 'Write the table name without Unicode escapes.' });
-    } else if (!enabled.has(table.key)) {
-      violations.push({ file: table.file, line: table.line, rule: 'create-table-without-rls', table: table.key, problem: `Table ${name} is created without row level security.`, fix: `Add "alter table ${name} enable row level security;" in this change's migrations, at top level or in a DO block.` });
+  for (const creates of pending.values()) {
+    for (const c of creates) failCreate(c, `Table ${c.name} is created without row level security.`, `Add "alter table ${isQualified(c.name) ? c.name : `public.${c.name}`} enable row level security;" after it in this change's migrations, as a top-level statement (not in a DO block).`);
+  }
+  return violations.sort((a, b) => (a.file === b.file ? 0 : a.file < b.file ? -1 : 1));
+}
+
+/**
+ * SET / RESET of a setting that changes how this guard must read the SQL (search_path: which table an unqualified name
+ * is; standard_conforming_strings and backslash_quote: where a string ends). search_path may only be set to start with
+ * public; the string settings may only be set to on. set_config() of them, a quoted setting name, and any other mention
+ * of the string settings (ALTER ROLE/DATABASE ... SET, a function's SET clause, a comment) fail closed.
+ */
+function sessionSettings(path: string, raw: string, running: string, runningStructure: string, all: string, allStructure: string): Violation[] {
+  const violations: Violation[] = [];
+  const fail = (at: number, problem: string, fix: string) => violations.push({ file: path, line: lineAt(raw, at), rule: 'session-setting', problem, fix });
+  // Mentions of the string settings already judged as a SET or RESET.
+  const handled = new Set<number>();
+  const checkSet = (at: number, reset: boolean) => {
+    const rest = running.slice(at, statementEnd(runningStructure, at));
+    if (/^(?:[Uu]&)?"/.test(rest)) {
+      fail(at, 'The migration sets a setting by a quoted name, which this guard cannot read.', 'Write the setting name without quotes.');
+      return;
     }
+    const name = /^[A-Za-z_][A-Za-z0-9_.]*/.exec(rest)?.[0]?.toLowerCase() ?? '';
+    const value = rest.slice(name.length).replace(/^\s*(?:=|to\b)?\s*/i, '').trim();
+    if (name === 'search_path' || name === 'schema') {
+      if (!reset && !/^(?:public|'public'|"public")\s*(?:,|$)/i.test(value)) fail(at, `The migration sets search_path to ${value || 'something else'}, so unqualified table names may not be the tables this guard checks.`, 'Leave search_path alone (or set it to public first) and write schema-qualified names.');
+    } else if (name === 'standard_conforming_strings' || name === 'backslash_quote') {
+      handled.add(at);
+      if (!reset && !/^(?:on|true|'on'|'true'|default)$/i.test(value)) fail(at, `The migration sets ${name} to ${value || 'another value'}, which changes where strings end, so this guard would read the SQL differently from Postgres.`, `Remove it; keep ${name} on.`);
+    }
+  };
+  // The setting name is read from `running`, where a quoted name is still visible (the structure view blanks it).
+  const nameAfter = (keywordEnd: number) => keywordEnd + (/^\s+(?:(?:local|session)\s+)?/i.exec(running.slice(keywordEnd))?.[0].length ?? 0);
+  for (const m of runningStructure.matchAll(new RegExp(`${STATEMENT_START}(set|reset)\\b`, 'gi'))) {
+    checkSet(nameAfter(m.index + m[0].length), (m[1] ?? '').toLowerCase() === 'reset');
+  }
+  for (const m of runningStructure.matchAll(new RegExp(`${STATEMENT_START}alter\\s+(?:role|user|database)\\b`, 'gi'))) {
+    const end = statementEnd(runningStructure, m.index);
+    const set = /\b(set|reset)\b/i.exec(runningStructure.slice(m.index, end));
+    if (set) checkSet(nameAfter(m.index + set.index + set[0].length), (set[1] ?? '').toLowerCase() === 'reset');
+  }
+  for (const m of all.matchAll(/(?:\bset_config|"set_config")\s*\(/gi)) {
+    const range = parenthesised(allStructure, m.index + m[0].length - 1);
+    const comma = allStructure.indexOf(',', range.start);
+    const first = all.slice(range.start, comma < 0 || comma > range.end ? range.end : comma);
+    const parts = lexSql(first).filter(x => x.kind !== 'comment' && !(x.kind === 'code' && first.slice(x.start, x.end).trim() === ''));
+    const literal = parts.length === 1 && parts[0]?.kind === 'string' ? first.slice(parts[0].start + 1, parts[0].end - 1).toLowerCase() : null;
+    if (literal === null || literal === 'search_path') fail(m.index, literal === null ? 'set_config() is called with a setting name built at run time, which this guard cannot read.' : 'set_config() changes search_path, so unqualified table names may not be the tables this guard checks.', 'Do not change settings in a migration; write schema-qualified names.');
+  }
+  for (const m of raw.matchAll(LEXER_SETTINGS)) {
+    if (!handled.has(m.index)) fail(m.index, `The migration mentions ${m[0].toLowerCase()} outside a plain "set ${m[0].toLowerCase()} = on", which can change where strings end, so this guard would read the SQL differently from Postgres.`, `Remove it; keep ${m[0].toLowerCase()} on.`);
   }
   return violations;
 }
 
 /**
- * EXECUTE in a dollar-quoted body whose argument is not one string literal (concatenation, format(), a variable) runs
- * SQL that is only known at run time. When the body's string literals mention CREATE and TABLE, it may create a table
- * this guard never sees.
+ * A format() string that is safe to EXECUTE in a DO block: one statement (no semicolon), only %I and %L placeholders
+ * (which quote what they insert), no rename, schema move or SELECT INTO, and TABLE only as "alter table <a written
+ * name>". Main's trigger loops (create trigger ... on public.%I) and constraint drops are of this kind.
+ */
+function isSafeFormat(literal: string): boolean {
+  if (literal.includes(';') || /%(?!%|(?:\d+\$)?-?\d*[IL])/.test(literal.replace(/%%/g, ''))) return false;
+  if (/\b(?:rename|schema|into)\b/i.test(literal)) return false;
+  for (const m of literal.matchAll(/\btable\b/gi)) {
+    if (!/\balter\s+$/i.test(literal.slice(0, m.index)) || !/^\s+[A-Za-z_"][A-Za-z0-9_."]*(?:\s|$)/.test(literal.slice(m.index + m[0].length))) return false;
+  }
+  return true;
+}
+
+/**
+ * EXECUTE of SQL known only at run time. In a DO block it runs during the migration, so every EXECUTE whose argument is
+ * not one string literal (read as SQL above) or a safe format() fails. In a function body it runs later; it fails when
+ * the body's string literals, joined, mention CREATE and TABLE.
  */
 function dynamicDdl(path: string, sql: string, offset = 0, whole = sql): Violation[] {
   const violations: Violation[] = [];
@@ -318,15 +464,20 @@ function dynamicDdl(path: string, sql: string, offset = 0, whole = sql): Violati
     const body = sql.slice(t.bodyStart, t.bodyEnd);
     const at = offset + t.bodyStart;
     violations.push(...dynamicDdl(path, body, at, whole));
+    const isDo = /\bdo\s+(?:language\s+\S+\s+)?$/i.test(sqlView(sql.slice(0, t.start), { strings: 'blank', idents: 'keep', bodies: 'none' }));
     const tokens = lexSql(body);
-    const literals = tokens.filter(x => x.kind === 'string' || x.kind === 'dollar').map(x => body.slice(x.start, x.end)).join(' ');
-    if (!/\bcreate\b/i.test(literals) || !/\btable\b/i.test(literals)) continue;
+    const literals = tokens.filter(x => x.kind === 'string' || x.kind === 'dollar').map(x => body.slice(x.start, x.end).replace(/^[^'$]*'|'$|^\$[^$]*\$|\$[^$]*\$$/g, '')).join('').replace(/\s+/g, '').toLowerCase();
+    if (!isDo && (!literals.includes('create') || !literals.includes('table'))) continue;
     const code = sqlView(body, { strings: 'blank', idents: 'blank', bodies: 'none' });
     for (const m of code.matchAll(/\bexecute\b(?!\s+(?:function|procedure)\b)/gi)) {
       const argument = body.slice(m.index + m[0].length, statementEnd(code, m.index));
       const parts = lexSql(argument).filter(x => x.kind !== 'comment' && !(x.kind === 'code' && argument.slice(x.start, x.end).trim() === ''));
       if (parts.length === 1 && (parts[0]?.kind === 'string' || parts[0]?.kind === 'dollar')) continue; // read as SQL above
-      violations.push({ file: path, line: lineAt(whole, at + m.index), rule: 'dynamic-ddl', problem: 'EXECUTE runs SQL built at run time in a body that mentions CREATE ... TABLE, so this guard cannot check the table for row level security.', fix: 'Write the CREATE TABLE and its "enable row level security" as plain statements. An intended exception needs a reason in the allowlist.' });
+      if (isDo) {
+        const format = /^\s*format\s*\(\s*'((?:[^']|'')*)'\s*(?:,|\))/i.exec(argument);
+        if (format && isSafeFormat((format[1] ?? '').replace(/''/g, "'"))) continue;
+      }
+      violations.push({ file: path, line: lineAt(whole, at + m.index), rule: 'dynamic-ddl', problem: isDo ? 'EXECUTE in a DO block runs SQL built at run time, so this guard cannot check what it does to tables and row level security.' : 'EXECUTE runs SQL built at run time in a body that mentions CREATE ... TABLE, so this guard cannot check the table for row level security.', fix: 'Write the statements out as plain SQL. An intended exception needs a reason in the allowlist.' });
     }
   }
   return violations;
