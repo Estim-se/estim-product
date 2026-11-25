@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadConversation, formatConversation } from '../../supabase/functions/_shared/conversation';
+
+// The loader only calls from().select().eq/in/order().range(); the stand-ins below provide just that.
+const client = (query: unknown) => ({ from: () => query }) as unknown as SupabaseClient;
 
 describe('complete company-scoped AI conversation', () => {
   it('loads beyond the database row cap with customer, manual and automatic messages in stable order', async () => {
@@ -12,7 +16,7 @@ describe('complete company-scoped AI conversation', () => {
       order: (key: string) => { orders.push(key); return query; },
       range: async (start: number, end: number) => { ranges.push([start, end]); return { data: rows.slice(start, end + 1), error: null }; },
     };
-    const result = await loadConversation({ from: () => query }, 'thread-a', 'company-a');
+    const result = await loadConversation(client(query), 'thread-a', 'company-a');
     expect(result).toEqual(rows);
     expect(ranges).toEqual([[0, 499], [500, 999], [1000, 1499]]);
     expect(filters).toContainEqual(['company_id', 'company-a']);
@@ -25,7 +29,7 @@ describe('complete company-scoped AI conversation', () => {
     let page = 0;
     const query = { select: () => query, eq: () => query, in: () => query, order: () => query,
       range: async () => ++page === 1 ? { data: Array(500).fill({ text: 'older' }), error: null } : { data: null, error: { code: '42501' } } };
-    await expect(loadConversation({ from: () => query }, 'thread-a', 'company-a')).rejects.toThrow();
+    await expect(loadConversation(client(query), 'thread-a', 'company-a')).rejects.toThrow();
   });
   it('preserves exact texts and chronology for both company reply types', () => {
     const text = formatConversation([{ from: 'kund', text: 'Ingen ny kabel behövs.', time: '1' }, { from: 'vv', text: 'Manuellt svar.', time: '2' }, { from: 'ai', text: 'Automatiskt svar.', time: '3' }]);

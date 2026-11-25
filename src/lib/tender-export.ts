@@ -15,7 +15,8 @@ export type TenderExportInput = {
   documents: { id: string; file_name: string; doc_type?: string | null; page_count?: number | null; file_type?: string }[];
 };
 export function tenderExportName(name: string, extension: 'xlsx' | 'pdf') {
-  return `${name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || 'Anbud'} – anbudsbas.${extension}`;
+  // Characters Windows forbids in file names, and C0 control characters (U+0000–U+001F; \p{Cc} minus DEL and C1).
+  return `${name.replace(/[<>:"/\\|?*]|(?![\x7f-\x9f])\p{Cc}/gu, '_').trim() || 'Anbud'} – anbudsbas.${extension}`;
 }
 export function tenderExportData(input: TenderExportInput) {
   const source = (s: { document_id: string; page: number | null; af_code?: string | null; flag?: string | undefined } | null) => s?.flag ? s.flag : s ? [input.documents.find(d => d.id === s.document_id)?.file_name ?? 'Källa saknas – kontrollera', s.page ? `s. ${s.page}` : 'Textkälla', s.af_code].filter(Boolean).join(' · ') : '';
