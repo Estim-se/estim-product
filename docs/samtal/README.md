@@ -20,6 +20,8 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 
 All three prompts are below.
 
+**Role-plays and the local test (step 7):** [rollspel/README.md](rollspel/README.md). It holds 15 Swedish scripts with fasit and runs the whole chain locally with KB-Whisper through faster-whisper.
+
 ## Open points
 
 1. **Real SMS delivery is missing.** The inbox has no SMS provider today: an approved SMS reply is saved as *sent* without leaving estim (`deliverChannel` only delivers WhatsApp and e-mail). A call's reply draft is an SMS, so until an SMS provider is connected the owner must contact the customer in another way. This applies to all SMS in the inbox, not only Samtal.
