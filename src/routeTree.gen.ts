@@ -21,6 +21,7 @@ import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as OfferterRouteImport } from './routes/offerter'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SamtalRouteImport } from './routes/samtal'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ApiPublicReceiveMessageRouteImport } from './routes/api/public/receive-message'
 import { Route as ApiPublicSamtalPurgeRouteImport } from './routes/api/public/samtal-purge'
@@ -87,6 +88,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SamtalRoute = SamtalRouteImport.update({
+  id: '/samtal',
+  path: '/samtal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
   '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByTo {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
   '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
   '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
     | '/api/public/samtal-purge'
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
     | '/api/public/samtal-purge'
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
     | '/api/public/samtal-purge'
@@ -244,6 +256,7 @@ export interface RootRouteChildren {
   OfferterRoute: typeof OfferterRoute
   OnboardingRoute: typeof OnboardingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SamtalRoute: typeof SamtalRoute
   ApiPublicReceiveMessageRoute: typeof ApiPublicReceiveMessageRoute
   ApiPublicSamtalPurgeRoute: typeof ApiPublicSamtalPurgeRoute
   ApiPublicSamtalWorkerRoute: typeof ApiPublicSamtalWorkerRoute
@@ -336,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/samtal': {
+      id: '/samtal'
+      path: '/samtal'
+      fullPath: '/samtal'
+      preLoaderRoute: typeof SamtalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/callback'
@@ -397,6 +417,7 @@ const rootRouteChildren: RootRouteChildren = {
   OfferterRoute: OfferterRoute,
   OnboardingRoute: OnboardingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SamtalRoute: SamtalRoute,
   ApiPublicReceiveMessageRoute: ApiPublicReceiveMessageRoute,
   ApiPublicSamtalPurgeRoute: ApiPublicSamtalPurgeRoute,
   ApiPublicSamtalWorkerRoute: ApiPublicSamtalWorkerRoute,

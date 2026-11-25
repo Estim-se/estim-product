@@ -16,7 +16,7 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 | 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions. **Done:** migration `20261125121204_85ce6994-…`, identical. |
 | 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault. **Done:** migration `20261125121315_0faf7e7c-…`, identical; Vault holds `samtal_base_url` and `samtal_purge_secret`. |
 | 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. **Done:** migration `20261125122653_f3eda501-…`, identical. |
-| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). Ready to run (step 5 is merged). |
+| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). **Done:** migration `20261125135302_5ab6df22-…`, identical apart from one comment line Lovable added at the top so the platform accepts a job every minute. |
 
 All three prompts are below.
 
@@ -101,6 +101,27 @@ Test adapter metadata (`<name>.json`, next to `<name>.mp3`, `.m4a`, `.wav` …):
 **Not yet:**
 - The inbox shows no assignee and no tasks. They are shown in the Samtal page (step 6).
 - An approved SMS is not delivered (open point 1).
+
+## The Samtal page (step 6)
+
+The page is at `/samtal`. The link «Samtal» in the sidebar shows only in real mode when the flag `SAMTAL` is on. The shell does not otherwise change: the link is its own component and shows nothing on any failure.
+
+| Part | Who | What |
+|---|---|---|
+| Status | Everyone | Automatic processing on/off; whether speech to text and AI keys exist (never their values); telephony provider; waiting and failed calls with Swedish error texts |
+| Settings | Owner | Automatic processing on/off; retention (7–365 days). The retention applies to calls received after the change. |
+| Phone numbers | Owner manages; an employee sees their own | Link an employee's ordinary mobile number. A number in use anywhere is refused without saying where. |
+| Tasks | Assignee or owner | Confirm, reject, or mark done with one tap (`samtal_decide_task`) |
+| Calls | Owner: the company; employee: their own | Title, time, caller, status and error. «Öppna förfrågan» uses the existing store action `select` and goes to the inbox. «Lyssna» plays the call through a signed link valid for 60 seconds. «Bearbeta» (owner) starts a waiting or failed call. |
+
+The server side is [page.server.ts](../../src/lib/samtal/page.server.ts), with the server functions in [samtal.functions.ts](../../src/lib/samtal/samtal.functions.ts). Reads and writes go through the signed-in user's own client (RLS).
+
+The service client is used for three things only, each after the user's client has proven access and bound to the user's company:
+- the members' names;
+- the signed audio link;
+- restarting a job.
+
+The page never receives transcripts or extractions, only the request title.
 
 ## Tables
 
@@ -242,7 +263,7 @@ When done, report:
 3. The result of SELECT public.samtal_purge_secret_valid('wrong'), which must be false.
 ```
 
-### 4. Processing queue every minute (ready)
+### 4. Processing queue every minute (done)
 
 ```
 Create a new migration with exactly the SQL in the file docs/samtal/samtal-worker-cron.sql in the repository (estim Samtal). It schedules the job 'samtal-worker' every minute. The job calls the app's route /api/public/samtal-worker with the existing Vault secrets samtal_base_url and samtal_purge_secret.
