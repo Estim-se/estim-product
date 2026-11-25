@@ -26,10 +26,9 @@ export const analyzeTenderQuantities = createServerFn({ method: 'POST' }).middle
       if (read.tooLarge) throw new Error('En källfil har ändrats. Analysera igen.');
       inputs.push({ ...d, bytes, text: read.text, page_count: read.pageCount });
     }
-    const key = process.env['LOVABLE_API_KEY']; if (!key) throw new Error('AI-anslutningen saknar nyckel.');
-    const configured = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
+    const { tenderAiConfig } = await import('./tender-ai-config.server');
+    const { key, model: modelId } = tenderAiConfig();
     const settings=await db.from('tender_calculation_settings').select('room_recipes,post_types').maybeSingle();if(settings.error)throw Error('Typrecepten kunde inte hämtas.');
-    const modelId = configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`;
     // Same feature flag as the job pipeline: the requirements engine when ANBUD_REQUIREMENTS_ENGINE=1.
     result = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1'
       ? await (await import('./tender-requirements-ai.server')).extractRequirementQuantities(inputs, key, modelId, settings.data?.room_recipes ?? null, Array.isArray(settings.data?.post_types) ? (settings.data.post_types as { id: string; name: string; section?: number }[]).map(t => ({ id: t.id, name: t.name, section: t.section })) : [])

@@ -21,8 +21,8 @@ export const matchTenderCalculation=createServerFn({method:'POST'}).middleware([
   const rows=await db.from('tender_documents').select('id,file_name,file_type,path,size,doc_type,page_count,analysis_status').eq('tender_id',data.id).eq('analysis_status','analysed');if(rows.error)throw Error('Underlaget kunde inte hämtas.');
   const {readTenderDocument}=await import('./tender-reading');const {matchTenderCost}=await import('./tender-calculation-ai.server');const inputs:import('./tender-insights-ai.server').TenderInsightInput[]=[];
   for(const d of rows.data??[]){const file=await db.storage.from('tender-documents').download(d.path);if(file.error||!file.data||file.data.size!==d.size)throw Error('Underlaget kunde inte läsas.');const bytes=new Uint8Array(await file.data.arrayBuffer()),read=await readTenderDocument(bytes,d.file_type);if(read.tooLarge)throw Error('Underlaget har ändrats.');inputs.push({...d,bytes,text:read.text,page_count:read.pageCount});}
-  const key=process.env['LOVABLE_API_KEY'];if(!key)throw Error('AI-anslutningen saknar nyckel.');const configured=process.env['ANTHROPIC_MODEL_MAIN']??'claude-sonnet-5';
-  const result=await matchTenderCost(tenderQuantitiesSchema.parse(q.data.result),settings,inputs,key,configured.startsWith('anthropic/')?configured:`anthropic/${configured}`);
+  const {tenderAiConfig}=await import('./tender-ai-config.server');const {key,model}=tenderAiConfig();
+  const result=await matchTenderCost(tenderQuantitiesSchema.parse(q.data.result),settings,inputs,key,model);
   const r=await db.from('tender_calculation_matches').upsert({tender_id:data.id,company_id:q.data.company_id,analysis_run:q.data.analysis_run,result}).select('tender_id').single();if(r.error||!r.data)throw Error('Matchningen kunde inte sparas. Underlaget kan ha ändrats.');return result;
 });
 export const saveTenderCalculationMatches=createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator((v:unknown)=>{const input=id.extend({result:z.unknown()}).parse(v);return {...input,result:validateMatchesInput(input.result)};}).handler(async({data,context})=>{

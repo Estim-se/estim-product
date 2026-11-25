@@ -9,6 +9,7 @@ import type { TenderInsights } from './tender-insights';
 type Db = SupabaseClient<any, 'public', any>;
 type Job = { tender_id: string; company_id: string; analysis_run: string; status: string; plan: string[]; steps: Record<string, TenderStepState>; parts: Record<string, unknown>; hops: number };
 import { cacheDocumentKey, fromCacheForm, toCacheForm } from './tender-cache-keys';
+import { tenderAiConfig } from './tender-ai-config.server';
 const CACHE_VERSION = 'anbud-reliability-2026-11-22-7';
 // Steps whose output depends on source verification, bedroom counting and helper-row filtering.
 const SOURCE_CHECK_STEPS: Record<string, string> = { key_data: 'sheet-row-source-v4', quantities: 'requirement-identity-v29', calculation: 'levels-v12' };
@@ -20,12 +21,6 @@ async function admin(): Promise<Db> {
 // The company's catalog types (id, name, section) the requirements analysis chooses from.
 function catalogOf(types: unknown) {
   return Array.isArray(types) ? types.flatMap(t => t && typeof t === 'object' && 'id' in t && 'name' in t && typeof t.id === 'string' && typeof t.name === 'string' ? [{ id: t.id, name: t.name.slice(0, 160), section: 'section' in t && typeof t.section === 'number' ? t.section : undefined }] : []).slice(0, 200) : [];
-}
-function aiConfig() {
-  const key = process.env['LOVABLE_API_KEY'];
-  if (!key) throw new Error('AI-anslutningen saknar nyckel.');
-  const configured = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
-  return { key, model: configured.startsWith('anthropic/') ? configured : `anthropic/${configured}` };
 }
 
 // Schedules the next hop. Published: the database posts to the public job route (survives closed pages).
@@ -70,7 +65,7 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const { tenderHash } = await import('./tender-source-parts');
   // Keyed by file content and document type, not document ids: the same files give the same result in a new tender.
   // ANBUD_CACHE_SALT (server env) forces fresh model answers, e.g. to verify robustness.
-  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v7` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: aiConfig().model, context: toCacheForm(context, docs.data) }));
+  const fingerprint = await tenderHash(JSON.stringify({ version: step.startsWith('risks:') || step === 'risk_merge' || step === 'risk_facts' || step === 'questions' ? `${CACHE_VERSION}:flat-risk-v7` : SOURCE_CHECK_STEPS[step] ? `${CACHE_VERSION}:${SOURCE_CHECK_STEPS[step]}` : CACHE_VERSION, reading: await readingVersion(db, job), docs: cacheDocumentKey(docs.data), salt: process.env['ANBUD_CACHE_SALT'] ?? '', model: tenderAiConfig().model, context: toCacheForm(context, docs.data) }));
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);
@@ -116,7 +111,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
       await db.from('tender_documents').update({ analysis_status: 'analyzing', error: null }).eq('id', d.id).eq('company_id', job.company_id);
       return {};
     }
-    const { key, model } = aiConfig();
+    const { key, model } = tenderAiConfig();
     if (kind === 'read') { await extractCachedPdfPart(db, job.company_id, hash, version, Number(part), key, model); return {}; }
     const text = await cachedFileText(db, job.company_id, hash, version);
     const { classifyTenderDocument } = await import('./tender-ai.server');
@@ -128,7 +123,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     await saveClass(c);
     return {};
   }
-  const { key, model } = aiConfig();
+  const { key, model } = tenderAiConfig();
   if (step === 'key_data' || step === 'questions' || step.startsWith('risks:')) {
     const { extractTenderInsightStep } = await import('./tender-insights-ai.server');
     const inputs = await loadInputs(db, job, true);
