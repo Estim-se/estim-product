@@ -4,13 +4,23 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 
 - **Flag:** `SAMTAL`, off by default.
 - **Owner:** the product owner.
-- **Data model:** only new tables, functions and one private storage bucket. Nothing existing is changed.
+- **Data model:** new tables, functions and one private storage bucket. The only change to existing objects is the inbox channel `samtal` ([inkorg.sql](inkorg.sql)).
 
-| File | What | Status |
+## Files, in the order Lovable runs them
+
+| # | File | What |
 |---|---|---|
-| [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket | Ready, run in Lovable |
-| [samtal-sletting.sql](samtal-sletting.sql) | Automatic deletion after the company's retention (pg_cron) | Proposal, awaiting approval; do not run yet |
-| [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal` (the only change to existing objects) | Ready, run in Lovable after samtal.sql |
+| 1 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket |
+| 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft |
+| 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions (approved) |
+| 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault (approved) |
+
+All three prompts are below.
+
+## Open points
+
+1. **Real SMS delivery is missing.** The inbox has no SMS provider today: an approved SMS reply is saved as *sent* without leaving estim (`deliverChannel` only delivers WhatsApp and e-mail). A call's reply draft is an SMS, so until an SMS provider is connected the owner must contact the customer in another way. This applies to all SMS in the inbox, not only Samtal.
+2. **The purge route `/api/public/samtal-purge` is not built yet.** It comes with the processing (step 4). Until then the hourly job reaches the app, gets 404 and deletes nothing. Retention therefore starts to work when that route is merged and published.
 
 ## Tables
 
@@ -42,15 +52,43 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 
 **No change to the user model.** Employees are the existing members (`company_members`, role `ägare` / `användare`).
 
-## Isolation tests
+## The inbox accepts calls (inkorg.sql)
 
-[src/test/samtal-isolation.test.ts](../../src/test/samtal-isolation.test.ts) runs this SQL in a real Postgres (PGlite). The database is a copy of the Supabase setup the app runs on: the roles, `auth.uid()`, `storage.objects` with RLS, and `my_company()` as in production.
+The only changes to existing objects, approved by the product owner:
 
-It proves:
-- A user in company A cannot read, change or download anything of company B, through the tables, the storage or the server functions.
-- Owners and employees each get their own visibility within the company.
+| Object | Change |
+|---|---|
+| `threads` | The channel check also allows `samtal`. |
+| `estim_receive` | Accepts `samtal`. The reply draft of a call is an **SMS** that awaits review. |
+| `estim_split_thread` | A thread split off from a call also gets an SMS draft. |
 
-## Lovable prompt (copy as is)
+- **How the functions were changed:** both are copied verbatim from their current migrations, with only those lines changed. `CREATE OR REPLACE` keeps their grants.
+- **In the app:** the channel is shown as «Samtal» with a phone icon. A new request from a call thread suggests SMS.
+
+## Automatic deletion (approved)
+
+| Part | What it does |
+|---|---|
+| `samtal_due_for_deletion(limit)` | Lists the calls whose retention has passed. |
+| `samtal_mark_deleted(call, company)` | Removes transcript, extraction, audio path and caller. Only the fact that a call took place remains. The company is checked. |
+| pg_cron job `samtal-purge`, minute 17 of every hour | Calls `/api/public/samtal-purge` through pg_net, with the secret header `x-estim-secret`. |
+
+- **Why the route deletes the audio:** the route deletes the audio files through the Storage API, then marks the calls. Deleting `storage.objects` rows directly in SQL would leave the files behind in storage.
+- **Secrets:** the app's address and the secret are read from Supabase Vault (`samtal_base_url`, `samtal_purge_secret`) each time the job runs. The same secret is `SAMTAL_PURGE_SECRET` in the app. No secret value is ever written into a migration or the repository.
+- **Private calls** are deleted at once by the processing, without waiting for the schedule.
+
+## Tests
+
+| Test | Proves |
+|---|---|
+| [samtal-isolation.test.ts](../../src/test/samtal-isolation.test.ts) | A user in company A cannot read, change or download anything of company B, through the tables, the storage or the server functions; owners and employees each get their own visibility. |
+| [samtal-inkorg.test.ts](../../src/test/samtal-inkorg.test.ts) | The inbox functions differ from the current migrations in exactly the intended lines; WhatsApp, e-mail, SMS and form requests (with a duplicate, a follow-up and a split) give identical rows before and after; a call becomes a request with an SMS draft. |
+
+Both run the SQL in a real Postgres (PGlite) on a copy of the Supabase setup: roles, `auth.uid()`, `storage.objects` with RLS and `my_company()` as in production.
+
+## Lovable prompts (copy as is, one at a time, in this order)
+
+### 1. Samtal tables and audio bucket
 
 ```
 Create a new migration with exactly the SQL in the file docs/samtal/samtal.sql in the repository (estim Samtal, flag SAMTAL). It only creates new tables (samtal_settings, samtal_numbers, samtal_calls, samtal_jobs, samtal_tasks), new functions (samtal_is_owner, samtal_decide_task, samtal_register_call, samtal_claim_jobs, samtal_release_job) and the private storage bucket samtal-audio.
@@ -58,7 +96,6 @@ Create a new migration with exactly the SQL in the file docs/samtal/samtal.sql i
 Rules:
 - Run the SQL unchanged. Do not change, rename or drop any existing table, column, policy, function or bucket.
 - Do not add any storage policy for the bucket samtal-audio. It must have none; files are only reached through signed links from the server.
-- Do not run docs/samtal/samtal-sletting.sql. That part is not approved yet.
 - Do not change any code in the app.
 
 When done, report:
@@ -68,39 +105,7 @@ When done, report:
 4. That the regenerated src/integrations/supabase/types.ts contains the five tables.
 ```
 
-## Automatic deletion (proposal, awaiting approval)
-
-[samtal-sletting.sql](samtal-sletting.sql) adds two server functions and a schedule:
-
-| Part | What it does |
-|---|---|
-| `samtal_due_for_deletion(limit)` | Lists the calls whose retention has passed. |
-| `samtal_mark_deleted(call, company)` | Removes transcript, extraction, audio path and caller. Only the fact that a call took place remains. The company is checked. |
-| pg_cron job, hourly | Calls the app's route `/api/public/samtal-purge` through pg_net, with a secret header. |
-
-- **Why the route deletes the audio:** the route deletes the audio files through the Storage API, then marks the calls. Deleting `storage.objects` rows directly in SQL would leave the files behind in storage.
-- **What it needs:** the `pg_cron` extension; the app's address and the secret in Supabase Vault (`samtal_base_url`, `samtal_purge_secret`); and the same secret as `SAMTAL_PURGE_SECRET` in Lovable.
-- **Private calls** are deleted at once by the processing, without waiting for the schedule.
-
-## The inbox accepts calls (inkorg.sql)
-
-[inkorg.sql](inkorg.sql) holds the only changes to existing objects, approved by the product owner:
-
-| Object | Change |
-|---|---|
-| `threads` | The channel check also allows `samtal`. |
-| `estim_receive` | Accepts `samtal`. The reply draft of a call is an **SMS** that awaits review. |
-| `estim_split_thread` | A thread split off from a call also gets an SMS draft. |
-
-- **How the functions were changed:** both are copied verbatim from their current migrations, with only those lines changed. `CREATE OR REPLACE` keeps their grants.
-- **SMS has no external delivery today.** An approved SMS is saved as sent, like every SMS draft.
-- **In the app:** the channel is shown as «Samtal» with a phone icon. A new request from a call thread suggests SMS.
-
-[src/test/samtal-inkorg.test.ts](../../src/test/samtal-inkorg.test.ts) proves two things:
-- The new function texts differ from the current migrations in exactly those lines.
-- The same WhatsApp, e-mail, SMS and form requests, including a duplicate, a follow-up and a thread split, give identical results and rows before and after the change, in a real Postgres (PGlite).
-
-### Lovable prompt (copy as is)
+### 2. The inbox accepts the channel samtal
 
 ```
 Create a new migration with exactly the SQL in the file docs/samtal/inkorg.sql in the repository (estim Samtal: the inbox accepts the channel 'samtal'). Run it after the samtal.sql migration.
@@ -121,4 +126,30 @@ When done, report:
 1. The name of the migration file.
 2. The new definition of the channel check on threads.
 3. That estim_receive and estim_split_thread still have the same grants as before.
+```
+
+### 3. Automatic deletion (pg_cron, pg_net, Vault, SAMTAL_PURGE_SECRET)
+
+```
+Set up automatic deletion for estim Samtal (approved). Run this after the two earlier Samtal migrations.
+
+1. Create a new migration with exactly the SQL in docs/samtal/samtal-sletting.sql. It adds the server functions samtal_due_for_deletion and samtal_mark_deleted.
+2. Create a second new migration with exactly the SQL in docs/samtal/samtal-sletting-cron.sql. It enables pg_cron (and pg_net if not already enabled) and schedules the hourly job 'samtal-purge'.
+3. Generate one new random secret of at least 32 characters.
+   - Store it as the app secret SAMTAL_PURGE_SECRET.
+   - Store the same value in Supabase Vault under the name samtal_purge_secret.
+4. Store the published address of the app (https://..., no trailing slash) in Supabase Vault under the name samtal_base_url.
+
+Rules:
+- Never write the value of a secret into a migration, a file in the repository, a log or a chat message. Create the Vault secrets directly in the database (vault.create_secret), not in a migration file.
+- Run the SQL files unchanged.
+- Change nothing else: no existing table, function, policy, cron job, edge function or n8n flow.
+- Do not change any code in the app.
+
+When done, report (names only, never secret values):
+1. The names of the two migration files.
+2. The row for 'samtal-purge' in cron.job: schedule, active, and that it is the only job with that name.
+3. That vault.secrets contains samtal_base_url and samtal_purge_secret.
+4. That the app secret SAMTAL_PURGE_SECRET is set.
+5. That no migration file contains a secret value.
 ```
