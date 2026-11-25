@@ -114,6 +114,19 @@ describe('migration guard: row level security in added migrations', () => {
     expect(rules('create policy p on a for all to "service_role" using (true);')).toEqual([]);
     expect(rules('alter policy p on a to service_role using (true);')).toEqual([]);
   });
+  it('reads TO, USING and WITH CHECK outside quoted names, so a name cannot claim service_role (review finding)', () => {
+    // No TO clause, so the policy applies to everyone; the name only contains the words.
+    expect(rules('create policy "read to service_role using bypass" on public.t for select using (true);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy "to service_role" on public.t for select using (true);')).toEqual(['permissive-policy@1']);
+  });
+  it('fails ALTER POLICY that gives a policy other roles, which would hand them a service_role (true) (review finding)', () => {
+    expect(rules('create policy p on public.t for select to service_role using (true);\nalter policy p on public.t to anon, authenticated;')).toEqual(['policy-roles@2']);
+    expect(rules('alter policy p on public.t to authenticated using (company_id = my_company());')).toEqual(['policy-roles@1']);
+    // Narrowing to service_role, renaming, and changing only the expressions (as on main) pass.
+    expect(rules('alter policy p on public.t to service_role;')).toEqual([]);
+    expect(rules('alter policy p on public.t rename to q;')).toEqual([]);
+    expect(rules('ALTER POLICY company_read ON public.companies USING(id=public.my_company());')).toEqual([]);
+  });
   it('normalises table names', () => {
     expect(tableKey('Foo')).toBe('public.foo');
     expect(tableKey('public . "Foo"')).toBe('public.Foo');
@@ -162,6 +175,12 @@ describe('migration guard: SQL that hides from a lexical check', () => {
     // A single literal is read as SQL instead; EXECUTE FUNCTION in a trigger and dynamic SQL without CREATE TABLE pass.
     expect(rules("do $$ begin execute 'create table z (id int)'; end $$;")).toEqual(['create-table-without-rls public.z@1']);
     expect(rules("DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['a'] LOOP EXECUTE format('CREATE TRIGGER x BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.estim_touch()', t); END LOOP; END $$;")).toEqual([]);
+  });
+  it('reads a single literal with INTO or USING after it as SQL, not as SQL built at run time (review finding)', () => {
+    expect(rules("do $$ declare n int; begin execute 'select count(*) from public.t' into n; end $$;")).toEqual([]);
+    expect(rules("do $$ declare n int; begin execute 'select count(*) from public.t where id = $1' into strict n using 1; end $$;")).toEqual([]);
+    expect(rules("do $$ begin execute 'create table z (id int)' using 1; end $$;")).toEqual(['create-table-without-rls public.z@1']);
+    expect(rules("do $$ declare n int; begin execute 'select ' || 'count(*) from t' into n; end $$;")).toEqual(['dynamic-ddl@1']);
   });
   it('ends a policy statement at its own semicolon, not one in a quoted name or string', () => {
     expect(rules('create policy "a;b" on foo for select using (true);')).toEqual(['permissive-policy@1']);

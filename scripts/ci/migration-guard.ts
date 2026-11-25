@@ -1,6 +1,7 @@
 // Scope: this guard catches mistakes by agents, Lovable and people (a forgotten RLS, a permissive policy). Deliberate
 // lexical evasion is out of scope and needs review (for example \r line ends in comments, string continuation, tarball
-// or git dependencies, ALTER ... OWNER TO or SET SCHEMA). The follow-up is a real-database RLS check.
+// or git dependencies, ALTER ... OWNER TO or SET SCHEMA). Views are not checked: a view without security_invoker reads
+// its tables as its owner, past RLS. The follow-up is a real-database RLS check, which covers views too.
 //
 // Migration guard, against a base commit, for supabase/migrations/ and drizzle/migrations/ (.sql files):
 // - in supabase/migrations/ only <digits>_<name>.sql files are migrations (the Supabase CLI applies nothing else), so
@@ -14,11 +15,12 @@
 //   TABLE or CREATE of the same name starts over; a rename or schema move before the ENABLE fails. A table created
 //   inside CREATE SCHEMA, or without a schema when the change creates a schema, fails;
 // - DISABLE ROW LEVEL SECURITY fails, and so does a policy whose USING or WITH CHECK is a constant such as (true),
-//   (1=1) or (select true), unless its TO names service_role alone (service_role bypasses RLS anyway);
+//   (1=1) or (select true), unless its TO names service_role alone (service_role bypasses RLS anyway). ALTER POLICY
+//   that gives a policy any role but service_role alone fails: the guard cannot see the USING or WITH CHECK it keeps;
 // - temporary tables fail (CREATE TEMP TABLE, SELECT ... INTO TEMP): a migration never needs one;
 // - EXECUTE of SQL built at run time fails in a DO block (except format() with %I/%L only, see isSafeFormat), and so
 //   does EXECUTE in a DO block of any text that mentions a policy; in a function body EXECUTE fails when the body
-//   mentions CREATE ... TABLE;
+//   mentions CREATE ... TABLE. A single string literal, with or without INTO and USING, is read as SQL instead;
 // - ROLLBACK and ABORT fail (they can undo a counted ENABLE), and so do settings that change how this guard must read
 //   the SQL: search_path set to anything that does not start with public, and standard_conforming_strings or
 //   backslash_quote set to anything but on, in any form (SET, set_config(), ALTER ROLE/DATABASE, a comment).
@@ -33,7 +35,7 @@ import { type Finding, git, isMain, lineAt, readAllowlist, report, resolveBase }
 
 export const ALLOWLIST = 'scripts/ci/migration-allowlist.json';
 export const MIGRATION_DIRS = ['supabase/migrations', 'drizzle/migrations'];
-const RULES = ['changed-migration', 'migration-name', 'create-table-without-rls', 'temporary-table', 'disable-rls', 'permissive-policy', 'dynamic-ddl', 'session-setting', 'transaction-control'] as const;
+const RULES = ['changed-migration', 'migration-name', 'create-table-without-rls', 'temporary-table', 'disable-rls', 'permissive-policy', 'policy-roles', 'dynamic-ddl', 'session-setting', 'transaction-control'] as const;
 type Rule = (typeof RULES)[number];
 export type Violation = { file: string; line: number; rule: Rule; table?: string; problem: string; fix: string };
 
@@ -245,17 +247,25 @@ export function evaluateConstant(expression: string): SqlValue | undefined {
 // A subquery without FROM, such as (select true) or exists (select 1), is constant too.
 const CONSTANT_WORDS = new Set(['true', 'false', 'not', 'and', 'or', 'null', 'is', 'isnull', 'notnull', 'unknown', 'distinct', 'from', 'in', 'between', 'symmetric', 'boolean', 'bool', 'int', 'integer', 'int2', 'int4', 'int8', 'smallint', 'bigint', 'numeric', 'decimal', 'real', 'float', 'text', 'varchar', 'char', 'character', 'varying', 'cast', 'as', 'case', 'when', 'then', 'else', 'end', 'select', 'exists', 'where']);
 
+/** Where a policy statement's TO clause starts and its role list ends (at USING or WITH CHECK), if it has one. */
+function rolesClause(structure: string): { start: number; end: number } | undefined {
+  const end = /\b(?:using|with\s+check)\b/i.exec(structure)?.index ?? structure.length;
+  // \bto\b, not \bto\s+: a quoted role is blanked to spaces here, and \s+ would run over it.
+  const to = /\bto\b/i.exec(structure.slice(0, end));
+  return to ? { start: to.index + to[0].length, end } : undefined;
+}
+
 /**
  * True when a policy statement names its roles with TO and every one is service_role. Supabase's service_role bypasses
  * RLS, so such a policy lets nobody through who wasn't through already, and Lovable writes them. A policy without TO,
- * or with any other role beside service_role, is still checked.
+ * or with any other role beside service_role, is still checked. `structure` is the statement with strings and quoted
+ * names blanked, where TO, USING and WITH CHECK are found, so a word inside a quoted name is never read as one;
+ * `names` is the same statement with quoted names kept, where the roles are read.
  */
-export function appliesOnlyToServiceRole(statement: string): boolean {
-  const head = statement.split(/\b(?:using|with\s+check)\b/i)[0] ?? '';
-  const to = /\bto\s+([\s\S]+)$/i.exec(head);
-  if (!to) return false;
-  const roles = (to[1] ?? '').split(',').map(r => r.trim().replace(/^"(.*)"$/, '$1'));
-  return roles.length > 0 && roles.every(r => r === 'service_role');
+export function appliesOnlyToServiceRole(structure: string, names: string): boolean {
+  const clause = rolesClause(structure);
+  if (!clause) return false;
+  return names.slice(clause.start, clause.end).split(',').every(r => r.trim().replace(/^"(.*)"$/, '$1') === 'service_role');
 }
 
 /** True when a policy expression names no column and calls no function, so it is the same for every row. */
@@ -411,7 +421,13 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
     const allNames = sqlView(raw, { strings: 'blank', idents: 'keep', bodies: 'recurse' });
     for (const m of all.matchAll(/\b(?:create|alter)\s+policy\b/gi)) {
       const end = statementEnd(allStructure, m.index);
-      if (appliesOnlyToServiceRole(allNames.slice(m.index, end))) continue;
+      const structure = allStructure.slice(m.index, end);
+      if (appliesOnlyToServiceRole(structure, allNames.slice(m.index, end))) continue;
+      // A policy for service_role alone may use (true), so ALTER POLICY ... TO anon would hand that (true) to anon.
+      if (/^alter/i.test(m[0]) && rolesClause(structure) && !/\brename\s+to\b/i.test(structure)) {
+        violations.push({ file: path, line: lineAt(all, m.index), rule: 'policy-roles', problem: 'ALTER POLICY gives the policy other roles, and this guard cannot see the USING or WITH CHECK the policy keeps, which may let every row through.', fix: 'Drop the policy and create it again with its roles, USING and WITH CHECK in one statement.' });
+        continue;
+      }
       const clause = /\b(using|with\s+check)\s*\(/gi;
       clause.lastIndex = m.index;
       for (let c = clause.exec(allStructure); c && c.index < end; c = clause.exec(allStructure)) {
@@ -529,7 +545,9 @@ function dynamicDdl(path: string, sql: string, offset = 0, whole = sql): Violati
         violations.push({ file: path, line: lineAt(whole, at + m.index), rule: 'dynamic-ddl', problem: 'EXECUTE in a DO block runs SQL that mentions a policy, so this guard cannot check that the policy does not let every row through.', fix: 'Write the policy statement out as plain SQL. An intended exception needs a reason in the allowlist.' });
         continue;
       }
-      if (parts.length === 1 && (parts[0]?.kind === 'string' || parts[0]?.kind === 'dollar')) continue; // read as SQL above
+      // A single literal is read as SQL above; INTO and USING after it only take the result and pass values.
+      const first = parts[0];
+      if ((first?.kind === 'string' || first?.kind === 'dollar') && (parts.length === 1 || /^\s*(?:into|using)\b/i.test(code.slice(m.index + m[0].length + first.end)))) continue;
       if (isDo) {
         const format = /^\s*format\s*\(\s*'((?:[^']|'')*)'\s*(?:,|\))/i.exec(argument);
         if (format && isSafeFormat((format[1] ?? '').replace(/''/g, "'"))) continue;
