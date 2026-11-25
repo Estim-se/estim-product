@@ -14,13 +14,18 @@ if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET saknas: signaturer kan inte ko
 
 Deno.serve({ port: 8787 }, async (req) => {
   const url = new URL(req.url);
+  // Every call is logged, so a webhook configured with the wrong path is visible instead of silently ignored.
+  console.log(`\n-> ${new Date().toISOString()} ${req.method} ${url.pathname}${req.headers.has("unipile-signature") ? " (från Unipile)" : ""}`);
 
   if (req.method === "GET" && url.pathname === "/klar") {
     const params = Object.fromEntries(url.searchParams);
     console.log("\n== Webbläsaren kom tillbaka efter inloggning ==\n", params);
     return new Response(`<meta charset="utf-8"><p>Klart. Titta i terminalen.</p><pre>${JSON.stringify(params, null, 2).replace(/</g, "&lt;")}</pre>`, { headers: { "content-type": "text/html; charset=utf-8" } });
   }
-  if (req.method !== "POST" || url.pathname !== "/webhook") return new Response("not found", { status: 404 });
+  if (req.method !== "POST" || url.pathname !== "/webhook") {
+    console.log("   fel adress: webhooken i Unipiles dashboard ska sluta på /webhook");
+    return new Response("not found", { status: 404 });
+  }
 
   const raw = new Uint8Array(await req.arrayBuffer());
   const header = req.headers.get("unipile-signature");
