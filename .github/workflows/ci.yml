@@ -1,0 +1,97 @@
+# Required check "ci": type check, lint, tests, build and the guards in scripts/ci/.
+# It never runs conditionally: GitHub counts a skipped required check as passed.
+# Runs PR code with a read-only token and no secrets (pull_request, never pull_request_target).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, lovable]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The commit the guards compare against: the PR's base, or the commit before a push. Empty or all zeros
+      # (a manual run, a new branch) means there is none.
+      CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history, so the base commit is always present for the guards.
+          fetch-depth: 0
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+
+      - name: Install
+        id: install
+        run: bun install --frozen-lockfile
+
+      # Every check below runs even when an earlier one failed, so one run shows every problem.
+      - name: Type check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/eslint .
+
+      - name: Tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/vitest run
+
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/vite build
+
+      - name: Edge Function guard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun scripts/ci/edge-guard.ts
+
+      - name: Migration guard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun scripts/ci/migration-guard.ts
+
+      - name: Install-script guard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun scripts/ci/install-scripts-guard.ts
+
+      - name: Dependency audit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun scripts/ci/audit-guard.ts
+
+      - name: Prettier on changed files (warning only)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
+        run: |
+          set +e
+          git diff -z --name-only --diff-filter=ACMR "$CI_BASE_SHA" HEAD > "$RUNNER_TEMP/changed-files"
+          if [ ! -s "$RUNNER_TEMP/changed-files" ]; then
+            echo "No changed files to check."
+            exit 0
+          fi
+          xargs -0 node_modules/.bin/prettier --check --ignore-unknown -- < "$RUNNER_TEMP/changed-files"
+          if [ $? -ne 0 ]; then
+            echo "::warning title=prettier::Some changed files are not formatted. Run node_modules/.bin/prettier --write on them. This never fails CI."
+          fi
+          exit 0
