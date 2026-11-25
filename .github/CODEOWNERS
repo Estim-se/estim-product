@@ -1,4 +1,4 @@
-# Requests Ibbe's review on the review gate. Who must approve is set in .claude/approvals.yml, not here.
+# Ibbe owns the review gate: GitHub asks for his review on every change to these paths.
 .claude/ @ibbe-futureventures
 REVIEW.md @ibbe-futureventures
 CLAUDE.md @ibbe-futureventures
