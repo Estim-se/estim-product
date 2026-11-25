@@ -4,10 +4,8 @@
 //
 //   bun scripts/run-anbud-local.ts --documents <folder> [--settings <calculation-settings.json>] [--fasit Baggen|Testlärkan|Provbänken] [--out <run.json>]
 //
-// The model calls take the app's own local-development route (src/lib/tender-ai-config.server.ts): the Anthropic Messages
-// API with ANTHROPIC_API_KEY (Bun loads .env.local, which Git ignores). ANTHROPIC_MODEL_MAIN picks the model
-// (default as in production). Without --settings the built-in example catalog is used. Tender files and run output may
-// contain customer data: keep them outside the repository.
+// Without --settings the built-in example catalog is used. Tender files and run output may contain customer data: keep
+// them outside the repository.
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { prepareCachedFile, extractCachedPdfPart, cachedFileText } from '../src/lib/tender-source-cache.server';
 import { tenderTextParts } from '../src/lib/tender-source-parts';
@@ -28,7 +26,6 @@ const args = process.argv.slice(2), arg = (name: string) => { const i = args.ind
 const folder = arg('--documents'), settingsPath = arg('--settings'), fasit = arg('--fasit') as 'Baggen' | 'Testlärkan' | 'Provbänken' | undefined, outPath = arg('--out');
 if (!folder) throw Error('Use --documents <folder>.');
 if (!process.env['ANTHROPIC_API_KEY']) throw Error('ANTHROPIC_API_KEY saknas (lägg den i .env.local).');
-// Without Lovable's key the app's own code calls the Anthropic Messages API directly.
 delete process.env['LOVABLE_API_KEY'];
 process.env['ANBUD_REQUIREMENTS_ENGINE'] = '1';
 const { key, model } = tenderAiConfig();

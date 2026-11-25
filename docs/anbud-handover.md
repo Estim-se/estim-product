@@ -7,7 +7,7 @@ The release gate is **met**: all nine verification runs after PR #11 passed (see
 
 - **Claude Code** works in VS Code on a clone of the GitHub repository `Estim-se/estim-product`. It uses one branch per fix and never commits to `main`. It makes the change, runs **all** tests, and opens a pull request against `main`.
 - **Merging:** the owner merges only when tests are green and nobody is working in Lovable at the same time. Before a merge, `main` is checked for new commits; if there are any, the branch is updated (merge, never rebase or force-push) and the tests are run again. Only `main` syncs to Lovable, so `main` must always be in a working state.
-- **Verification:** Lovable holds the production key and runs it: the three test tenders (Testlärkan, Provbänken, Baggen), three runs each, nine in total. Local AI runs use each developer's own key from Estim's Development workspace (`docs/local-development.md`).
+- **Verification:** Lovable holds the keys and runs it: the three test tenders (Testlärkan, Provbänken, Baggen), three runs each, nine in total. Claude Code does not start paid live runs.
 - **Release:** nothing is published until all nine runs reach `Analyserat`, pass fasit, and give identical rows/totals per tender.
 - **Cache:** every PR that changes analysis output bumps the cache version of the affected steps, so verification cannot reuse stale results (see *Caches*).
 - **Generality:** every fix is a general rule. No tender/file names or fasit numbers go into analysis code.

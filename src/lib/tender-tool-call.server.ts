@@ -26,7 +26,6 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
   // Cache the large document prefix so a retry does not pay for the documents twice.
   const last = content.length - 1;
   if (last >= 0) content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
-  // Lovable's gateway with its key (production and the Lovable preview), otherwise the Anthropic Messages API.
   const route = tenderAiRequest(c.key, c.model);
   const response = await fetch(route.url, {
     method: 'POST', headers: route.headers,

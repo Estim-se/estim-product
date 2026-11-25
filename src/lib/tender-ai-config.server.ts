@@ -1,8 +1,3 @@
-// Key and route for every tender AI call. Production and the Lovable preview call Lovable's AI gateway with
-// LOVABLE_API_KEY, exactly as before. Without it (local development) the same request bodies go to the Anthropic
-// Messages API with ANTHROPIC_API_KEY. The model keeps its anthropic/ form here, so cached step results keep their
-// fingerprints on both routes.
-
 const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/messages";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -18,8 +13,6 @@ export function tenderAiConfig(): { key: string; model: string } {
   };
 }
 
-// Lovable's key keeps the gateway request unchanged. Any other key is an Anthropic API key: it calls the Messages API
-// directly, with the model name without anthropic/.
 export function tenderAiRequest(key: string, model: string): TenderAiRequest {
   const lovable = process.env["LOVABLE_API_KEY"];
   if (lovable && key === lovable) {

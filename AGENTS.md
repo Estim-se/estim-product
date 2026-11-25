@@ -29,10 +29,6 @@ use the editor.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
 
-## Local development
-
-- Setup, keys and running AI locally: `docs/local-development.md`.
-
 ## Standing rules for new features
 
 - New features must not change existing ones: the tender engine (analysis, quantities, catalog, calculation, export), WhatsApp (receiving, sending, routing on phone_number_id), email via Nylas, the inbox, quotes and documents.

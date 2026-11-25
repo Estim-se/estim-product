@@ -2,10 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { tenderAiConfig } from "@/lib/tender-ai-config.server";
 import { streamTenderTool } from "@/lib/tender-tool-call.server";
 
-// Which route a tender AI call takes, read from the request that streamTenderTool sends. fetch is stubbed: no network
-// and no real keys. Every test sets all three variables, so a developer's own environment cannot change the outcome.
-
-// The smallest streamed answer that completes the forced tool call, so the call makes exactly one request.
 const answer = () =>
   new Response(
     [
@@ -22,7 +18,6 @@ const answer = () =>
       .join(""),
   );
 
-// One tool call with the configured key and model, as the tender steps make it; returns what was sent.
 async function sentRequest() {
   const fetch = vi.fn<typeof globalThis.fetch>(async () => answer());
   vi.stubGlobal("fetch", fetch);
@@ -50,14 +45,11 @@ afterEach(() => {
 });
 
 describe("tender AI route", () => {
-  it("with LOVABLE_API_KEY, keeps the gateway URL, headers and model unchanged", async () => {
+  it("with LOVABLE_API_KEY, calls Lovable's gateway with its headers and the anthropic/ model", async () => {
     vi.stubEnv("LOVABLE_API_KEY", "lovable-test-key");
-    // Lovable's key wins even when an Anthropic key is set too.
     vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test-key");
     vi.stubEnv("ANTHROPIC_MODEL_MAIN", undefined);
     const request = await sentRequest();
-    // Production and the Lovable preview send the gateway URL, headers and model they sent before local routing
-    // existed. Entries, not the object, so the header order is pinned too.
     expect(request.url).toBe("https://ai.gateway.lovable.dev/v1/messages");
     expect(Object.entries(request.headers ?? {})).toEqual([
       ["Authorization", "Bearer lovable-test-key"],
@@ -79,8 +71,10 @@ describe("tender AI route", () => {
       "Content-Type": "application/json",
     });
     expect(request.model).toBe("claude-sonnet-4-6");
-    // The configured model keeps its anthropic/ form on this route too, so cache fingerprints match the gateway's.
-    expect(tenderAiConfig().model).toBe("anthropic/claude-sonnet-4-6");
+    expect(
+      tenderAiConfig().model,
+      "cache fingerprints use the anthropic/ model on both routes",
+    ).toBe("anthropic/claude-sonnet-4-6");
   });
 
   it("throws when neither key is set", () => {
