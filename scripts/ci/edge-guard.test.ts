@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { authenticates, checkEdgeFunctions, configOverrides, remappingKeys } from './edge-guard';
 import { formatFinding } from './lib';
 import { tempDir, writeFiles } from './test-helpers';
@@ -39,6 +40,17 @@ describe('edge guard: authentication in index.ts', () => {
     expect(authenticates(`import type { requireCompany } from '../_shared/auth.ts'; requireCompany(req);`)).toBe(false);
     expect(authenticates(`const s = req.headers.get("x-internal-key");`)).toBe(false);
   });
+  it('does not count a guard name that a parameter or local shadows', () => {
+    expect(authenticates(`import { requireCompany } from '../_shared/auth.ts'; const f = (requireCompany: () => void) => requireCompany(); Deno.serve(() => new Response('open'));`)).toBe(false);
+    expect(authenticates(`import * as auth from '../_shared/auth.ts'; function g(auth: { requireCompany(): void }) { auth.requireCompany(); }`)).toBe(false);
+  });
+  it('requires the internal key to be compared, not only read', () => {
+    expect(authenticates(`Deno.serve(async (req) => { console.log(req.headers.get('x-internal-key'), Deno.env.get('INTERNAL_FUNCTION_KEY')); return new Response('ok'); });`)).toBe(false);
+    expect(authenticates(`req.headers.get('x-internal-key'); Deno.env.get('INTERNAL_FUNCTION_KEY'); Deno.serve(() => new Response('open'));`)).toBe(false);
+    expect(authenticates(`const a = req.headers.get('x-internal-key'); const b = req.headers.get('x-internal-key'); if (!safeEqual(a, b)) throw 0; Deno.env.get('INTERNAL_FUNCTION_KEY');`)).toBe(false);
+    expect(authenticates(`if (req.headers.get('X-Internal-Key') !== Deno.env.get('INTERNAL_FUNCTION_KEY')) return deny();`)).toBe(true);
+    expect(authenticates(`const key = (Deno.env.get('INTERNAL_FUNCTION_KEY') ?? '').trim(); const got = req.headers.get('x-internal-key') as string; if (got === key) ok();`)).toBe(true);
+  });
 });
 
 describe('edge guard: entry files', () => {
@@ -65,6 +77,25 @@ describe('edge guard: entry and import remapping', () => {
     expect(configOverrides('[functions.a]\nverify_jwt = false # entrypoint = "x"\n[db]\nentrypoint = 1\n')).toEqual([]);
     const out = messages(repo({ 'supabase/functions/ok/index.ts': COMPANY, 'supabase/config.toml': '[functions.ok]\nentrypoint = "./other.ts"\n' }));
     expect(out).toEqual([expect.stringMatching(/^supabase\/config\.toml:2: A function sets entrypoint, .* Fix: Remove entrypoint/)]);
+  });
+  it('reads config.toml as TOML, so quoted and escaped keys count', () => {
+    expect(configOverrides('[functions.write-reply]\n"\\u0065ntrypoint" = "./functions/write-reply/evil.ts"\n')).toEqual([{ line: 1, key: 'entrypoint' }]);
+    expect(configOverrides('["functions".x]\n\'import_map\' = "m.json"\n')).toEqual([{ line: 2, key: 'import_map' }]);
+    expect(configOverrides('[functions."\\u0078"]\nverify_jwt = false\n')).toEqual([]);
+    expect(() => configOverrides('[functions.a\nentrypoint = 1')).toThrow();
+    const out = messages(repo({ 'supabase/functions/ok/index.ts': COMPANY, 'supabase/config.toml': '[functions.ok\n' }));
+    expect(out).toEqual([expect.stringMatching(/^supabase\/config\.toml:1: config\.toml cannot be parsed as TOML .* Fix: Make it valid TOML\./)]);
+  });
+  it('the real supabase/config.toml parses and sets no override', () => {
+    expect(configOverrides(readFileSync('supabase/config.toml', 'utf8'))).toEqual([]);
+  });
+  it('fails import remapping in deno config files anywhere in supabase/ and at the root', () => {
+    const out = messages(repo({ 'supabase/functions/ok/index.ts': COMPANY, 'supabase/deno.json': '{"imports":{"../_shared/auth.ts":"./fake.ts"}}', 'deno.jsonc': '{"scopes":{}}', 'import_map.json': '{"imports":{}}', 'src/deno.json': '{"imports":{}}' }));
+    expect(out).toEqual([
+      expect.stringMatching(/^supabase\/deno\.json:1: deno\.json has "imports"/),
+      expect.stringMatching(/^deno\.jsonc:1: deno\.jsonc has "scopes"/),
+      expect.stringMatching(/^import_map\.json:1: import_map\.json has "imports"/),
+    ]);
   });
   it('fails imports, scopes or importMap in deno.json, deno.jsonc and import_map.json', () => {
     expect(remappingKeys('{\n  // comment "imports"\n  "imports": { "a": "b" },\n}')).toEqual([{ key: 'imports', line: 3 }]);
