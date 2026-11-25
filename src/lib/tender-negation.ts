@@ -1,8 +1,8 @@
 // Removes negated or excluded phrases from short Swedish labels before keyword matching, so that
 // "Dubbla vägguttag kök (exkl. diskmaskin)" is not read as a dishwasher outlet and "ej lägenhetsunderlag"
 // is not read as apartments. Only the negated clause is removed; the rest of the label is kept.
-const BOUNDARY = '(?<![\\p{L}\\p{N}])';
-const END_WORD = '(?![\\p{L}\\p{N}])';
+export const BOUNDARY = '(?<![\\p{L}\\p{N}])';
+export const END_WORD = '(?![\\p{L}\\p{N}])';
 const NEGATION = `${BOUNDARY}(?:ej|inte|icke|ingen|inga|utan|exkl\\.?|exklusive|förutom|utöver|undantaget|bortsett från)${END_WORD}`;
 // Clause ends at a separator, a closing bracket, a dash between words or a sentence-ending full stop.
 const CLAUSE_END = '(?=[,;:)\\]|]|\\s[–—-]\\s|\\.(?:\\s|$)|$)';

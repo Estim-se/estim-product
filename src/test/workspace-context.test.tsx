@@ -6,7 +6,7 @@ import { createRealStore } from '@/lib/real-store';
 afterEach(cleanup);
 describe('Workspace context identity', () => {
   it('keeps mounted consumers connected when the provider value changes', () => {
-    const workspace: Workspace = { mode:'demo',setMode:()=>{},signedIn:false,loading:false,error:'',data:null,realStore:createRealStore(),refresh:async()=>{},mutate:async()=>{},signOut:async()=>{} };
+    const workspace: Workspace = { mode:'demo',setMode:()=>{},signedIn:false,loading:false,error:'',data:null,realStore:createRealStore(),refresh:async()=>undefined,mutate:async()=>{},signOut:async()=>{} };
     function Consumer(){return <span>{useWorkspace().mode}</span>;}
     const view=render(<WorkspaceContext.Provider value={workspace}><Consumer/></WorkspaceContext.Provider>);
     expect(screen.getByText('demo')).toBeDefined();

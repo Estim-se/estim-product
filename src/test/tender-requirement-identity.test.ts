@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildObjectModel } from '@/lib/tender-object-model';
-import { buildRequirementQuantities, decodeRequirements, stableRequirementId, type Requirement } from '@/lib/tender-requirements';
+import { buildRequirementQuantities, decodeRequirements, otherTradeWork, stableRequirementId, type Requirement } from '@/lib/tender-requirements';
 import { combineRequirementAnswers, REQUIREMENT_SECTION_GROUPS, thinSectionGroups } from '@/lib/tender-requirements-ai.server';
 import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
 
@@ -219,5 +219,27 @@ describe('requirement identity and deduplication', () => {
     expect(rowsOf(q).map(i => i.post)).toContain('Uttag vid hatthylla');
     expect(status(q, 'Hatthylla med infästning hall')).toMatchObject({ status: 'Ej relevant' });
     expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Hatthylla med infästning hall, Skohylla och klädstång/.test(a.description))).toBe(true);
+  });
+  it('whole words decide the trade, and å, ä and ö are letters', () => {
+    const q = build([req('Måla om hela väggen', 'lägenhet', 1, { section: 4, source: src('Entreprenören ska måla om hela väggen eller laga den efter ingrepp.') })]);
+    expect(status(q, 'Måla om hela väggen')).toMatchObject({ status: 'Ej relevant' });
+    expect(otherTradeWork({ post: 'Påmålning', source: null })).toBe(false);
+  });
+  it('el and every el-compound is electrical work; eller, element, elev, elva, elastisk, elegant and elit are not', () => {
+    const q = build([req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') }),
+      req('Elåtgärder vid diskbänk', 'lägenhet', 1, { section: 4, source: src('Elåtgärder vid diskbänk i kök.') }),
+      req('Elanslutning av beröringsfri blandare', 'fastighet', null, { fixed_quantity: 3, section: 7, source: src('Elanslutning av beröringsfri blandare i WC.') }),
+      req('Målning av elevskåp', 'fastighet', null, { fixed_quantity: 2, section: 7, source: src('Elegant elevskåp och element från Elit målas, elastisk fog vid elva fönster.') })]);
+    expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toEqual(expect.arrayContaining(['El till garderob: 6', 'Elåtgärder vid diskbänk: 6', 'Elanslutning av beröringsfri blandare: 3']));
+    expect(['El till garderob', 'Elåtgärder vid diskbänk', 'Elanslutning av beröringsfri blandare'].map(p => status(q, p)?.status)).toEqual(['Saknar pris', 'Saknar pris', 'Saknar pris']);
+    expect(status(q, 'Målning av elevskåp')).toMatchObject({ status: 'Ej relevant' });
+  });
+  it('a place named in the post or its quote (list, window, VVS, tiled wall, furniture plan) does not make electrical work other-trade work', () => {
+    const posts: [string, string][] = [['Indirekt ljus i taklist', 'LED-slinga i taklist i vardagsrum.'], ['Magnetkontakt fönster', 'Magnetkontakter på öppningsbara fönster i trapphus.'],
+      ['Potentialutjämning VVS', 'Potentialutjämning av VVS-installationer i badrum.'], ['Infälld kontakt kakelvägg', 'Infälld kontakt i kakelvägg ovan bänk.'],
+      ['Spotlights badrum', 'Infällda spotlights i badrum, IP44, placering enligt möbleringsplan.'], ['Uttag vid diskbänk', 'Placering vid diskbänk enligt köksritning.'],
+      ['Jordfelsbrytare för diskmaskin', 'Jordfelsbrytare för diskmaskin under diskbänk.']];
+    const q = build(posts.map(([post, quote]) => req(post, 'lägenhet', 1, { section: 4, source: src(quote) })));
+    expect(posts.map(([post]) => status(q, post)?.row)).toEqual(posts.map(([post]) => post));
   });
 });

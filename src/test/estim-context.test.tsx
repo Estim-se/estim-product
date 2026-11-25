@@ -10,7 +10,7 @@ afterEach(cleanup);
 describe('Estim context identity', () => {
   it('connects provider and hook through a stable context and preserves changes when rerendered', () => {
     const store = createEstimStore();
-    const workspace: Workspace = { mode: 'demo', setMode: () => {}, signedIn: false, loading: false, error: '', data: null, realStore: createRealStore(), refresh: async () => {}, mutate: async () => {}, signOut: async () => {} };
+    const workspace: Workspace = { mode: 'demo', setMode: () => {}, signedIn: false, loading: false, error: '', data: null, realStore: createRealStore(), refresh: async () => undefined, mutate: async () => {}, signOut: async () => {} };
     function Consumer() { const { state } = useEstim(); return <span>{state.toast || 'ansluten'}</span>; }
     const content = () => <WorkspaceContext.Provider value={workspace}><EstimContext.Provider value={store}><Consumer /></EstimContext.Provider></WorkspaceContext.Provider>;
     const view = render(content());

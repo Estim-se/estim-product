@@ -4,14 +4,13 @@
 //
 //   bun scripts/run-anbud-local.ts --documents <folder> [--settings <calculation-settings.json>] [--fasit Baggen|Testlärkan|Provbänken] [--out <run.json>]
 //
-// The model calls of the app go to Lovable's AI gateway; this script sends the same request bodies to the Anthropic
-// Messages API with ANTHROPIC_API_KEY (Bun loads .env.local, which Git ignores). ANTHROPIC_MODEL_MAIN picks the model
-// (default as in production). Without --settings the built-in example catalog is used. Tender files and run output may
-// contain customer data: keep them outside the repository.
+// Without --settings the built-in example catalog is used. Tender files and run output may contain customer data: keep
+// them outside the repository.
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { prepareCachedFile, extractCachedPdfPart, cachedFileText } from '../src/lib/tender-source-cache.server';
 import { tenderTextParts } from '../src/lib/tender-source-parts';
 import { classifyTenderDocument } from '../src/lib/tender-ai.server';
+import { tenderAiConfig } from '../src/lib/tender-ai-config.server';
 import { extractTenderInsightStep, mergeTenderRiskGroups, reviewTenderRiskFacts, type TenderInsightInput } from '../src/lib/tender-insights-ai.server';
 import { TENDER_RISK_GROUPS } from '../src/lib/tender-risk-checklist';
 import { validateTenderInsights, type TenderInsights } from '../src/lib/tender-insights';
@@ -27,29 +26,26 @@ import { checkTenderFasit } from '../src/test/helpers/tender-fasit';
 const args = process.argv.slice(2), arg = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const folder = arg('--documents'), settingsPath = arg('--settings'), fasit = arg('--fasit') as 'Baggen' | 'Testlärkan' | 'Provbänken' | undefined, outPath = arg('--out');
 if (!folder) throw Error('Use --documents <folder>.');
-const apiKey = process.env['ANTHROPIC_API_KEY'];
-if (!apiKey) throw Error('ANTHROPIC_API_KEY saknas (lägg den i .env.local).');
-process.env['LOVABLE_API_KEY'] = 'local-run';
+if (!process.env['ANTHROPIC_API_KEY']) throw Error('ANTHROPIC_API_KEY saknas (lägg den i .env.local).');
+delete process.env['LOVABLE_API_KEY'];
 process.env['ANBUD_REQUIREMENTS_ENGINE'] = '1';
-const modelId = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
-const model = `anthropic/${modelId}`;
-const ai = new TenderAi('local-run', model);
+const { key, model } = tenderAiConfig();
+const modelId = model.replace(/^anthropic\//, '');
+const ai = new TenderAi(key, model);
 // USD per million tokens (input, output, cache write 5 min, cache read) for the models this script is used with.
 const PRICES: Record<string, [number, number, number, number]> = { 'claude-sonnet-5': [2, 10, 2.5, 0.2], 'claude-sonnet-5-5': [2, 10, 2.5, 0.1], 'claude-opus-5-5': [4, 20, 5, 0.2] };
 const price = PRICES[modelId] ?? [2, 10, 2.5, 0.2];
 
-// --- Gateway requests → Anthropic Messages API, with token usage per call --------------------------------------------
+// --- Token usage per call, read from the Anthropic Messages API responses ---------------------------------------------
 type Call = { tool: string; input: number; output: number; cache_write: number; cache_read: number; ms: number; status: number };
 const calls: Call[] = [], toolOutputs: { tool: string; json: string }[] = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (!url.startsWith('https://ai.gateway.lovable.dev/')) return realFetch(input, init);
+  if (!url.startsWith('https://api.anthropic.com/')) return realFetch(input, init);
   const body = JSON.parse(String(init?.body ?? '{}'));
-  body.model = String(body.model).replace(/^anthropic\//, '');
   const tool: string = body.tools?.[0]?.name ?? '?', started = Date.now();
-  const response = await realFetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: init?.signal ?? null, body: JSON.stringify(body),
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } });
+  const response = await realFetch(input, init);
   const call: Call = { tool, input: 0, output: 0, cache_write: 0, cache_read: 0, ms: 0, status: response.status };
   calls.push(call);
   if (!response.ok || !response.body) { call.ms = Date.now() - started; console.warn(`[api] ${tool}: HTTP ${response.status}`); return response; }
@@ -129,7 +125,7 @@ console.log(`${names.length} filer, modell ${modelId}`);
 await limited(documents, 4, async d => {
   const { hash, meta } = await prepareCachedFile(anyDb, company, version, d);
   d.page_count = meta.page_count;
-  if (d.file_type === 'pdf') for (let part = 1; part <= meta.parts; part++) await extractCachedPdfPart(anyDb, company, hash, version, part, 'local-run', model);
+  if (d.file_type === 'pdf') for (let part = 1; part <= meta.parts; part++) await extractCachedPdfPart(anyDb, company, hash, version, part, key, model);
   d.text = await cachedFileText(anyDb, company, hash, version);
   const sample = tenderTextParts(d.text).map(p => p.slice(0, 3500)).join('\n').slice(0, 60000);
   const c = await classifyTenderDocument({ bytes: new Uint8Array(), text: sample, pageCount: meta.page_count, name: d.file_name }) as { doc_type?: string };
