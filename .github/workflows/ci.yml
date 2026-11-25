@@ -8,9 +8,9 @@
 # The guards run first, before any code from the PR runs: no install scripts, tests or build, and not the repository's
 # bunfig.toml, tsconfig.json or .env files (bun --no-env-file, env = false), and their git and bun audit children get
 # only PATH, HOME and TMPDIR. They still run the PR's own copy of scripts/ci/ and this file, which are gate paths (#59).
-# The Edge Function guard runs last of them: it loads typescript from node_modules/ as locked in the PR's bun.lock, so
-# nothing it runs can change a guard before it. The base commit reaches each step through the step output
-# steps.base.outputs.sha, which no later step can change, never through GITHUB_ENV.
+# Nothing else they run comes from the PR: the Edge Function guard's typescript is installed outside the checkout from
+# the base commit's package.json and bun.lock, and that guard runs last of them. The base commit reaches each step
+# through the step output steps.base.outputs.sha, which no later step can change, never through GITHUB_ENV.
 name: ci
 
 on:
@@ -62,7 +62,8 @@ jobs:
         run: |
           # Pull request: the merge commit's first parent, which is the base branch this PR merges into (the event's
           # base SHA can be older). Push: the commit before the push. A manual run or a new branch (empty or all
-          # zeros): none.
+          # zeros): where this commit meets main, so a manual run on a PR branch checks what the branch changes
+          # instead of passing with nothing to compare (on main itself that is this commit).
           if [ "$EVENT_NAME" = pull_request ]; then
             base=$(git rev-parse HEAD^1)
           else
@@ -71,7 +72,12 @@ jobs:
           case "$base" in
             *[!0-9a-f]*) echo "::error::The base \"$base\" is not a commit SHA."; exit 1 ;;
             *[!0]*) ;;
-            *) base= ;;
+            *)
+              if ! base=$(git merge-base HEAD origin/main); then
+                echo "::error title=No base commit::This commit shares no history with origin/main, so there is nothing to compare against."
+                exit 1
+              fi
+              ;;
           esac
           # The guards compare trees, so a forced push is compared with the commit before it too: what the push
           # changed, including migrations it edited or dropped. That commit may be gone from the clone, so fetch it;
@@ -105,9 +111,18 @@ jobs:
             exit 1
           fi
 
-      - name: Install for the guards (no scripts)
+      - name: Install the guards' tools from the base commit (no scripts)
         id: guard-install
-        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          # Outside the checkout, from the base commit's package.json and bun.lock: a check never runs code from the
+          # change it checks, so a change to bun.lock cannot change what the Edge Function guard runs.
+          mkdir "$RUNNER_TEMP/guard-tools"
+          git show "$CI_BASE_SHA:package.json" > "$RUNNER_TEMP/guard-tools/package.json"
+          git show "$CI_BASE_SHA:bun.lock" > "$RUNNER_TEMP/guard-tools/bun.lock"
+          cd "$RUNNER_TEMP/guard-tools"
+          bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
 
       # Every check below runs even when an earlier one failed, so one run shows every problem.
       - name: Migration guard
@@ -126,10 +141,10 @@ jobs:
           CI_BASE_SHA: ${{ steps.base.outputs.sha }}
         run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
 
-      # Last of the guards: it runs typescript from node_modules/, so nothing it runs can change a guard before it.
+      # Last of the guards: it runs typescript, a package, so nothing it runs can change a guard before it.
       - name: Edge Function guard
         if: ${{ !cancelled() && steps.guard-install.outcome == 'success' }}
-        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts --typescript "$RUNNER_TEMP/guard-tools/node_modules/typescript/lib/typescript.js"
 
       # From here on, code from the PR runs.
       - name: Install
@@ -147,10 +162,6 @@ jobs:
           CI_BASE_SHA: ${{ steps.base.outputs.sha }}
         run: |
           # Only the files this change adds or modifies. A weekly whole-repo health check will come later as its own workflow.
-          if [ -z "$CI_BASE_SHA" ]; then
-            echo "::notice title=lint::No base commit (a manual run or a new branch), so there are no changed files to lint."
-            exit 0
-          fi
           # The file types eslint.config.js lints ("files"); keep the two in step.
           git diff -z --name-only --diff-filter=ACMR "$CI_BASE_SHA" HEAD -- '*.ts' '*.tsx' > "$RUNNER_TEMP/lint-files"
           if [ ! -s "$RUNNER_TEMP/lint-files" ]; then

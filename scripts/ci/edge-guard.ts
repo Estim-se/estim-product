@@ -12,7 +12,7 @@
 // This is a static heuristic: it does not prove the guard call runs (dead code passes), and it trusts the _shared
 // modules, so those need review of their own.
 //
-// Usage: bun scripts/ci/edge-guard.ts [--root <repo>]
+// Usage: bun scripts/ci/edge-guard.ts [--root <repo>] [--typescript <path to typescript/lib/typescript.js>]
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,11 +21,13 @@ import { join, relative, sep } from 'node:path';
 import type * as TS from 'typescript';
 import { type Finding, isMain, lineAt, lineOf, readAllowlist, report } from './lib.ts';
 
-// typescript is loaded by its file in this repository's node_modules/, which the guard install writes from bun.lock, and
-// never by package name: a bare 'typescript' would resolve through a node_modules/ or a package.json named typescript
-// nearer to this file, which a change could add outside scripts/ci/.
-// A relative path resolves from this file only, with no package lookup.
-const ts: typeof TS = createRequire(import.meta.url)('../../node_modules/typescript/lib/typescript.js');
+// typescript is loaded by its file, never by package name: a bare 'typescript' would resolve through a node_modules/ or
+// a package.json named typescript nearer to this file, which a change could add outside scripts/ci/. ci.yml passes
+// --typescript <file>, installed outside the checkout from the base commit's bun.lock; without it (tests, a local run)
+// this repository's node_modules/. A path resolves from this file only, with no package lookup.
+const typescriptAt = process.argv.indexOf('--typescript');
+const typescriptFile = (isMain(import.meta.url) && typescriptAt > 0 ? process.argv[typescriptAt + 1] : undefined) ?? '../../node_modules/typescript/lib/typescript.js';
+const ts: typeof TS = createRequire(import.meta.url)(typescriptFile);
 
 export const ALLOWLIST = 'scripts/ci/edge-guard-allowlist.json';
 const RULES = ['auth-call', 'entry-files'] as const;
