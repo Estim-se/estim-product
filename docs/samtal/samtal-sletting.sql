@@ -1,5 +1,5 @@
 -- estim Samtal: automatic deletion after the number of days the company chose (samtal_settings.retention_days).
--- A separate part, to be approved on its own. Runs after samtal.sql.
+-- Approved. Runs after samtal.sql; the schedule itself is in samtal-sletting-cron.sql.
 --
 -- How it runs: pg_cron calls the app's purge route every hour through pg_net (the same way tender jobs are kicked).
 -- The route (server side, secret-verified) asks for the calls that are due, deletes their audio files through the
@@ -26,15 +26,3 @@ END $$;
 
 REVOKE ALL ON FUNCTION public.samtal_due_for_deletion(integer), public.samtal_mark_deleted(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.samtal_due_for_deletion(integer), public.samtal_mark_deleted(uuid, uuid) TO service_role;
-
--- The schedule (needs the pg_cron extension, enabled in Lovable Cloud / Supabase under Database → Extensions).
--- The app's address and the shared secret are read from Supabase Vault (secrets 'samtal_base_url' and
--- 'samtal_purge_secret'); the same secret is set as SAMTAL_PURGE_SECRET for the app.
--- CREATE EXTENSION IF NOT EXISTS pg_cron;
--- SELECT cron.schedule('samtal-purge', '17 * * * *', $cron$
---   SELECT net.http_post(
---     url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'samtal_base_url') || '/api/public/samtal-purge',
---     headers := jsonb_build_object('Content-Type', 'application/json',
---                'x-estim-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'samtal_purge_secret')),
---     body := '{}'::jsonb, timeout_milliseconds := 60000)
--- $cron$);
