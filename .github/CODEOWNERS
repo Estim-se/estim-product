@@ -1,0 +1,15 @@
+# Requests Ibbe's review on the review gate. Who must approve is set in .claude/approvals.yml, not here.
+.claude/ @ibbe-futureventures
+REVIEW.md @ibbe-futureventures
+CLAUDE.md @ibbe-futureventures
+CLAUDE.local.md @ibbe-futureventures
+CODEOWNERS @ibbe-futureventures
+/.github/ @ibbe-futureventures
+eslint.config.* @ibbe-futureventures
+/tsconfig*.json @ibbe-futureventures
+/vitest.config.* @ibbe-futureventures
+/src/test/setup.ts @ibbe-futureventures
+/bunfig.toml @ibbe-futureventures
+/scripts/ci/ @ibbe-futureventures
+.gitattributes @ibbe-futureventures
+.gitmodules @ibbe-futureventures
