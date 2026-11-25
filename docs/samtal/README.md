@@ -10,7 +10,8 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 
 | # | File | What |
 |---|---|---|
-| 1 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket |
+| 1 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket. **Done:** migration `20261125115209_7975c6d2-…`, identical to this file up to the bucket. Lovable's migration tool refuses to create buckets, so `samtal-audio` was created with Lovable's bucket tool instead, with the same settings (private, 50 MB, the nine audio types, no policies). |
+| 1b | [samtal-indekser.sql](samtal-indekser.sql) | Indexes for the seven foreign keys the Supabase linter reported |
 | 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft |
 | 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions (approved) |
 | 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault (approved) |
@@ -103,6 +104,20 @@ When done, report:
 2. That RLS is enabled on all five samtal_ tables, with the list of their policies.
 3. That the bucket samtal-audio exists, is private and has no storage policies.
 4. That the regenerated src/integrations/supabase/types.ts contains the five tables.
+```
+
+### 1b. Indexes for the Samtal foreign keys
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-indekser.sql in the repository (estim Samtal). It only creates six new indexes on the samtal_ tables. They cover the seven foreign keys that the Supabase linter reported as unindexed.
+
+Rules:
+- Run the SQL unchanged.
+- Change nothing else and do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. That the linter no longer reports unindexed foreign keys on samtal_ tables.
 ```
 
 ### 2. The inbox accepts the channel samtal
