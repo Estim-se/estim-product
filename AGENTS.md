@@ -75,6 +75,12 @@ Received attachments (PDF/images, max 10 MB) are stored in the private bucket ma
 A notification mail (link only, no customer text) is sent when the AI job is done. Email drafts require human approval.
 
 Email (Unipile, API v2): EMAIL_PROVIDER=unipile sends new connections through Unipile; an existing connection keeps the provider that created it (Unipile account ids start with "acc_" and are stored in email_connections.grant_id), routed by _shared/mail-provider.ts. The existing nylas-connect and nylas-webhook functions serve both providers so no new edge function is needed. The account is bound to a company only by the signed account.add/account.reconnect webhook carrying our hashed single-use state, never by the browser redirect; the webhook (header unipile-signature, HMAC over `${t}.${rawBody}`, 5-minute tolerance) answers within Unipile's 5-second limit and processes afterwards with its own retries, re-fetching each mail by id.
+The hosted auth link binds whatever mailbox signs in to the company that created it; it is valid 30 minutes and must not be shared (accepted risk, Dennis).
+A Unipile account is deleted only when it is a new account.add whose state is expired or used, or whose save failed (unique violation, or the last retry), and never on account.reconnect or for an account id already in email_connections; other save errors release the state and retry.
+Nylas reuses the grant id when a connected mailbox signs in again, so a grant owned by another company is never revoked (409 instead).
+Webhook bodies are read with readBounded (content-length and stream capped at 1 MB) before the signature check.
+EMAIL_FLOOD_GUARD_V2 (default off) stores flood mail without AI instead of dropping it (per-sender EMAIL_SENDER_HOURLY_CAP, company EMAIL_INBOUND_HOURLY_CAP, drop only above EMAIL_INBOUND_HOURLY_HARD_CAP) and limits unknown senders to AI_UNKNOWN_SENDER_SHARE of AI_DAILY_CAP; decisions live in _shared/mail-flood.ts.
+EMAIL_SENDER_CHECK (default off) checks the topmost Authentication-Results header (_shared/sender-auth.ts); an unverified sender is audit-logged, gets a draft warning and no notification mail.
 - Automatic WhatsApp sends inherit a default-off company setting unless a nullable thread override explicitly chooses on/off; bind jobs to incoming messages and atomically reserve one AI attempt per provider ID using the shared delivery adapter, so duplicates cannot trigger delivery and failed attempts preserve the draft.
 
 - Keep settings mounted; use form-linked save.
