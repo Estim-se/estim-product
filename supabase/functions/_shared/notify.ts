@@ -1,9 +1,11 @@
 // "Draft ready" mail to the craftsman, sent through the company's own connected mailbox (Nylas or Unipile).
 // The mail contains NO customer text, only a short note and a link into the app.
 // Deduplicated through audit_log: one notification per AI job. Needs APP_URL; NOTIFY_ENABLED=false turns it off.
+// Never sent to the company's own connected mailbox (it would arrive as a new mail there), and at most
+// NOTIFY_HOURLY_CAP (default 20) notifications per company and hour, so a flood of drafts cannot become a mail flood.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
-import { errCode } from "./nylas.ts";
+import { errCode, optNumber } from "./nylas.ts";
 import { sendReply } from "./mail-provider.ts";
 import { escapeHtml } from "./mail-format.ts";
 
@@ -11,12 +13,18 @@ export async function notifyDraftReady(db: SupabaseClient, companyId: string, th
   const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
   if (!appUrl || Deno.env.get("NOTIFY_ENABLED") === "false") return;
 
-  const conn = await db.from("email_connections").select("grant_id,status").eq("company_id", companyId).maybeSingle();
+  const conn = await db.from("email_connections").select("grant_id,status,email").eq("company_id", companyId).maybeSingle();
   if (!conn.data || conn.data.status !== "active") return;
 
   const seen = await db.from("audit_log").select("id", { count: "exact", head: true })
     .eq("company_id", companyId).eq("event", "Notis skickad").contains("after", { key });
   if (seen.error || (seen.count ?? 0) > 0) return;
+
+  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const lastHour = await db.from("audit_log").select("id", { count: "exact", head: true })
+    .eq("company_id", companyId).eq("event", "Notis skickad").gte("created_at", hourAgo);
+  if (lastHour.error) return;
+  if ((lastHour.count ?? 0) >= optNumber("NOTIFY_HOURLY_CAP", 20)) { console.info("[notify] hourly cap reached"); return; }
 
   // Only when a real draft exists (write-reply filled it).
   const draft = await db.from("drafts").select("text").eq("thread_id", threadId).eq("company_id", companyId).maybeSingle();
@@ -26,12 +34,13 @@ export async function notifyDraftReady(db: SupabaseClient, companyId: string, th
     db.from("companies").select("name").eq("id", companyId).maybeSingle(),
     db.from("company_members").select("user_id").eq("company_id", companyId),
   ]);
+  const ownMailbox = String(conn.data.email ?? "").trim().toLowerCase();
   const emails: string[] = [];
   for (const m of (members.data ?? []).slice(0, 20)) {
     try { // one broken account must not stop the others
       const u = await db.auth.admin.getUserById(m.user_id);
       const e = u.data.user?.email?.trim().toLowerCase();
-      if (e && !emails.includes(e)) emails.push(e);
+      if (e && e !== ownMailbox && !emails.includes(e)) emails.push(e);
     } catch { console.error("[notify] could not read a member"); }
   }
   if (!emails.length) return;

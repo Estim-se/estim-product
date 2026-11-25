@@ -64,7 +64,7 @@ Deno.test("auth links ask for mail permissions only, also when reconnecting", ()
   const fresh = authLinkBody({ ...base, provider: "microsoft" });
   assertEquals(fresh.providers, "outlook");
   assertEquals(fresh.expires_on, "1970-01-01T00:30:00.000Z");
-  assertEquals(authLinkBody(base).providers, "*:EMAILS");
+  assertEquals(authLinkBody(base).providers, ["google", "outlook"]); // never IMAP or other providers
   const again = authLinkBody({ ...base, provider: "google", reconnectAccountId: "acc_9" });
   assertEquals(again.account_id, "acc_9");
   assertEquals("providers" in again, false);

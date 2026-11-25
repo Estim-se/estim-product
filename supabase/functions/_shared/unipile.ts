@@ -3,7 +3,7 @@
 // Rules (same as nylas.ts): never log mail content, addresses, subjects, headers, keys or Unipile response bodies.
 // Log short error codes only. Unipile account ids start with "acc_"; they are stored in email_connections.grant_id.
 
-import { env, type Addr, type NylasMessage } from "./nylas.ts";
+import { env, MAX_ATTACHMENT_BYTES, readBounded, type Addr, type NylasMessage } from "./nylas.ts";
 
 /** The provider-neutral message shape the inbound pipeline already uses. */
 export type MailMessage = NylasMessage;
@@ -136,13 +136,20 @@ export const MAIL_SCOPES = {
   outlook: ["openid", "offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
 } as const;
 
+/**
+ * Mail providers offered when none is chosen: Google and Outlook only, never plain IMAP (no OAuth, a stored password,
+ * and no Authentication-Results we can trust). v2 takes an array of lowercase provider names for a specific set
+ * ("*:EMAILS" would include IMAP). Checked 2026-11-25: developer.unipile.com/v2.0/docs/authenticate-with-hosted-auth.
+ */
+export const LINK_PROVIDERS = ["google", "outlook"] as const;
+
 /** The POST /auth/link body. With `reconnectAccountId` the same account id is re-authenticated. */
 export function authLinkBody(args: { state: string; redirectUri: string; provider?: "google" | "microsoft" | undefined; reconnectAccountId?: string | undefined; minutes?: number; now?: number }): Record<string, unknown> {
   const expires_on = new Date((args.now ?? Date.now()) + (args.minutes ?? 30) * 60_000).toISOString();
   const config = { google: { oauth_scope: [...MAIL_SCOPES.google] }, outlook: { oauth_scope: [...MAIL_SCOPES.outlook] } };
   return args.reconnectAccountId
     ? { account_id: args.reconnectAccountId, redirect_uri: args.redirectUri, expires_on, state: args.state, config }
-    : { providers: args.provider === "google" ? "google" : args.provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: args.redirectUri, expires_on, state: args.state, config };
+    : { providers: args.provider === "google" ? "google" : args.provider === "microsoft" ? "outlook" : [...LINK_PROVIDERS], redirect_uri: args.redirectUri, expires_on, state: args.state, config };
 }
 
 /** Creates a short-lived hosted auth link. */
@@ -215,17 +222,26 @@ export async function getEmail(accountId: string, emailId: string): Promise<Mail
   return parseEmail(await res.json());
 }
 
-/** Downloads one attachment. The caller has already checked type and size. */
+/** The JSON/base64 form of an attachment: base64 is 4/3 of the bytes, plus room for the JSON around it. */
+export const MAX_ATTACHMENT_JSON_BYTES = 14 * 1024 * 1024;
+
+/** Downloads one attachment, at most MAX_ATTACHMENT_BYTES (otherwise throws attachment_too_large; the mail is kept). */
 export async function downloadAttachment(accountId: string, emailId: string, attachmentId: string): Promise<Uint8Array> {
   const res = await unipileFetch(`/${encodeURIComponent(accountId)}/emails/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(attachmentId)}`, { timeoutMs: 30_000, headers: { Accept: "*/*" } });
-  if (!res.ok) throw new Error(`unipile_attachment_${res.status}`); // never log the body
+  if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`unipile_attachment_${res.status}`); } // never log the body
   // The response format is not documented: accept raw bytes, or JSON carrying base64 `content`.
   if ((res.headers.get("content-type") ?? "").includes("application/json")) {
-    const json = await res.json() as { content?: unknown };
+    const raw = await readBounded(res, MAX_ATTACHMENT_JSON_BYTES);
+    if (!raw) throw new Error("attachment_too_large");
+    const json = JSON.parse(new TextDecoder().decode(raw)) as { content?: unknown };
     if (typeof json.content !== "string") throw new Error("unipile_attachment_format");
-    return Uint8Array.from(atob(json.content), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(json.content), (c) => c.charCodeAt(0));
+    if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error("attachment_too_large");
+    return bytes;
   }
-  return new Uint8Array(await res.arrayBuffer());
+  const bytes = await readBounded(res, MAX_ATTACHMENT_BYTES);
+  if (!bytes) throw new Error("attachment_too_large");
+  return bytes;
 }
 
 /* ---------- Sending mail ---------- */

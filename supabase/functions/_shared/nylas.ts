@@ -53,15 +53,18 @@ export async function verifyNylasSignature(raw: Uint8Array, header: string | nul
 }
 
 /**
- * Reads a request body of at most `maxBytes`, or returns null (answer 413). A too large content-length is refused
- * before reading anything; otherwise the stream is read and cancelled as soon as the limit is passed, so a missing or
- * lying content-length cannot make us buffer more than `maxBytes`.
+ * Reads a request or response body of at most `maxBytes`, or returns null (too large). A too large content-length is
+ * refused before reading anything (and the body cancelled); otherwise the stream is read and cancelled as soon as the
+ * limit is passed, so a missing or lying content-length cannot make us buffer more than `maxBytes`.
  */
-export async function readBounded(req: Request, maxBytes: number): Promise<Uint8Array | null> {
-  const declared = req.headers.get("content-length");
-  if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared.trim()) > maxBytes) return null;
-  if (!req.body) return new Uint8Array(0);
-  const reader = req.body.getReader();
+export async function readBounded(source: Request | Response, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = source.headers.get("content-length");
+  if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared.trim()) > maxBytes) {
+    await source.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!source.body) return new Uint8Array(0);
+  const reader = source.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
@@ -255,11 +258,16 @@ export function stripQuoted(text: string): string {
 
 /* ---------- Sending mail ---------- */
 
-/** Downloads one attachment. The caller has already checked type and size. */
+/** Largest attachment we keep (the declared size is never trusted: the download itself is bounded). */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/** Downloads one attachment, at most MAX_ATTACHMENT_BYTES (otherwise throws attachment_too_large; the mail is kept). */
 export async function downloadAttachment(grantId: string, messageId: string, attachmentId: string): Promise<Uint8Array> {
   const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}/attachments/${encodeURIComponent(attachmentId)}/download?message_id=${encodeURIComponent(messageId)}`, { timeoutMs: 30_000, headers: { Accept: "*/*" } });
-  if (!res.ok) throw new Error(`nylas_attachment_${res.status}`); // never log the body
-  return new Uint8Array(await res.arrayBuffer());
+  if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`nylas_attachment_${res.status}`); } // never log the body
+  const bytes = await readBounded(res, MAX_ATTACHMENT_BYTES);
+  if (!bytes) throw new Error("attachment_too_large");
+  return bytes;
 }
 
 /** Sends a reply. `html` must already be safe (see mail-format.ts renderHtml). */

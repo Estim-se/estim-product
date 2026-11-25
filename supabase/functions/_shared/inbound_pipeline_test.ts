@@ -85,7 +85,8 @@ async function run(db: FakeDb, m: InboundMail = mail()): Promise<void> {
   if (out.after) await out.after();
 }
 
-// Golden lists: taken from the code at commit ab0aae6 (before round 2), all flags off.
+// Golden lists: taken from the code at commit ab0aae6 (before round 2), all flags off. Approved changes since then
+// are marked with their step.
 const GOLDEN_NEW_SENDER = [
   "messages.select(id).eq(company_id,c1).eq(channel,email).eq(provider_message_id,m1).maybeSingle()",
   "messages.select(id,count).eq(company_id,c1).eq(from,kund).eq(channel,email).gte(created_at,<ts>)",
@@ -98,8 +99,9 @@ const GOLDEN_NEW_SENDER = [
   "ai_calls.select(id,count).eq(company_id,c1).gte(created_at,<ts>)",
   "fetch /functions/v1/interpret-request",
   "ai_jobs.select(state).eq(id,j1).maybeSingle()",
-  "email_connections.select(grant_id,status).eq(company_id,c1).maybeSingle()",
+  "email_connections.select(grant_id,status,email).eq(company_id,c1).maybeSingle()", // step 2b: + email (own mailbox)
   "audit_log.select(id,count).eq(company_id,c1).eq(event,Notis skickad).contains(after,{\"key\":\"j1\"})",
+  "audit_log.select(id,count).eq(company_id,c1).eq(event,Notis skickad).gte(created_at,<ts>)", // step 2b: NOTIFY_HOURLY_CAP
   "drafts.select(text).eq(thread_id,t1).eq(company_id,c1).maybeSingle()",
   "companies.select(name).eq(id,c1).maybeSingle()",
   "company_members.select(user_id).eq(company_id,c1)",
@@ -118,8 +120,9 @@ const GOLDEN_KNOWN_SENDER = [
   "ai_calls.select(id,count).eq(company_id,c1).gte(created_at,<ts>)",
   "fetch /functions/v1/interpret-request",
   "ai_jobs.select(state).eq(id,j1).maybeSingle()",
-  "email_connections.select(grant_id,status).eq(company_id,c1).maybeSingle()",
+  "email_connections.select(grant_id,status,email).eq(company_id,c1).maybeSingle()", // step 2b: + email (own mailbox)
   "audit_log.select(id,count).eq(company_id,c1).eq(event,Notis skickad).contains(after,{\"key\":\"j1\"})",
+  "audit_log.select(id,count).eq(company_id,c1).eq(event,Notis skickad).gte(created_at,<ts>)", // step 2b: NOTIFY_HOURLY_CAP
   "drafts.select(text).eq(thread_id,t1).eq(company_id,c1).maybeSingle()",
   "companies.select(name).eq(id,c1).maybeSingle()",
   "company_members.select(user_id).eq(company_id,c1)",
