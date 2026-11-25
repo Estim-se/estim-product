@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { checkPrBody, linkedIssues, type IssueKind } from './pr-body';
+import { checkPrBody, issueKind, linkedIssues, type IssueKind } from './pr-body';
 
 const REPO = 'Estim-se/estim-product';
-const kinds: Record<number, IssueKind> = { 38: 'issue', 59: 'pull_request' };
+const kinds: Record<number, IssueKind> = { 38: 'issue', 59: 'pull_request', 12: 'moved' };
 const lookup = (_repo: string, n: number): IssueKind => kinds[n] ?? 'missing';
 const check = (body: string, headRepo = REPO, headRef = 'feature/x') => checkPrBody({ body, headRepo, headRef, repo: REPO }, lookup);
 
@@ -41,6 +41,14 @@ describe('issue-link: the check', () => {
   it('fails a link to a pull request or a missing issue', () => {
     expect(check('Closes #59').message).toMatch(/^PR description:1: #59 is a pull request, not an issue\. Fix:/);
     expect(check('Closes #999').message).toMatch(/^PR description:1: #999 does not exist in Estim-se\/estim-product\. Fix:/);
+  });
+  it('fails an issue that was transferred to another repository (gh follows the redirect)', () => {
+    expect(issueKind(REPO, { repository_url: 'https://api.github.com/repos/Estim-se/estim-product' })).toBe('issue');
+    expect(issueKind(REPO, { repository_url: 'https://api.github.com/repos/estim-se/ESTIM-PRODUCT' })).toBe('issue');
+    expect(issueKind(REPO, { repository_url: 'https://api.github.com/repos/Estim-se/other' })).toBe('moved');
+    expect(issueKind(REPO, {})).toBe('moved');
+    expect(issueKind(REPO, { pull_request: {}, repository_url: 'https://api.github.com/repos/Estim-se/estim-product' })).toBe('pull_request');
+    expect(check('Closes #12').message).toMatch(/^PR description:1: #12 was moved to another repository\. Fix:/);
   });
   it('exempts only the lovable branch of this repository, not a fork branch named lovable', () => {
     expect(check('', REPO, 'lovable').ok).toBe(true);

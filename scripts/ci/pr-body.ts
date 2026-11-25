@@ -9,7 +9,7 @@
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-export type IssueKind = 'issue' | 'pull_request' | 'missing';
+export type IssueKind = 'issue' | 'pull_request' | 'missing' | 'moved';
 export type Lookup = (repo: string, number: number) => IssueKind;
 export type Input = { body: string; headRepo: string; headRef: string; repo: string };
 
@@ -35,20 +35,29 @@ export function checkPrBody(input: Input, lookup: Lookup): { ok: boolean; messag
   for (const n of candidates) {
     const kind = lookup(input.repo, n);
     if (kind === 'issue') return { ok: true, message: `issue-link: the PR links issue #${n}.` };
-    problems.push(kind === 'pull_request' ? `#${n} is a pull request, not an issue` : `#${n} does not exist in ${input.repo}`);
+    problems.push(kind === 'pull_request' ? `#${n} is a pull request, not an issue` : kind === 'moved' ? `#${n} was moved to another repository` : `#${n} does not exist in ${input.repo}`);
   }
   return { ok: false, message: `PR description:1: ${problems.join('; ')}. Fix: link an existing issue of this repository. ${how}` };
 }
 
-/** Asks the GitHub API (gh with GH_TOKEN) whether #N is an issue, a pull request or missing. */
+/**
+ * What GET repos/<repo>/issues/N returned: an issue, a pull request, or an issue of another repository (GitHub answers
+ * a transferred issue with a redirect, which gh follows, so repository_url must name this repository).
+ */
+export function issueKind(repo: string, data: { pull_request?: unknown; repository_url?: unknown }): IssueKind {
+  if (data.pull_request) return 'pull_request';
+  const owner = typeof data.repository_url === 'string' ? data.repository_url.replace(/^https:\/\/api\.github\.com\/repos\//i, '') : '';
+  return owner.toLowerCase() === repo.toLowerCase() ? 'issue' : 'moved';
+}
+
+/** Asks the GitHub API (gh with GH_TOKEN) whether #N is an issue of this repository, a pull request or missing. */
 export const ghLookup: Lookup = (repo, number) => {
   const result = spawnSync('gh', ['api', `repos/${repo}/issues/${number}`], { encoding: 'utf8' });
   if (result.status !== 0) {
     if (/HTTP 404|HTTP 410/.test(result.stderr)) return 'missing';
     throw new Error(`gh api failed for #${number}: ${result.stderr.trim()}`);
   }
-  const data = JSON.parse(result.stdout) as { pull_request?: unknown };
-  return data.pull_request ? 'pull_request' : 'issue';
+  return issueKind(repo, JSON.parse(result.stdout) as { pull_request?: unknown; repository_url?: unknown });
 };
 
 const entry = process.argv[1];
