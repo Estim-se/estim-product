@@ -107,7 +107,14 @@ switch (command) {
   }
   case "send": {
     const id = need(args[0], "acc_-id"), to = need(args[1], "mottagare");
-    const body = { to: [{ email: to }], subject: "Re: Test från Estim (Unipile)", html: "<p>Testsvar från Estims Unipile-test.</p>", ...(args[2] ? { reply_to_provider_id: args[2] } : {}) };
+    // Like the app (email-send): a reply keeps the original subject with "Re:", otherwise Outlook starts a new conversation.
+    let subject = "Test från Estim (Unipile)";
+    if (args[2]) {
+      const original = (await unipile.getEmail(id, args[2])).subject?.trim() || subject;
+      subject = /^(re|sv):/i.test(original) ? original : `Re: ${original}`;
+    }
+    const body = { to: [{ email: to }], subject, html: "<p>Testsvar från Estims Unipile-test.</p>", ...(args[2] ? { reply_to_provider_id: args[2] } : {}) };
+    show("Ämne", subject);
     const r = await raw(`/${encodeURIComponent(id)}/emails/send`, { method: "POST", body: JSON.stringify(body) });
     show(`Rått svar (${r.status})`, r.body);
     break;
