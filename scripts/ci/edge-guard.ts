@@ -16,9 +16,16 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { join, relative, sep } from 'node:path';
-import ts from 'typescript';
+import type * as TS from 'typescript';
 import { type Finding, isMain, lineAt, lineOf, readAllowlist, report } from './lib.ts';
+
+// typescript is loaded by its file in this repository's node_modules/, which the guard install writes from bun.lock, and
+// never by package name: a bare 'typescript' would resolve through a node_modules/ or a package.json named typescript
+// nearer to this file, which a change could add outside scripts/ci/.
+// A relative path resolves from this file only, with no package lookup.
+const ts: typeof TS = createRequire(import.meta.url)('../../node_modules/typescript/lib/typescript.js');
 
 export const ALLOWLIST = 'scripts/ci/edge-guard-allowlist.json';
 const RULES = ['auth-call', 'entry-files'] as const;
@@ -47,14 +54,14 @@ function walk(dir: string, links: string[] = []): string[] {
   return out;
 }
 
-const stringValue = (node: ts.Node | undefined): string | null =>
+const stringValue = (node: TS.Node | undefined): string | null =>
   node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : null;
 
 /** Parses index.ts into a one-file program (no lib, no module resolution) so names resolve to their declarations. */
-function parse(source: string): { file: ts.SourceFile; checker: ts.TypeChecker } {
+function parse(source: string): { file: TS.SourceFile; checker: TS.TypeChecker } {
   const name = '/index.ts';
   const file = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const host: ts.CompilerHost = {
+  const host: TS.CompilerHost = {
     getSourceFile: f => (f === name ? file : undefined), fileExists: f => f === name, readFile: () => undefined, writeFile: () => {},
     getDefaultLibFileName: () => '/lib.d.ts', useCaseSensitiveFileNames: () => true, getCanonicalFileName: f => f, getCurrentDirectory: () => '/', getNewLine: () => '\n',
   };
@@ -62,15 +69,15 @@ function parse(source: string): { file: ts.SourceFile; checker: ts.TypeChecker }
   return { file: program.getSourceFile(name) ?? file, checker: program.getTypeChecker() };
 }
 
-const importOf = (declaration: ts.Declaration | undefined): ts.ImportDeclaration | undefined => {
-  let node: ts.Node | undefined = declaration;
+const importOf = (declaration: TS.Declaration | undefined): TS.ImportDeclaration | undefined => {
+  let node: TS.Node | undefined = declaration;
   while (node && !ts.isImportDeclaration(node)) node = node.parent;
   return node;
 };
-const moduleOf = (declaration: ts.ImportDeclaration) => (ts.isStringLiteral(declaration.moduleSpecifier) ? declaration.moduleSpecifier.text : '');
+const moduleOf = (declaration: TS.ImportDeclaration) => (ts.isStringLiteral(declaration.moduleSpecifier) ? declaration.moduleSpecifier.text : '');
 
 /** Whether a call's callee is one of the guards, bound to its import from the right _shared module. */
-function isGuardCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean {
+function isGuardCall(call: TS.CallExpression, checker: TS.TypeChecker): boolean {
   const callee = call.expression;
   if (ts.isIdentifier(callee)) {
     const declaration = checker.getSymbolAtLocation(callee)?.declarations?.[0];
@@ -90,7 +97,7 @@ function isGuardCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean 
 
 type KeySide = 'header' | 'setting';
 /** <request>.headers.get("x-internal-key") is the header; Deno.env.get("INTERNAL_FUNCTION_KEY") is the setting. */
-function readOf(node: ts.Node, file: ts.SourceFile): KeySide | null {
+function readOf(node: TS.Node, file: TS.SourceFile): KeySide | null {
   if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'get') return null;
   const target = node.expression.expression, arg = stringValue(node.arguments[0]);
   if (ts.isPropertyAccessExpression(target) && target.name.text === 'headers' && arg?.toLowerCase() === 'x-internal-key') return 'header';
@@ -99,9 +106,9 @@ function readOf(node: ts.Node, file: ts.SourceFile): KeySide | null {
 }
 
 /** Which key an expression carries: the read itself, through ?? / || defaults, casts, .trim() and local constants. */
-function sideOf(node: ts.Expression, file: ts.SourceFile, checker: ts.TypeChecker, depth = 0): KeySide | null {
+function sideOf(node: TS.Expression, file: TS.SourceFile, checker: TS.TypeChecker, depth = 0): KeySide | null {
   if (depth > 8) return null;
-  const next = (e: ts.Expression) => sideOf(e, file, checker, depth + 1);
+  const next = (e: TS.Expression) => sideOf(e, file, checker, depth + 1);
   const direct = readOf(node, file);
   if (direct) return direct;
   if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isAwaitExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node)) return next(node.expression);
@@ -121,11 +128,11 @@ const COMPARE_CALL = /equal|compare|match|verify/i;
 export function authenticates(source: string): boolean {
   const { file, checker } = parse(source);
   let found = false;
-  const pair = (a: ts.Expression, b: ts.Expression) => {
+  const pair = (a: TS.Expression, b: TS.Expression) => {
     const x = sideOf(a, file, checker), y = sideOf(b, file, checker);
     return x !== null && y !== null && x !== y;
   };
-  const visit = (node: ts.Node): void => {
+  const visit = (node: TS.Node): void => {
     if (found) return;
     if (ts.isCallExpression(node)) {
       if (isGuardCall(node, checker)) found = true;

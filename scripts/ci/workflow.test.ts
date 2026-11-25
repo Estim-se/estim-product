@@ -1,7 +1,8 @@
 // Checks on .github/workflows/ci.yml itself: the guard steps run with bun's .env loading off, and a .env in the
-// checkout cannot change a guard's result when the guard runs exactly as ci.yml runs it.
+// checkout cannot change a guard's result when the guard runs exactly as ci.yml runs it. No step can change the base
+// commit or a guard that runs after it, and the edge guard loads the locked typescript whatever the change commits.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveBase } from './lib';
@@ -9,14 +10,16 @@ import { commitAll, git, tempDir, writeFiles } from './test-helpers';
 
 const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
 
-/** The steps of the ci job as { name, run }, in order. */
-function steps(): { name: string; run: string }[] {
+/** The steps of the ci job as { name, id, env, run }, in order. */
+function steps(): { name: string; id: string | undefined; env: Record<string, string>; run: string }[] {
   return workflow.split(/\n {6}- name: /).slice(1).map(block => {
     const name = block.split('\n')[0]?.trim() ?? '';
     const inline = /\n {8}run: (?!\|)(.+)/.exec(block);
     const multi = /\n {8}run: \|\n((?: {10}.*\n?| *\n)+)/.exec(block);
     const run = inline?.[1] ?? (multi?.[1] ?? '').split('\n').map(l => l.slice(10)).join('\n');
-    return { name, run };
+    const envBlock = /\n {8}env:\n((?: {10}.*\n)+)/.exec(block)?.[1] ?? '';
+    const env = Object.fromEntries(envBlock.split('\n').filter(Boolean).map(l => [l.trim().split(':')[0] ?? '', l.trim().slice(l.trim().indexOf(':') + 1).trim()]));
+    return { name, id: /\n {8}id: (\S+)/.exec(block)?.[1], env, run };
   });
 }
 
@@ -76,6 +79,59 @@ describe('ci.yml: the guards run without the checkout\'s .env files', () => {
   });
 });
 
+describe('ci.yml: no step can change the base commit or a later guard', () => {
+  it('passes the base as the output of the step with id base, never through GITHUB_ENV or GITHUB_PATH (security review)', () => {
+    const all = steps();
+    for (const s of all) expect(`${s.name}: ${s.run}`).not.toMatch(/GITHUB_ENV|GITHUB_PATH/);
+    expect(all.find(s => s.name === 'Find the base commit')?.id).toBe('base');
+    const readers = all.filter(s => s.run.includes('CI_BASE_SHA') || ['Migration guard', 'Dependency audit'].includes(s.name));
+    expect(readers.map(s => s.name)).toEqual(['Migration guard', 'Dependency audit', 'Lint changed files', 'Prettier on changed files (warning only)']);
+    for (const s of readers) expect(s.env['CI_BASE_SHA']).toBe('${{ steps.base.outputs.sha }}');
+  });
+
+  it('runs the Edge Function guard, which runs typescript from node_modules/, after every other guard (security review)', () => {
+    const names = steps().map(s => s.name);
+    expect(names.indexOf('Edge Function guard')).toBe(names.indexOf('Install') - 1);
+    for (const guard of ['Migration guard', 'Install-script guard', 'Dependency audit']) expect(names.indexOf(guard)).toBeLessThan(names.indexOf('Edge Function guard'));
+  });
+
+  it('every guard imports only node: built-ins and files next to it, and the edge guard loads typescript by path', () => {
+    const guards = ['audit-guard.ts', 'edge-guard.ts', 'install-scripts-guard.ts', 'lib.ts', 'migration-guard.ts', 'pr-body.ts'];
+    for (const file of guards) {
+      const source = readFileSync(join('scripts/ci', file), 'utf8');
+      const runtime = [...source.matchAll(/^import (?!type )[\s\S]*? from '([^']+)';$/gm)].map(m => m[1] ?? '');
+      for (const specifier of runtime) expect(`${file}: ${specifier}`).toMatch(/: (?:node:|\.\/)/);
+    }
+    expect(readFileSync('scripts/ci/edge-guard.ts', 'utf8')).toContain("createRequire(import.meta.url)('../../node_modules/typescript/lib/typescript.js')");
+  });
+
+  it('the edge guard uses the locked typescript even when the change commits a typescript package nearer to it (security review)', () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const root = join(t.dir, 'repo');
+    const runnerTemp = join(t.dir, 'runner');
+    mkdirSync(runnerTemp);
+    writeFiles(root, {
+      'supabase/functions/open/index.ts': 'Deno.serve(() => new Response("ok"));\n',
+      'scripts/ci/edge-guard-allowlist.json': '[]',
+      // A fake typescript that makes every function look authenticated, by three routes a bare import would take.
+      'scripts/ci/node_modules/typescript/package.json': '{"name":"typescript","main":"index.js"}',
+      'scripts/ci/node_modules/typescript/index.js': 'throw new Error("hijacked: nested node_modules");\n',
+      'scripts/package.json': '{"name":"typescript","exports":{".":"./fake.js"}}',
+      'scripts/fake.js': 'throw new Error("hijacked: package self-reference");\n',
+      'scripts/tsconfig.json': '{"compilerOptions":{"paths":{"typescript":["./fake.js"]}}}',
+    });
+    for (const f of ['lib.ts', 'edge-guard.ts']) copyFileSync(join('scripts/ci', f), join(root, 'scripts/ci', f));
+    mkdirSync(join(root, 'node_modules'));
+    symlinkSync(join(process.cwd(), 'node_modules/typescript'), join(root, 'node_modules/typescript'));
+    expect(runStep('Write the guards\' own bun and TypeScript config', root, { RUNNER_TEMP: runnerTemp }).status).toBe(0);
+    const result = runStep('Edge Function guard', root, { RUNNER_TEMP: runnerTemp });
+    expect(result.stderr).not.toContain('hijacked');
+    expect(result.stdout).toContain('supabase/functions/open/index.ts:1:');
+    expect(result.status).toBe(1);
+  });
+});
+
 /** Runs one ci.yml step's script with bash -e (as GitHub does) in `cwd`, with only the given variables. */
 function runStep(name: string, cwd: string, env: Record<string, string>) {
   const step = steps().find(s => s.name === name);
@@ -105,8 +161,21 @@ describe('ci.yml: committed node_modules', () => {
     result = runStep('No committed node_modules', root, { RUNNER_TEMP: t.dir });
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('node_modules/typescript/index.js');
-    expect(result.stdout).toContain('::error title=node_modules::This change commits files under node_modules/');
+    expect(result.stdout).toContain('::error title=node_modules::This change commits files under a node_modules directory.');
     expect(existsSync(join(root, 'node_modules'))).toBe(false);
+  });
+
+  it('fails on a node_modules committed at any depth, even when the change stops .gitignore ignoring it (code review)', () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const root = join(t.dir, 'repo');
+    mkdirSync(root);
+    git(root, 'init', '-q');
+    writeFiles(root, { '.gitignore': '', 'scripts/ci/node_modules/typescript/index.js': 'module.exports = {};\n' });
+    commitAll(root, 'nested');
+    const result = runStep('No committed node_modules', root, { RUNNER_TEMP: t.dir });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('scripts/ci/node_modules/typescript/index.js');
   });
 });
 
@@ -125,35 +194,34 @@ describe('ci.yml: a push whose base commit is missing', () => {
     writeFiles(upstream, { 'b.txt': 'b\n' });
     const onlyUpstream = commitAll(upstream, 'only upstream');
     const clone = join(t.dir, 'clone');
-    const envFile = join(t.dir, 'github-env');
+    const outputFile = join(t.dir, 'github-output');
     const find = (env: Record<string, string>) => {
-      writeFileSync(envFile, '');
-      const result = runStep('Find the base commit', clone, { GITHUB_ENV: envFile, EVENT_NAME: 'push', PUSH_FORCED: 'false', ...env });
-      return { ...result, base: /^CI_BASE_SHA=(.*)$/m.exec(readFileSync(envFile, 'utf8'))?.[1] };
+      writeFileSync(outputFile, '');
+      const result = runStep('Find the base commit', clone, { GITHUB_OUTPUT: outputFile, EVENT_NAME: 'push', ...env });
+      return { ...result, base: /^sha=(.*)$/m.exec(readFileSync(outputFile, 'utf8'))?.[1] };
     };
     return { clone, first, onlyUpstream, find };
   }
 
-  it('keeps a base that is in the clone, and fetches one that is only on the remote', () => {
+  it('keeps a base that is in the clone, and fetches one that is only on the remote, as after a forced push', () => {
     const s = setup();
     expect(s.find({ PUSH_BEFORE: s.first })).toMatchObject({ status: 0, base: s.first });
+    // A forced push's commit before it is no ancestor of HEAD and may be missing from the clone; it is still the base.
     const fetched = s.find({ PUSH_BEFORE: s.onlyUpstream });
     expect(fetched).toMatchObject({ status: 0, base: s.onlyUpstream });
-    expect(fetched.stdout).not.toContain('::warning');
+    expect(fetched.stdout).not.toContain('::error');
   });
 
-  it('drops a base that cannot be fetched, or any base of a forced push, with a warning', () => {
+  it('fails when the commit before the push cannot be fetched, instead of passing with no base (code review)', () => {
     const s = setup();
     const missing = s.find({ PUSH_BEFORE: 'deadbeef'.repeat(5) });
-    expect(missing).toMatchObject({ status: 0, base: '' });
-    expect(missing.stdout).toContain(`::warning title=No base commit::No base commit: the commit before the push (${'deadbeef'.repeat(5)}) is not in the clone and could not be fetched. The diff-based guards compare against nothing`);
-    const forced = s.find({ PUSH_BEFORE: s.first, PUSH_FORCED: 'true' });
-    expect(forced).toMatchObject({ status: 0, base: '' });
-    expect(forced.stdout).toContain('::warning title=No base commit::No base commit: this push was forced.');
-    // A new branch (all zeros) has no base and no warning.
+    expect(missing.status).toBe(1);
+    expect(missing.base).toBeUndefined();
+    expect(missing.stdout).toContain(`::error title=No base commit::The commit before this push (${'deadbeef'.repeat(5)}) is not in the clone and could not be fetched`);
+    // A new branch (all zeros) has no base, and passes.
     const created = s.find({ PUSH_BEFORE: '0'.repeat(40) });
     expect(created).toMatchObject({ status: 0, base: '' });
-    expect(created.stdout).not.toContain('::warning');
+    expect(created.stdout).not.toContain('::error');
   });
 
   it('then the migration and audit guards run as with no base', () => {
