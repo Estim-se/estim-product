@@ -726,6 +726,10 @@
     "sida": [
       "Offertsida",
       "eye"
+    ],
+    "samtal": [
+      "Samtal",
+      "phone"
     ]
   },
   "statuses": {

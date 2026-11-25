@@ -10,6 +10,7 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 |---|---|---|
 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket | Ready, run in Lovable |
 | [samtal-sletting.sql](samtal-sletting.sql) | Automatic deletion after the company's retention (pg_cron) | Proposal, awaiting approval; do not run yet |
+| [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal` (the only change to existing objects) | Ready, run in Lovable after samtal.sql |
 
 ## Tables
 
@@ -80,3 +81,44 @@ When done, report:
 - **Why the route deletes the audio:** the route deletes the audio files through the Storage API, then marks the calls. Deleting `storage.objects` rows directly in SQL would leave the files behind in storage.
 - **What it needs:** the `pg_cron` extension; the app's address and the secret in Supabase Vault (`samtal_base_url`, `samtal_purge_secret`); and the same secret as `SAMTAL_PURGE_SECRET` in Lovable.
 - **Private calls** are deleted at once by the processing, without waiting for the schedule.
+
+## The inbox accepts calls (inkorg.sql)
+
+[inkorg.sql](inkorg.sql) holds the only changes to existing objects, approved by the product owner:
+
+| Object | Change |
+|---|---|
+| `threads` | The channel check also allows `samtal`. |
+| `estim_receive` | Accepts `samtal`. The reply draft of a call is an **SMS** that awaits review. |
+| `estim_split_thread` | A thread split off from a call also gets an SMS draft. |
+
+- **How the functions were changed:** both are copied verbatim from their current migrations, with only those lines changed. `CREATE OR REPLACE` keeps their grants.
+- **SMS has no external delivery today.** An approved SMS is saved as sent, like every SMS draft.
+- **In the app:** the channel is shown as «Samtal» with a phone icon. A new request from a call thread suggests SMS.
+
+[src/test/samtal-inkorg.test.ts](../../src/test/samtal-inkorg.test.ts) proves two things:
+- The new function texts differ from the current migrations in exactly those lines.
+- The same WhatsApp, e-mail, SMS and form requests, including a duplicate, a follow-up and a thread split, give identical results and rows before and after the change, in a real Postgres (PGlite).
+
+### Lovable prompt (copy as is)
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/inkorg.sql in the repository (estim Samtal: the inbox accepts the channel 'samtal'). Run it after the samtal.sql migration.
+
+It changes exactly three things:
+1. The channel check on public.threads also allows 'samtal'.
+2. public.estim_receive accepts 'samtal', and gives a call an SMS reply draft.
+3. public.estim_split_thread gives a split call thread an SMS draft.
+Both functions are copies of the current ones with only those lines changed.
+
+Rules:
+- Run the SQL unchanged.
+- Change nothing else: no other table, column, policy, function, trigger, edge function or n8n flow.
+- Keep the existing grants (CREATE OR REPLACE preserves them).
+- Do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. The new definition of the channel check on threads.
+3. That estim_receive and estim_split_thread still have the same grants as before.
+```
