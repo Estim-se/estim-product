@@ -8,6 +8,7 @@ import { Logo } from './logo';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
 import { WorkspaceAccess } from './workspace-access';
+import { SamtalNavLink } from './samtal-nav';
 
 // Route-aware links preserve native navigation and the shared prototype state.
 export function AppShell({ children, waiting, onReset }: {
@@ -32,6 +33,7 @@ export function AppShell({ children, waiting, onReset }: {
       <Button asChild variant="prototype" className="nav"><Link to="/" activeOptions={{ exact: true }} activeProps={{ className: 'active' }} title="Inkorg"><Icon name="inbox" /><span>Inkorg</span>{waiting > 0 && <span className="count">{waiting}</span>}</Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/offerter" activeProps={{ className: 'active' }} title="Offerter"><Icon name="offert" /><span>Offerter</span></Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/anbud" activeProps={{ className: 'active' }} title="Anbud"><Icon name="doc" /><span>Anbud</span></Link></Button>
+      <SamtalNavLink />
       <div className="eyebrow">Ställ in</div>
       <Button asChild variant="prototype" className="nav"><Link to="/kanaler" activeProps={{ className: 'active' }} title="Kanaler"><Icon name="plug" /><span>Kanaler</span></Link></Button>
       <Button asChild variant="prototype" className="nav"><Link to="/installningar" activeProps={{ className: 'active' }} title="Inställningar"><Icon name="settings" /><span>Inställningar</span></Link></Button>

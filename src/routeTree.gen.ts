@@ -21,8 +21,11 @@ import { Route as MobilRouteImport } from './routes/mobil'
 import { Route as OfferterRouteImport } from './routes/offerter'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SamtalRouteImport } from './routes/samtal'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ApiPublicReceiveMessageRouteImport } from './routes/api/public/receive-message'
+import { Route as ApiPublicSamtalPurgeRouteImport } from './routes/api/public/samtal-purge'
+import { Route as ApiPublicSamtalWorkerRouteImport } from './routes/api/public/samtal-worker'
 import { Route as ApiPublicTenderJobRouteImport } from './routes/api/public/tender-job'
 
 const IndexRoute = IndexRouteImport.update({
@@ -85,6 +88,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SamtalRoute = SamtalRouteImport.update({
+  id: '/samtal',
+  path: '/samtal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
@@ -93,6 +101,16 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 const ApiPublicReceiveMessageRoute = ApiPublicReceiveMessageRouteImport.update({
   id: '/api/public/receive-message',
   path: '/api/public/receive-message',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicSamtalPurgeRoute = ApiPublicSamtalPurgeRouteImport.update({
+  id: '/api/public/samtal-purge',
+  path: '/api/public/samtal-purge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicSamtalWorkerRoute = ApiPublicSamtalWorkerRouteImport.update({
+  id: '/api/public/samtal-worker',
+  path: '/api/public/samtal-worker',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicTenderJobRoute = ApiPublicTenderJobRouteImport.update({
@@ -114,8 +132,11 @@ export interface FileRoutesByFullPath {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
+  '/api/public/samtal-worker': typeof ApiPublicSamtalWorkerRoute
   '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRoutesByTo {
@@ -131,8 +152,11 @@ export interface FileRoutesByTo {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
+  '/api/public/samtal-worker': typeof ApiPublicSamtalWorkerRoute
   '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRoutesById {
@@ -149,8 +173,11 @@ export interface FileRoutesById {
   '/offerter': typeof OfferterRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/samtal': typeof SamtalRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/api/public/receive-message': typeof ApiPublicReceiveMessageRoute
+  '/api/public/samtal-purge': typeof ApiPublicSamtalPurgeRoute
+  '/api/public/samtal-worker': typeof ApiPublicSamtalWorkerRoute
   '/api/public/tender-job': typeof ApiPublicTenderJobRoute
 }
 export interface FileRouteTypes {
@@ -168,8 +195,11 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/samtal-purge'
+    | '/api/public/samtal-worker'
     | '/api/public/tender-job'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -185,8 +215,11 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/samtal-purge'
+    | '/api/public/samtal-worker'
     | '/api/public/tender-job'
   id:
     | '__root__'
@@ -202,8 +235,11 @@ export interface FileRouteTypes {
     | '/offerter'
     | '/onboarding'
     | '/reset-password'
+    | '/samtal'
     | '/auth/callback'
     | '/api/public/receive-message'
+    | '/api/public/samtal-purge'
+    | '/api/public/samtal-worker'
     | '/api/public/tender-job'
   fileRoutesById: FileRoutesById
 }
@@ -220,7 +256,10 @@ export interface RootRouteChildren {
   OfferterRoute: typeof OfferterRoute
   OnboardingRoute: typeof OnboardingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SamtalRoute: typeof SamtalRoute
   ApiPublicReceiveMessageRoute: typeof ApiPublicReceiveMessageRoute
+  ApiPublicSamtalPurgeRoute: typeof ApiPublicSamtalPurgeRoute
+  ApiPublicSamtalWorkerRoute: typeof ApiPublicSamtalWorkerRoute
   ApiPublicTenderJobRoute: typeof ApiPublicTenderJobRoute
 }
 
@@ -310,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/samtal': {
+      id: '/samtal'
+      path: '/samtal'
+      fullPath: '/samtal'
+      preLoaderRoute: typeof SamtalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/callback'
@@ -322,6 +368,20 @@ declare module '@tanstack/react-router' {
       path: '/api/public/receive-message'
       fullPath: '/api/public/receive-message'
       preLoaderRoute: typeof ApiPublicReceiveMessageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/samtal-purge': {
+      id: '/api/public/samtal-purge'
+      path: '/api/public/samtal-purge'
+      fullPath: '/api/public/samtal-purge'
+      preLoaderRoute: typeof ApiPublicSamtalPurgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/samtal-worker': {
+      id: '/api/public/samtal-worker'
+      path: '/api/public/samtal-worker'
+      fullPath: '/api/public/samtal-worker'
+      preLoaderRoute: typeof ApiPublicSamtalWorkerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/tender-job': {
@@ -357,7 +417,10 @@ const rootRouteChildren: RootRouteChildren = {
   OfferterRoute: OfferterRoute,
   OnboardingRoute: OnboardingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SamtalRoute: SamtalRoute,
   ApiPublicReceiveMessageRoute: ApiPublicReceiveMessageRoute,
+  ApiPublicSamtalPurgeRoute: ApiPublicSamtalPurgeRoute,
+  ApiPublicSamtalWorkerRoute: ApiPublicSamtalWorkerRoute,
   ApiPublicTenderJobRoute: ApiPublicTenderJobRoute,
 }
 export const routeTree = rootRouteImport

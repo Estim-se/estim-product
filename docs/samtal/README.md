@@ -1,0 +1,279 @@
+# estim Samtal: data model
+
+estim Samtal turns customer phone calls into requests, tasks and quote drafts.
+
+- **Flag:** `SAMTAL`, off by default.
+- **Owner:** the product owner.
+- **Data model:** new tables, functions and one private storage bucket. The only change to existing objects is the inbox channel `samtal` ([inkorg.sql](inkorg.sql)).
+
+## Files, in the order Lovable runs them
+
+| # | File | What |
+|---|---|---|
+| 1 | [samtal.sql](samtal.sql) | Tables, RLS, server functions, audio bucket. **Done:** migration `20261125115209_7975c6d2-…`, identical to this file up to the bucket. Lovable's migration tool refuses to create buckets, so `samtal-audio` was created with Lovable's bucket tool instead, with the same settings (private, 50 MB, the nine audio types, no policies). |
+| 1b | [samtal-indekser.sql](samtal-indekser.sql) | Indexes for the seven foreign keys the Supabase linter reported. **Done:** migration `20261125120452_db2afdc1-…`, identical. |
+| 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft. **Done:** migration `20261125120828_e9d2cb95-…`, identical. |
+| 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions. **Done:** migration `20261125121204_85ce6994-…`, identical. |
+| 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault. **Done:** migration `20261125121315_0faf7e7c-…`, identical; Vault holds `samtal_base_url` and `samtal_purge_secret`. |
+| 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. **Done:** migration `20261125122653_f3eda501-…`, identical. |
+| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). **Done:** migration `20261125135302_5ab6df22-…`, identical apart from one comment line Lovable added at the top so the platform accepts a job every minute. |
+
+All three prompts are below.
+
+## Open points
+
+1. **Real SMS delivery is missing.** The inbox has no SMS provider today: an approved SMS reply is saved as *sent* without leaving estim (`deliverChannel` only delivers WhatsApp and e-mail). A call's reply draft is an SMS, so until an SMS provider is connected the owner must contact the customer in another way. This applies to all SMS in the inbox, not only Samtal.
+2. **The purge route `/api/public/samtal-purge` exists since step 4.** Until the app is published with it, the hourly job gets 404 and deletes nothing.
+3. **Berget's response format is not documented with an example.** The transcript reader is tolerant: speaker per segment, else from the words. It must be checked against a real response once `BERGET_API_KEY` is set.
+4. **Data leaves estim for processing.** The audio goes to Berget AI (Stockholm, Swedish jurisdiction per Berget). The transcript goes to Claude through Lovable's AI gateway. Berget's retention of audio is not stated in what was read (their DPA was not read).
+
+## Code: standard call and adapters (src/lib/samtal/)
+
+| File | What |
+|---|---|
+| [call.ts](../../src/lib/samtal/call.ts) | The standard call every adapter delivers: provider and call id, receiving number, caller (if given), start, end and duration, and the recording (a file or a provider link). Phone numbers are normalised to E.164, with Swedish numbers as the default. Browser-safe. |
+| [adapter.ts](../../src/lib/samtal/adapter.ts) | The adapter interface: `receive(input)` gives standard calls; `openAudio(call)` gives the recording. A provider (Lynes, Telavox, Telia Touchpoint, 46elks) is one new adapter, with no change elsewhere. |
+| [test-adapter.server.ts](../../src/lib/samtal/test-adapter.server.ts) | The test adapter: reads `<name>.json` and `<name>.<ext>` pairs from a folder outside the repository. It never reads outside that folder. |
+| [ingest.server.ts](../../src/lib/samtal/ingest.server.ts) | Receiving (processing steps 1–2): registers through `samtal_register_call`, then stores the recording in `samtal-audio/<company_id>/<call_id>.<ext>`. |
+| [flag.ts](../../src/lib/samtal/flag.ts) | The flag `SAMTAL`. |
+
+**Receiving a call:**
+- **Company and employee** come from the receiving number in the database, never from the adapter.
+- **What is not stored:** an unknown number, or the same provider call a second time. Neither reads or stores audio.
+- **After registration,** every write is bound to the company the database returned.
+- **A failing call** gets an error code and never stops the others.
+- **Logging:** codes only, never numbers, names, audio or text.
+
+Test adapter metadata (`<name>.json`, next to `<name>.mp3`, `.m4a`, `.wav` …):
+
+```json
+{ "call_id": "rollspel-01", "to": "070-111 11 11", "from": "+46 70 999 99 99",
+  "started_at": "2026-11-25T08:00:00+01:00", "ended_at": "2026-11-25T08:02:30+01:00" }
+```
+
+`from` may be left out (withheld number); `duration_seconds` may replace `ended_at`.
+
+## Processing (step 4)
+
+| File | What |
+|---|---|
+| [transcript.ts](../../src/lib/samtal/transcript.ts) | The transcript: segments with time, speaker and text. Reads an OpenAI-compatible `verbose_json` answer tolerantly. |
+| [stt.server.ts](../../src/lib/samtal/stt.server.ts) | Speech to text as a replaceable service. Berget: `https://api.berget.ai/v1/audio/transcriptions`, `KBLab/kb-whisper-large`, `language=sv`, `response_format=verbose_json`, `diarize=true`, `align=true`. Without `BERGET_API_KEY` it reports `stt_not_configured`. |
+| [ai.server.ts](../../src/lib/samtal/ai.server.ts) | Classification and extraction in one forced tool call through Lovable's AI gateway (`LOVABLE_API_KEY`). The model is `SAMTAL_AI_MODEL`, else `ANTHROPIC_MODEL_MAIN`. |
+| [interpretation.ts](../../src/lib/samtal/interpretation.ts) | The validated schema: job / private / uncertain; name, phone, address, place, type of job, description, desired time, urgency; uncertain points; suggested next steps. |
+| [customer-match.ts](../../src/lib/samtal/customer-match.ts) | Existing customer by phone, then by name and address together. A name alone never matches; same-named customers are listed as possible. |
+| [process.server.ts](../../src/lib/samtal/process.server.ts) | The job worker. |
+| [purge.server.ts](../../src/lib/samtal/purge.server.ts) | Deletion after retention. |
+| Routes | `/api/public/samtal-worker` and `/api/public/samtal-purge`. Both check `x-estim-secret` against Vault. |
+
+**Validation:**
+- Every field must cite a time span that lies in the call. A value without one is dropped and listed as uncertain.
+- The phone number is normalised.
+- Invalid dates are dropped, and so are next steps without a source.
+
+**The job worker:**
+- **Concurrency:** jobs are claimed under a lease, so many calls run at once and none is processed twice. One failing call never stops the others.
+- **Resuming:** a job resumes at the step it reached: transcribe, interpret, inbox.
+- **Retries:** transient errors are retried with backoff, up to five attempts. Without a speech-to-text or AI key the call waits hourly.
+- **Private calls:** the audio and text are deleted at once.
+- **Company isolation:** every read and write is bound to the job's company, and audio is read only from that company's own folder.
+- **Logging:** codes only.
+
+**Deletion after retention:**
+- Each due file is deleted only in its own company folder, then the call's content is removed with that company.
+- A file that cannot be deleted keeps its call for the next run.
+- Deletion runs even with the flag off, so retention keeps working if the module is switched off.
+
+## Inbox, tasks and quote (step 5)
+
+[inbox.server.ts](../../src/lib/samtal/inbox.server.ts) turns a processed job call into a request, using only the existing entry points:
+
+| Part | What happens |
+|---|---|
+| **Request** | `estim_receive` with channel `samtal`, message id `samtal:<call id>`. It creates or finds the customer, the thread, the message, an SMS reply draft awaiting review, and the AI job. A customer matched by name and address is passed with their stored phone, so `estim_receive` finds them. |
+| **Message** | A summary of the call: customer, phone, address, job, description, desired time, urgency, uncertain points. **Never the transcript:** the transcript and the audio stay in `samtal_calls` and are deleted with the company's retention. The request remains, like a request by mail. |
+| **Link** | `samtal_calls.thread_id` and `customer_id` point to the request. The call's employee (`samtal_calls.user_id`) is the assignee. |
+| **Tasks** | The suggested next steps, plus always «Ring tillbaka», and «Skapa offert» when a quote can be drafted. They are assigned to the employee and confirmed with one tap through `samtal_decide_task`. Dates said in the call are Swedish time; a date alone is 08:00. |
+| **Quote draft** | `dispatchAiJob` starts the existing `interpret-request`. It builds the quote draft with the existing quote engine whenever the request matches the company's catalog, and writes the reply draft. If it cannot start, the request stays for manual handling, as for other channels. |
+
+**Running the step twice for the same call is harmless:** the message is a duplicate, the existing thread is used, tasks are not added again, and no new AI job is started. A retried job runs the inbox step again from the saved extraction, without speech to text or AI.
+
+**Not yet:**
+- The inbox shows no assignee and no tasks. They are shown in the Samtal page (step 6).
+- An approved SMS is not delivered (open point 1).
+
+## The Samtal page (step 6)
+
+The page is at `/samtal`. The link «Samtal» in the sidebar shows only in real mode when the flag `SAMTAL` is on. The shell does not otherwise change: the link is its own component and shows nothing on any failure.
+
+| Part | Who | What |
+|---|---|---|
+| Status | Everyone | Automatic processing on/off; whether speech to text and AI keys exist (never their values); telephony provider; waiting and failed calls with Swedish error texts |
+| Settings | Owner | Automatic processing on/off; retention (7–365 days). The retention applies to calls received after the change. |
+| Phone numbers | Owner manages; an employee sees their own | Link an employee's ordinary mobile number. A number in use anywhere is refused without saying where. |
+| Tasks | Assignee or owner | Confirm, reject, or mark done with one tap (`samtal_decide_task`) |
+| Calls | Owner: the company; employee: their own | Title, time, caller, status and error. «Öppna förfrågan» uses the existing store action `select` and goes to the inbox. «Lyssna» plays the call through a signed link valid for 60 seconds. «Bearbeta» (owner) starts a waiting or failed call. |
+
+The server side is [page.server.ts](../../src/lib/samtal/page.server.ts), with the server functions in [samtal.functions.ts](../../src/lib/samtal/samtal.functions.ts). Reads and writes go through the signed-in user's own client (RLS).
+
+The service client is used for three things only, each after the user's client has proven access and bound to the user's company:
+- the members' names;
+- the signed audio link;
+- restarting a job.
+
+The page never receives transcripts or extractions, only the request title.
+
+## Tables
+
+| Table | Content | Who reads | Who writes |
+|---|---|---|---|
+| `samtal_settings` | Automatic processing on/off, retention in days (1–365, default 30), provider status | All members of the company | Owner (processing, retention); the server (provider fields) |
+| `samtal_numbers` | Phone number (E.164) ↔ employee | Owner: the whole company; employee: their own | Owner |
+| `samtal_calls` | One call: provider + call id, employee, caller, times, audio path, status, classification, transcript, extraction, link to request and customer | Owner: the whole company; employee: their own calls | Only the server |
+| `samtal_jobs` | Processing queue, one job per call, with lease | Nobody signed in | Only the server |
+| `samtal_tasks` | Suggested next steps (call back, site visit, quote) | Owner: the whole company; employee: their own | Only the server creates them. The assignee or an owner decides through `samtal_decide_task` |
+
+**Audio bucket**
+- Audio lies in the private bucket `samtal-audio`, one folder per company: `<company_id>/<call_id>.<ext>`.
+- The bucket has **no** storage policies. Signed-in users cannot list, read, upload or delete files, not even in their own company.
+- The server hands out short-lived signed links after checking the company and the role.
+- `samtal_calls.audio_path` must start with the call's own company folder; a check constraint enforces this.
+
+**Server functions** (`service_role` only, never signed-in users)
+
+| Function | What it does |
+|---|---|
+| `samtal_register_call(payload)` | Company and employee come from the receiving number in our database, never from the payload. An unknown number or an inactive company is not stored at all. Registering the same provider call twice does nothing. Without automatic processing the job waits as `paused`. |
+| `samtal_claim_jobs(limit, lease_seconds)` | Concurrent workers never claim the same job (`FOR UPDATE SKIP LOCKED`). |
+| `samtal_release_job(...)` | Only the holder of the lease can release a job. |
+
+**Phone numbers**
+- A phone number is unique across all companies, so it belongs to exactly one company and one employee.
+- It can only be linked to a member of the owner's own company, enforced by a foreign key on company and user.
+
+**No change to the user model.** Employees are the existing members (`company_members`, role `ägare` / `användare`).
+
+## The inbox accepts calls (inkorg.sql)
+
+The only changes to existing objects, approved by the product owner:
+
+| Object | Change |
+|---|---|
+| `threads` | The channel check also allows `samtal`. |
+| `estim_receive` | Accepts `samtal`. The reply draft of a call is an **SMS** that awaits review. |
+| `estim_split_thread` | A thread split off from a call also gets an SMS draft. |
+
+- **How the functions were changed:** both are copied verbatim from their current migrations, with only those lines changed. `CREATE OR REPLACE` keeps their grants.
+- **In the app:** the channel is shown as «Samtal» with a phone icon. A new request from a call thread suggests SMS.
+
+## Automatic deletion (approved)
+
+| Part | What it does |
+|---|---|
+| `samtal_due_for_deletion(limit)` | Lists the calls whose retention has passed. |
+| `samtal_mark_deleted(call, company)` | Removes transcript, extraction, audio path and caller. Only the fact that a call took place remains. The company is checked. |
+| pg_cron job `samtal-purge`, minute 17 of every hour | Calls `/api/public/samtal-purge` through pg_net, with the secret header `x-estim-secret`. |
+
+- **Why the route deletes the audio:** the route deletes the audio files through the Storage API, then marks the calls. Deleting `storage.objects` rows directly in SQL would leave the files behind in storage.
+- **Secrets:** the secret exists in one place only, Supabase Vault (`samtal_purge_secret`, at least 32 characters), next to the app's address (`samtal_base_url`). The job reads both from Vault each time it runs and sends the secret in the header `x-estim-secret`. The purge route never reads the secret: it passes the header it received to `samtal_purge_secret_valid`, a function only `service_role` may call, and gets only true or false back. No app secret is used, and no secret value is ever written into a migration or the repository.
+- **Private calls** are deleted at once by the processing, without waiting for the schedule.
+
+## Tests
+
+| Test | Proves |
+|---|---|
+| [samtal-isolation.test.ts](../../src/test/samtal-isolation.test.ts) | A user in company A cannot read, change or download anything of company B, through the tables, the storage or the server functions; owners and employees each get their own visibility. |
+| [samtal-inkorg.test.ts](../../src/test/samtal-inkorg.test.ts) | The inbox functions differ from the current migrations in exactly the intended lines; WhatsApp, e-mail, SMS and form requests (with a duplicate, a follow-up and a split) give identical rows before and after; a call becomes a request with an SMS draft. |
+
+Both run the SQL in a real Postgres (PGlite) on a copy of the Supabase setup: roles, `auth.uid()`, `storage.objects` with RLS and `my_company()` as in production.
+
+## Lovable prompts (copy as is, one at a time, in this order)
+
+### 1. Samtal tables and audio bucket
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal.sql in the repository (estim Samtal, flag SAMTAL). It only creates new tables (samtal_settings, samtal_numbers, samtal_calls, samtal_jobs, samtal_tasks), new functions (samtal_is_owner, samtal_decide_task, samtal_register_call, samtal_claim_jobs, samtal_release_job) and the private storage bucket samtal-audio.
+
+Rules:
+- Run the SQL unchanged. Do not change, rename or drop any existing table, column, policy, function or bucket.
+- Do not add any storage policy for the bucket samtal-audio. It must have none; files are only reached through signed links from the server.
+- Do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. That RLS is enabled on all five samtal_ tables, with the list of their policies.
+3. That the bucket samtal-audio exists, is private and has no storage policies.
+4. That the regenerated src/integrations/supabase/types.ts contains the five tables.
+```
+
+### 1b. Indexes for the Samtal foreign keys
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-indekser.sql in the repository (estim Samtal). It only creates six new indexes on the samtal_ tables. They cover the seven foreign keys that the Supabase linter reported as unindexed.
+
+Rules:
+- Run the SQL unchanged.
+- Change nothing else and do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. That the linter no longer reports unindexed foreign keys on samtal_ tables.
+```
+
+### 2. The inbox accepts the channel samtal
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/inkorg.sql in the repository (estim Samtal: the inbox accepts the channel 'samtal'). Run it after the samtal.sql migration.
+
+It changes exactly three things:
+1. The channel check on public.threads also allows 'samtal'.
+2. public.estim_receive accepts 'samtal', and gives a call an SMS reply draft.
+3. public.estim_split_thread gives a split call thread an SMS draft.
+Both functions are copies of the current ones with only those lines changed.
+
+Rules:
+- Run the SQL unchanged.
+- Change nothing else: no other table, column, policy, function, trigger, edge function or n8n flow.
+- Keep the existing grants (CREATE OR REPLACE preserves them).
+- Do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. The new definition of the channel check on threads.
+3. That estim_receive and estim_split_thread still have the same grants as before.
+```
+
+### 3. Automatic deletion (done)
+
+Run as migrations `20261125121204_85ce6994-…` and `20261125121315_0faf7e7c-…`, identical to the files. Vault holds `samtal_base_url` and `samtal_purge_secret`. The app secret SAMTAL_PURGE_SECRET was removed again: the secret lives only in Vault (3c).
+
+### 3c. The purge secret only in Vault (done)
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-sletting-hemmelighet.sql in the repository (estim Samtal). It adds one function, samtal_purge_secret_valid, that only service_role may call. It checks a given value against the Vault secret samtal_purge_secret and returns true or false, never the secret.
+
+Rules:
+- Run the SQL unchanged.
+- Do not create or change any secret. Vault already holds samtal_purge_secret and samtal_base_url, and the app secret SAMTAL_PURGE_SECRET must stay removed.
+- Change nothing else and do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. That samtal_purge_secret_valid exists and only service_role has EXECUTE on it.
+3. The result of SELECT public.samtal_purge_secret_valid('wrong'), which must be false.
+```
+
+### 4. Processing queue every minute (done)
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-worker-cron.sql in the repository (estim Samtal). It schedules the job 'samtal-worker' every minute. The job calls the app's route /api/public/samtal-worker with the existing Vault secrets samtal_base_url and samtal_purge_secret.
+
+Rules:
+- Run the SQL unchanged.
+- Do not create or change any secret.
+- Change nothing else and do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. The row for 'samtal-worker' in cron.job: schedule, active, and that it is the only job with that name.
+```
