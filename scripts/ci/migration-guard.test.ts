@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkAddedSql, checkMigrations, stripSqlComments, tableKey } from './migration-guard';
+import { checkAddedSql, checkMigrations, evaluateConstant, isConstantExpression, isPermissiveConstant, stripSqlComments, tableKey } from './migration-guard';
 import { formatFinding } from './lib';
+import { symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { commitAll, git, tempDir, writeFiles } from './test-helpers';
 
 let cleanup = () => {};
@@ -48,6 +50,17 @@ describe('migration guard: existing migrations are immutable', () => {
     commitAll(root, 'edit');
     expect(run(root, base)).toEqual([expect.stringMatching(/^drizzle\/migrations\/0000_init\.sql:1: The change modifies/)]);
   });
+  it('fails a migration added as a symbolic link, whose SQL lives elsewhere', () => {
+    const { root, base } = repo();
+    writeFiles(root, { 'sql/payload.sql': 'create table public.secrets (id int);\n' });
+    symlinkSync('../../sql/payload.sql', join(root, 'supabase/migrations/20260201000000_link.sql'));
+    symlinkSync('../../sql', join(root, 'drizzle/migrations/linked'));
+    commitAll(root, 'add links');
+    expect(run(root, base)).toEqual([
+      'drizzle/migrations/linked:1: The change adds a symbolic link in a migration directory, so the guard cannot read the SQL it points to. Fix: Commit the migration as a regular .sql file. An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.',
+      expect.stringMatching(/^supabase\/migrations\/20260201000000_link\.sql:1: The change adds a symbolic link/),
+    ]);
+  });
   it('reports a base commit that is not in the clone', () => {
     const { root } = repo();
     expect(run(root, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')).toEqual([expect.stringMatching(/is not in this clone/)]);
@@ -59,7 +72,7 @@ describe('migration guard: row level security in added migrations', () => {
     const { root, base } = repo();
     writeFiles(root, { [NEW]: '-- new table\n\ncreate table public.b (id int);\n' });
     commitAll(root, 'add');
-    expect(run(root, base)).toEqual([`${NEW}:3: Table public.b is created without row level security. Fix: Add "alter table public.b enable row level security;" in this change's migrations. An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.`]);
+    expect(run(root, base)).toEqual([`${NEW}:3: Table public.b is created without row level security. Fix: Add "alter table public.b enable row level security;" in this change's migrations, at top level or in a DO block. An intended exception needs an entry with a reason in scripts/ci/migration-allowlist.json.`]);
   });
   it('matches every form of CREATE TABLE', () => {
     expect(rules('CREATE TABLE IF NOT EXISTS public.a(id int);')).toEqual(['create-table-without-rls public.a@1']);
@@ -97,6 +110,74 @@ describe('migration guard: row level security in added migrations', () => {
     expect(tableKey('Foo')).toBe('public.foo');
     expect(tableKey('public . "Foo"')).toBe('public.Foo');
     expect(tableKey('"a""b"')).toBe('public.a"b');
+  });
+});
+
+describe('migration guard: SQL that hides from a lexical check', () => {
+  it('reads E-strings only when the E stands alone, as Postgres does', () => {
+    // name'\' is a literal of type name holding one backslash, so '-- ' is a string and the CREATE TABLE runs.
+    expect(rules("select name'\\', '-- '; create table public.secrets (id int);")).toEqual(['create-table-without-rls public.secrets@1']);
+    // E'\' -- ' is one escape string, so the CREATE TABLE after it runs.
+    expect(rules("select E'\\' -- '; create table public.secrets (id int);")).toEqual(['create-table-without-rls public.secrets@1']);
+    expect(rules("select e'it\\'s -- not a comment'; create table s (id int);")).toEqual(['create-table-without-rls public.s@1']);
+  });
+  it('does not count ENABLE ROW LEVEL SECURITY in a string, a comment in a DO block or a function body', () => {
+    expect(rules("create table public.secrets (id int); select 'alter table public.secrets enable row level security';")).toEqual(['create-table-without-rls public.secrets@1']);
+    expect(rules("create table public.secrets (id int); comment on table public.secrets is 'alter table public.secrets enable row level security';")).toEqual(['create-table-without-rls public.secrets@1']);
+    expect(rules('create table public.secrets (id int); do $$ begin -- alter table public.secrets enable row level security;\nnull; end $$;')).toEqual(['create-table-without-rls public.secrets@1']);
+    expect(rules('create table foo(id int); create function f() returns void language sql as $$ alter table foo enable row level security $$;')).toEqual(['create-table-without-rls public.foo@1']);
+    expect(rules("create table foo(id int); do $$ begin execute 'alter table foo enable row level security'; end $$;")).toEqual(['create-table-without-rls public.foo@1']);
+  });
+  it('counts ENABLE ROW LEVEL SECURITY at top level and in DO blocks', () => {
+    expect(rules('create table foo(id int); do $$ begin alter table foo enable row level security; end $$;')).toEqual([]);
+    expect(rules('create table foo(id int); DO LANGUAGE plpgsql $body$ BEGIN ALTER TABLE public.foo ENABLE ROW LEVEL SECURITY; END $body$;')).toEqual([]);
+  });
+  it('detects top-level SELECT ... INTO, but not INSERT INTO or INTO in a function body', () => {
+    expect(rules('select * into public.secrets_copy from auth.users;')).toEqual(['create-table-without-rls public.secrets_copy@1']);
+    expect(rules('select 1 as id into unlogged table bar;')).toEqual(['create-table-without-rls public.bar@1']);
+    expect(rules('with x as (select 1) select * into baz from x;')).toEqual(['create-table-without-rls public.baz@1']);
+    expect(rules('select * into public.c from x; alter table public.c enable row level security;')).toEqual([]);
+    expect(rules('insert into public.a select * from b; with x as (select 1) insert into a select * from x;')).toEqual([]);
+    expect(rules('create function f() returns int language plpgsql as $$ declare n int; begin select count(*) into n from a; return n; end $$;')).toEqual([]);
+  });
+  it('fails closed on U&"..." table names and matches non-ASCII names whole', () => {
+    expect(rules('create table U&"secr\\0065ts" (id int); create table u (id int); alter table u enable row level security;')).toEqual(['create-table-without-rls public.U&"secr\\0065ts"@1']);
+    expect(rules('create table tabellå (id int); create table tabell (id int); alter table tabell enable row level security;')).toEqual(['create-table-without-rls public.tabellå@1']);
+    expect(tableKey('TABELLÅ')).toBe('public.tabellÅ');
+  });
+  it('fails EXECUTE of SQL built at run time that mentions CREATE TABLE', () => {
+    expect(rules("do $$ begin execute 'create ' || 'table public.secrets (id int)'; end $$;")).toEqual(['dynamic-ddl@1']);
+    expect(rules("do $$ begin\n execute format('create table %I (id int)', 'secrets'); end $$;")).toEqual(['dynamic-ddl@2']);
+    // A single literal is read as SQL instead; EXECUTE FUNCTION in a trigger and dynamic SQL without CREATE TABLE pass.
+    expect(rules("do $$ begin execute 'create table z (id int)'; end $$;")).toEqual(['create-table-without-rls public.z@1']);
+    expect(rules("DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['a'] LOOP EXECUTE format('CREATE TRIGGER x BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.estim_touch()', t); END LOOP; END $$;")).toEqual([]);
+  });
+  it('ends a policy statement at its own semicolon, not one in a quoted name or string', () => {
+    expect(rules('create policy "a;b" on foo for select using (true);')).toEqual(['permissive-policy@1']);
+    expect(rules("create policy p on foo for select using (status <> ';') ; create policy q on foo using (true);")).toEqual(['permissive-policy@1']);
+  });
+  it('passes deny-all policies whose constant expression is false or null', () => {
+    expect(rules('create policy p on public.t for select using (false);')).toEqual([]);
+    expect(rules('create policy p on public.t as restrictive for all using ( ( false ) ) with check (1 = 0);')).toEqual([]);
+    expect(rules('create policy p on public.t for select using (not true);')).toEqual([]);
+    expect(rules('create policy p on public.t for select using (null);')).toEqual([]);
+    expect(evaluateConstant('not (1 = 1) and true')).toBe(false);
+    expect(evaluateConstant("'a' = 'a'")).toBe(true);
+    expect(evaluateConstant('true is not false')).toBe(true);
+    expect(evaluateConstant('1 = 1 or (')).toBeUndefined();
+  });
+  it('fails policies whose expression is a constant', () => {
+    expect(rules('create policy p on public.t for select using (1=1);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on public.t for select using (true::boolean);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on public.t for select using (not false);')).toEqual(['permissive-policy@1']);
+    expect(rules("create policy p on public.t for insert with check ('a' = 'a');")).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on public.t for select using (auth.uid() = user_id);')).toEqual([]);
+    expect(rules('create policy p on public.t for select using ("Flag");')).toEqual([]);
+    expect(rules('create policy p on public.t for select using (exists (select 1 from a join b using (id) where a.owner = auth.uid()));')).toEqual([]);
+    expect(isConstantExpression(' 1e5 > 0 ')).toBe(true);
+    expect(isPermissiveConstant("'t'::boolean")).toBe(true);
+    expect(isPermissiveConstant('1 = 1 or x')).toBe(false);
+    expect(isConstantExpression('current_user = owner')).toBe(false);
   });
 });
 
