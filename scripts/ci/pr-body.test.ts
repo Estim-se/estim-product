@@ -23,6 +23,10 @@ describe('issue-link: which links count', () => {
     expect(linkedIssues('```\nCloses #38\n```', REPO)).toEqual([]);
     expect(linkedIssues('~~~md\nCloses #38\n~~~\nand `Closes #39`\n```unterminated\nCloses #40', REPO)).toEqual([]);
     expect(linkedIssues('```\ncode\n```\nPart of #41', REPO)).toEqual([41]);
+    // A closing fence may be longer than the opening one, but a shorter one or another character does not close it.
+    expect(linkedIssues('```\nx\n````\nCloses #12', REPO)).toEqual([12]);
+    expect(linkedIssues('````\nx\n```\nCloses #12', REPO)).toEqual([]);
+    expect(linkedIssues('```\nx\n~~~\nCloses #12', REPO)).toEqual([]);
     expect(linkedIssues(`Closes https://github.com/${REPO}/issues/38/`, REPO)).toEqual([38]);
     expect(linkedIssues(`Closes https://github.com/${REPO}/issues/38/comments`, REPO)).toEqual([]);
   });

@@ -17,8 +17,9 @@ export type Input = { body: string; headRepo: string; headRef: string; repo: str
 export function linkedIssues(body: string, repo: string): number[] {
   const text = body
     .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
-    // Fenced code blocks (``` or ~~~, to the matching fence or the end) and inline code are examples, not links.
-    .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm, ' ')
+    // Fenced code blocks (``` or ~~~, to a closing fence of the same character at least as long, or the end) and
+    // inline code are examples, not links.
+    .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1(?:(?<=`)`*|(?<=~)~*)[ \t]*$|(?![\s\S]))/gm, ' ')
     .replace(/(`+)[^`]*?\1/g, ' ');
   const url = `https://github\\.com/${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/issues/`;
   const pattern = new RegExp(`(?<![\\w-])(?:closes|fixes|resolves|part\\s+of)\\s*:?\\s+(?:#(\\d+)|${url}(\\d+)\\/?)(?![\\w/#-])`, 'gi');
@@ -53,9 +54,11 @@ export function issueKind(repo: string, data: { pull_request?: unknown; reposito
 /** Asks the GitHub API (gh with GH_TOKEN) whether #N is an issue of this repository, a pull request or missing. */
 export const ghLookup: Lookup = (repo, number) => {
   const result = spawnSync('gh', ['api', `repos/${repo}/issues/${number}`], { encoding: 'utf8' });
+  if (result.error) throw new Error(`gh could not run for #${number}: ${result.error.message}`);
   if (result.status !== 0) {
-    if (/HTTP 404|HTTP 410/.test(result.stderr)) return 'missing';
-    throw new Error(`gh api failed for #${number}: ${result.stderr.trim()}`);
+    const stderr = result.stderr ?? '';
+    if (/HTTP 404|HTTP 410/.test(stderr)) return 'missing';
+    throw new Error(`gh api failed for #${number}: ${stderr.trim()}`);
   }
   return issueKind(repo, JSON.parse(result.stdout) as { pull_request?: unknown; repository_url?: unknown });
 };
