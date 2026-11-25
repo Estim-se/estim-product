@@ -2194,6 +2194,10 @@ export type Database = {
         Args: { p_call: string; p_company: string }
         Returns: boolean
       }
+      samtal_purge_secret_valid: {
+        Args: { p_secret: string }
+        Returns: boolean
+      }
       samtal_register_call: { Args: { payload: Json }; Returns: Json }
       samtal_release_job: {
         Args: {
