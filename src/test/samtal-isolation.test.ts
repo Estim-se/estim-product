@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const SUPABASE_BASE = `
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE SCHEMA auth; CREATE SCHEMA storage; CREATE SCHEMA estim_private;
+CREATE SCHEMA vault; CREATE TABLE vault.decrypted_secrets (name text PRIMARY KEY, decrypted_secret text);
 GRANT USAGE ON SCHEMA public, auth, storage TO anon, authenticated, service_role;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 CREATE TABLE storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean NOT NULL DEFAULT false, file_size_limit bigint, allowed_mime_types text[]);
@@ -63,6 +64,7 @@ beforeAll(async () => {
   await db.exec(sql('samtal.sql'));
   await db.exec(sql('samtal-sletting.sql'));
   await db.exec(sql('samtal-indekser.sql'));
+  await db.exec(sql('samtal-sletting-hemmelighet.sql'));
   await db.exec(`
     INSERT INTO public.companies (id, name) VALUES ('${ids.A}', 'Firma A'), ('${ids.B}', 'Firma B');
     INSERT INTO public.company_members (company_id, user_id, role) VALUES
@@ -241,5 +243,25 @@ describe('estim Samtal: every foreign key has an index', () => {
          AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid
                AND (i.indkey::int2[])[0:cardinality(c.conkey) - 1] @> c.conkey AND (i.indkey::int2[])[0:cardinality(c.conkey) - 1] <@ c.conkey)`);
     expect(uncovered.rows).toEqual([]);
+  });
+});
+
+describe('estim Samtal: the purge secret exists only in Vault', () => {
+  const secret = 'v'.repeat(64);
+  const valid = (value: string | null, role = 'service_role') => as(null, tx => tx.query<{ ok: boolean }>(`SELECT public.samtal_purge_secret_valid($1) AS ok`, [value]).then(r => r.rows[0]!.ok), role);
+  it('the route gets only true or false; the value itself is never returned', async () => {
+    await db.query(`INSERT INTO vault.decrypted_secrets VALUES ('samtal_purge_secret', $1)`, [secret]);
+    try {
+      expect(await valid(secret)).toBe(true);
+      for (const wrong of ['v'.repeat(63), `${secret}x`, '', null]) expect(await valid(wrong)).toBe(false);
+      // Only the app's server may ask; a signed-in user or anon cannot.
+      await expect(valid(secret, 'authenticated')).rejects.toThrow(/permission denied/);
+      await expect(valid(secret, 'anon')).rejects.toThrow(/permission denied/);
+    } finally { await db.query(`DELETE FROM vault.decrypted_secrets`); }
+  });
+  it('a missing or too short secret in Vault never matches', async () => {
+    expect(await valid('')).toBe(false);
+    await db.query(`INSERT INTO vault.decrypted_secrets VALUES ('samtal_purge_secret', 'kort')`);
+    try { expect(await valid('kort')).toBe(false); } finally { await db.query(`DELETE FROM vault.decrypted_secrets`); }
   });
 });
