@@ -13,6 +13,8 @@ import { type SenderVerdict, withUnverifiedWarning } from "./sender-auth.ts";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const AI_FAIL_TEXT = "AI kunde inte svara just nu";
+/** How long the AI wait loop sleeps between polls. Only tests change it (to 0); the edge functions keep 4 s. */
+export const pipelineTiming = { pollMs: 4000 };
 
 export interface InboundAttachmentIn { name: string; type: string; size: number; load: () => Promise<Uint8Array> }
 export interface InboundMail {
@@ -171,7 +173,7 @@ export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: str
     try { await dispatchAiJob(jobId); } catch { await failJob(db, companyId, threadId, jobId); return "other"; }
     // The job runs in the background: wait for it.
     for (let i = 0; i < 28; i++) {
-      await new Promise((r) => setTimeout(r, 4000));
+      await new Promise((r) => setTimeout(r, pipelineTiming.pollMs));
       const job = await db.from("ai_jobs").select("state").eq("id", jobId).maybeSingle();
       if (job.data?.state === "done") return "done";
       if (job.data?.state === "failed") return "other";
