@@ -1,4 +1,5 @@
-# Requests Ibbe's review on the review gate. Who must approve is set in .claude/approvals.yml, not here.
+# Requests Ibbe's review on the review gate and on the code that authenticates requests. Who must approve is set in
+# .claude/approvals.yml, not here.
 .claude/ @ibbe-futureventures
 REVIEW.md @ibbe-futureventures
 CLAUDE.md @ibbe-futureventures
@@ -13,3 +14,8 @@ eslint.config.* @ibbe-futureventures
 /scripts/ci/ @ibbe-futureventures
 .gitattributes @ibbe-futureventures
 .gitmodules @ibbe-futureventures
+/supabase/functions/_shared/auth.ts @ibbe-futureventures
+/supabase/functions/_shared/system-auth.ts @ibbe-futureventures
+/supabase/functions/_shared/message-job.ts @ibbe-futureventures
+/supabase/functions/_shared/nylas.ts @ibbe-futureventures
+/src/integrations/supabase/auth-middleware.ts @ibbe-futureventures
