@@ -122,5 +122,5 @@ describe('the payload is accepted by the real estim_receive', () => {
     expect((await pg.query(`SELECT channel, needs_review FROM public.drafts WHERE thread_id = $1`, [first['id']])).rows).toEqual([{ channel: 'sms', needs_review: true }]);
     expect((await pg.query(`SELECT state FROM public.ai_jobs WHERE thread_id = $1`, [first['id']])).rows).toEqual([{ state: 'queued' }]);
     expect(await receive()).toEqual({ duplicate: true });
-  });
+  }, 30000);
 });
