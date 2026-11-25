@@ -223,6 +223,18 @@ describe('processing a call job', () => {
     expect(errors.mock.calls.map(c => c.join(' ')).join('\n')).not.toMatch(/Anna|Storgatan/);
     errors.mockRestore();
   });
+  it('a retried inbox step runs the inbox again from the saved extraction, without speech to text or AI', async () => {
+    const saved = { interpretation: validateInterpretation(answer(), transcript), customer_match: { kind: 'befintlig', customer_id: 'k1', by: 'telefon' } };
+    const { db, log } = fakeDb({ call: call({ transcript, extraction: saved }) });
+    const inbox = vi.fn(async () => {}), d = { ...deps(), inbox };
+    expect(await processJob(db, d, job({ step: 'inkorg', attempts: 2 }))).toBe('done');
+    expect(inbox).toHaveBeenCalledWith(expect.objectContaining({ interpretation: saved.interpretation, match: saved.customer_match }));
+    expect(d.stt.transcribe).not.toHaveBeenCalled();
+    expect(d.ai.interpret).not.toHaveBeenCalled();
+    expect(log.updates.at(-1)!.values).toEqual({ status: 'klar' });
+    const missing = fakeDb({ call: call({ transcript }) });
+    expect(await processJob(missing.db, { ...deps(), inbox }, job({ step: 'inkorg' }))).toBe('extraction_missing');
+  });
   it('does nothing without the flag', async () => {
     const { db, log } = fakeDb({ jobs: [job()] });
     expect(await runSamtalJobs(db, deps())).toEqual({ claimed: 0, results: [] });

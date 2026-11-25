@@ -16,7 +16,7 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 | 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions. **Done:** migration `20261125121204_85ce6994-…`, identical. |
 | 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault. **Done:** migration `20261125121315_0faf7e7c-…`, identical; Vault holds `samtal_base_url` and `samtal_purge_secret`. |
 | 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. **Done:** migration `20261125122653_f3eda501-…`, identical. |
-| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). Run when step 5 (inbox) is merged. |
+| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). Ready to run (step 5 is merged). |
 
 All three prompts are below.
 
@@ -83,6 +83,24 @@ Test adapter metadata (`<name>.json`, next to `<name>.mp3`, `.m4a`, `.wav` …):
 - Each due file is deleted only in its own company folder, then the call's content is removed with that company.
 - A file that cannot be deleted keeps its call for the next run.
 - Deletion runs even with the flag off, so retention keeps working if the module is switched off.
+
+## Inbox, tasks and quote (step 5)
+
+[inbox.server.ts](../../src/lib/samtal/inbox.server.ts) turns a processed job call into a request, using only the existing entry points:
+
+| Part | What happens |
+|---|---|
+| **Request** | `estim_receive` with channel `samtal`, message id `samtal:<call id>`. It creates or finds the customer, the thread, the message, an SMS reply draft awaiting review, and the AI job. A customer matched by name and address is passed with their stored phone, so `estim_receive` finds them. |
+| **Message** | A summary of the call: customer, phone, address, job, description, desired time, urgency, uncertain points. **Never the transcript:** the transcript and the audio stay in `samtal_calls` and are deleted with the company's retention. The request remains, like a request by mail. |
+| **Link** | `samtal_calls.thread_id` and `customer_id` point to the request. The call's employee (`samtal_calls.user_id`) is the assignee. |
+| **Tasks** | The suggested next steps, plus always «Ring tillbaka», and «Skapa offert» when a quote can be drafted. They are assigned to the employee and confirmed with one tap through `samtal_decide_task`. Dates said in the call are Swedish time; a date alone is 08:00. |
+| **Quote draft** | `dispatchAiJob` starts the existing `interpret-request`. It builds the quote draft with the existing quote engine whenever the request matches the company's catalog, and writes the reply draft. If it cannot start, the request stays for manual handling, as for other channels. |
+
+**Running the step twice for the same call is harmless:** the message is a duplicate, the existing thread is used, tasks are not added again, and no new AI job is started. A retried job runs the inbox step again from the saved extraction, without speech to text or AI.
+
+**Not yet:**
+- The inbox shows no assignee and no tasks. They are shown in the Samtal page (step 6).
+- An approved SMS is not delivered (open point 1).
 
 ## Tables
 
@@ -224,7 +242,7 @@ When done, report:
 3. The result of SELECT public.samtal_purge_secret_valid('wrong'), which must be false.
 ```
 
-### 4. Processing queue every minute (run after step 5 is merged)
+### 4. Processing queue every minute (ready)
 
 ```
 Create a new migration with exactly the SQL in the file docs/samtal/samtal-worker-cron.sql in the repository (estim Samtal). It schedules the job 'samtal-worker' every minute. The job calls the app's route /api/public/samtal-worker with the existing Vault secrets samtal_base_url and samtal_purge_secret.
