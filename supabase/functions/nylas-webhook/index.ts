@@ -170,10 +170,10 @@ async function handleUnipile(req: Request): Promise<Response> {
 
 async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
   const db = admin();
-  for (const delay of UNIPILE_RETRY_DELAYS_MS) {
+  for (const [i, delay] of UNIPILE_RETRY_DELAYS_MS.entries()) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     try {
-      const outcome = await handleUnipileEvent(db, event);
+      const outcome = await handleUnipileEvent(db, event, i === UNIPILE_RETRY_DELAYS_MS.length - 1);
       if (outcome.retry) continue;
       if (outcome.after) await outcome.after().catch((e) => console.error("[unipile] ai pipeline failed:", errCode(e)));
       return;
@@ -182,14 +182,14 @@ async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
   console.error("[unipile] gave up on event:", event.type); // the event id is in Unipile's dashboard for a replay
 }
 
-async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent): Promise<Outcome> {
+async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent, isLastAttempt: boolean): Promise<Outcome> {
   const { type, accountId, payload } = event; // event.provider is used for the Gmail label filter below
   if (type === "email.new") {
     const ref = unipile.emailEventOf(payload);
     if (!accountId || !ref || !unipile.shouldHandleEmailEvent(event.provider, ref)) return {};
     return await processInbound(db, accountId, ref.emailId, unipileSource(accountId, ref.emailId));
   }
-  if (type === "account.add" || type === "account.reconnect") return await bindAccount(db, payload);
+  if (type === "account.add" || type === "account.reconnect") return await bindAccount(db, type, payload, isLastAttempt);
   if (type === "account.status.disconnected" || type === "account.remove") {
     if (!accountId) return {};
     const res = await db.rpc("estim_email_grant_state", { p_grant: accountId, new_state: type === "account.remove" ? "revoked" : "expired" });
@@ -211,8 +211,12 @@ async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEven
   return {};
 }
 
-/** Binds a newly linked (or re-linked) account to the company that started the link, through our single-use state. */
-async function bindAccount(db: SupabaseClient, payload: Record<string, unknown>): Promise<Outcome> {
+/**
+ * Binds a newly linked (or re-linked) account to the company that started the link, through our single-use state.
+ * Deleting an account is decided by unipile.orphanAction / bindFailureAction: never on account.reconnect and never for
+ * an account id that is already in email_connections (it may be another company's live connection).
+ */
+async function bindAccount(db: SupabaseClient, type: unipile.AccountEventType, payload: Record<string, unknown>, isLastAttempt: boolean): Promise<Outcome> {
   const ref = unipile.accountEventOf(payload);
   if (!ref) return {};
   if (!ref.state) { console.info("[unipile] account event without our state"); return {}; } // linked elsewhere: not ours to touch
@@ -221,7 +225,7 @@ async function bindAccount(db: SupabaseClient, payload: Record<string, unknown>)
 
   const pending = await db.from("oauth_states").select("company_id,user_id").eq("state_hash", stateHash).is("used_at", null).gt("expires_at", nowIso).maybeSingle();
   if (pending.error) return { retry: true };
-  if (!pending.data) { console.info("[unipile] unknown, used or expired state"); return {}; }
+  if (!pending.data) return await handleUnclaimable(db, type, stateHash, ref.accountId, isLastAttempt);
   const { company_id: companyId, user_id: userId } = pending.data as { company_id: string; user_id: string };
 
   // Provider and address come from Unipile with our key, never from the event or the browser.
@@ -231,7 +235,7 @@ async function bindAccount(db: SupabaseClient, payload: Record<string, unknown>)
     const code = errCode(e);
     if (code === "unipile_unsupported_account" || code === "unipile_no_email") {
       await claimState(db, stateHash); // the browser then reports that it failed
-      await unipile.deleteAccount(ref.accountId);
+      if (type === "account.add" && !(await accountKnown(db, ref.accountId))) await unipile.deleteAccount(ref.accountId);
       console.info("[unipile] unsupported account:", code);
       return {};
     }
@@ -239,21 +243,53 @@ async function bindAccount(db: SupabaseClient, payload: Record<string, unknown>)
   }
 
   // Single use: only the first event for this state may bind an account.
-  if (!(await claimState(db, stateHash))) return {};
+  const claimedAt = await claimState(db, stateHash);
+  if (!claimedAt) return {};
 
   const existing = await db.from("email_connections").select("grant_id").eq("company_id", companyId).maybeSingle();
   const saved = await db.from("email_connections").upsert({
     company_id: companyId, grant_id: ref.accountId, email: account.email, provider: account.provider, status: "active",
     watch_address: account.email, connected_by: userId, last_event_at: nowIso,
   }, { onConflict: "company_id" });
-  if (saved.error) { await unipile.deleteAccount(ref.accountId); console.error("[unipile] could not save connection"); return {}; }
+  if (saved.error) {
+    const action = unipile.bindFailureAction({ type, errorCode: saved.error.code, isLastAttempt, accountKnown: await accountKnown(db, ref.accountId) });
+    console.error("[unipile] could not save connection:", saved.error.code ?? "unknown", action);
+    if (action === "delete") { await unipile.deleteAccount(ref.accountId); return {}; }
+    if (action === "retry") { await unclaimState(db, stateHash, claimedAt); return { retry: true }; }
+    return {};
+  }
   if (existing.data && existing.data.grant_id !== ref.accountId) await revokeConnection(existing.data.grant_id);
   await db.from("audit_log").insert({ company_id: companyId, user_id: userId, event: "E-post ansluten", after: { provider: account.provider } });
   return {};
 }
 
-async function claimState(db: SupabaseClient, stateHash: string): Promise<boolean> {
+/** The state is unknown, used or expired: remove an orphaned new account, otherwise only log. */
+async function handleUnclaimable(db: SupabaseClient, type: unipile.AccountEventType, stateHash: string, accountId: string, isLastAttempt: boolean): Promise<Outcome> {
+  const row = await db.from("oauth_states").select("used_at,expires_at").eq("state_hash", stateHash).maybeSingle();
+  if (row.error) return { retry: true };
+  if (!row.data) { console.info("[unipile] unknown state"); return {}; } // may belong to another environment
+  const action = unipile.orphanAction({ type, stateRow: row.data as { used_at: string | null; expires_at: string }, accountKnown: await accountKnown(db, accountId), isLastAttempt });
+  if (action === "retry") return { retry: true };
+  if (action === "delete") { await unipile.deleteAccount(accountId); console.info("[unipile] orphan account removed"); return {}; }
+  console.info("[unipile] used or expired state");
+  return {};
+}
+
+/** Whether the account id is already bound to any company. A failed lookup counts as known, so nothing is deleted. */
+async function accountKnown(db: SupabaseClient, accountId: string): Promise<boolean> {
+  const res = await db.from("email_connections").select("company_id").eq("grant_id", accountId).limit(1).maybeSingle();
+  return Boolean(res.error || res.data);
+}
+
+/** Claims the state; returns the used_at timestamp that was set, or null when it could not be claimed. */
+async function claimState(db: SupabaseClient, stateHash: string): Promise<string | null> {
   const nowIso = new Date().toISOString();
   const claimed = await db.from("oauth_states").update({ used_at: nowIso }).eq("state_hash", stateHash).is("used_at", null).gt("expires_at", nowIso).select("state_hash").maybeSingle();
-  return !claimed.error && Boolean(claimed.data);
+  return !claimed.error && claimed.data ? nowIso : null;
+}
+
+/** Gives the state back after a transient failure, so a retry can bind. Only our own claim is undone. */
+async function unclaimState(db: SupabaseClient, stateHash: string, claimedAt: string): Promise<void> {
+  const res = await db.from("oauth_states").update({ used_at: null }).eq("state_hash", stateHash).eq("used_at", claimedAt);
+  if (res.error) console.error("[unipile] could not release state:", res.error.code ?? "unknown");
 }
