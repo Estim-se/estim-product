@@ -236,6 +236,35 @@ Deno.test("unipile: an unsupported account is refused and removed; a transient e
   assertEquals(flaky.rows("oauth_states")[0]!.used_at, null);
 });
 
+Deno.test("unipile: a transient getAccount or owner-lookup error on the last attempt ends it; a new account is deleted", async () => {
+  const db = bindDb();
+  const rec = recorder();
+  assertEquals(await bindUnipileAccount(asClient(db), "account.add", addEvent("acc_1"), true, unipileDeps(rec, { fail: "unipile_get_account_503" })), {});
+  assertEquals(rec.revoked, ["acc_1"]);
+  assert(db.rows("oauth_states")[0]!.used_at, "state left usable");
+  assertEquals(events(db, BIND_FAILED_EVENT).map((e) => (e.after as Row).code), ["save_failed"]);
+  // a reconnect is never deleted
+  const re = bindDb({ email_connections: [{ company_id: C1, grant_id: "acc_1", status: "expired" }] });
+  const rec2 = recorder();
+  await bindUnipileAccount(asClient(re), "account.reconnect", addEvent("acc_1"), true, unipileDeps(rec2, { fail: "unipile_get_account_503" }));
+  assertEquals(rec2.revoked, []);
+  // the owner lookup still fails on the last attempt
+  const owner = bindDb();
+  owner.fail("companies.select(active)");
+  const rec3 = recorder();
+  assertEquals(await bindUnipileAccount(asClient(owner), "account.add", addEvent("acc_1"), true, unipileDeps(rec3)), {});
+  assertEquals(rec3.revoked, ["acc_1"]);
+  // another delivery claimed the state just now (it may be saving this account): never deleted while in flight
+  const raced = bindDb();
+  const rec4 = recorder();
+  const racing = {
+    revoke: rec4.revoke,
+    getAccount: (_id: string) => { raced.rows("oauth_states")[0]!.used_at = new Date().toISOString(); return Promise.reject(new Error("unipile_get_account_503")); },
+  };
+  assertEquals(await bindUnipileAccount(asClient(raced), "account.add", addEvent("acc_1"), true, racing), {});
+  assertEquals(rec4.revoked, []);
+});
+
 Deno.test("unipile: a save error on the last attempt is final: failure recorded, state stays used, a new account is deleted", async () => {
   const db = bindDb();
   db.fail("email_connections.upsert", { code: "08006", message: "x" });
@@ -269,6 +298,22 @@ Deno.test("1g: disconnect changes the row only after the provider confirmed the 
   assertEquals(rec3.revoked, []);
 
   assertEquals(await disconnectConnection(asClient(bindDb()), C1, U1, recorder().revoke), { ok: true }); // nothing connected
+
+  // the connection lookup fails: an error, never ok, nothing revoked
+  const noRead = bindDb({ email_connections: [{ company_id: C1, grant_id: "acc_1", status: "active" }] });
+  noRead.fail("email_connections.select(grant_id)");
+  const rec4 = recorder();
+  assertEquals(await disconnectConnection(asClient(noRead), C1, U1, rec4.revoke), { ok: false, status: 500, error: "Något gick fel. Försök igen." });
+  assertEquals(rec4.revoked, []);
+  // revoked at the provider but the row cannot be marked: an error, no "frånkopplad" event; a retry revokes again
+  const noMark = bindDb({ email_connections: [{ company_id: C1, grant_id: "acc_1", status: "active" }] });
+  noMark.fail("email_connections.update");
+  const rec5 = recorder();
+  assertEquals((await disconnectConnection(asClient(noMark), C1, U1, rec5.revoke)).ok, false);
+  assertEquals(events(noMark, "E-post frånkopplad").length, 0);
+  assertEquals(await disconnectConnection(asClient(noMark), C1, U1, rec5.revoke), { ok: true });
+  assertEquals(rec5.revoked, ["acc_1", "acc_1"]);
+  assertEquals(noMark.rows("email_connections")[0]!.status, "revoked");
 });
 
 /* ---------- 1h /epost-klar ---------- */

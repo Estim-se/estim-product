@@ -215,16 +215,19 @@ export async function bindUnipileAccount(db: SupabaseClient, type: AccountEventT
   if (!pending.data) return await handleUnclaimable(db, type, stateHash, ref.accountId, isLastAttempt, deps);
   const { company_id: companyId, user_id: userId } = pending.data as { company_id: string; user_id: string };
   const refuse = async (code: BindFailureCode): Promise<BindOutcome> => {
-    await claimState(db, stateHash); // used: the link cannot bind anything later
+    // Claim first: only the event that used the state may delete. If another delivery claimed it meanwhile, that one
+    // may be saving this very account, so it is handled as unclaimable (never deleted while in flight).
+    if (!(await claimState(db, stateHash))) return await handleUnclaimable(db, type, stateHash, ref.accountId, isLastAttempt, deps);
     if (type === "account.add") await revokeIfUnreferenced(db, ref.accountId, deps.revoke);
     await recordBindOutcome(db, { companyId, userId, stateHash, ok: false, code });
     console.info("[unipile] account refused:", code);
     return {};
   };
 
-  // Up to 30 minutes may have passed since start: the company and the owner must still be allowed.
+  // Up to 30 minutes may have passed since start: the company and the owner must still be allowed. A lookup that
+  // still fails on the last attempt ends the attempt, so a new account is not left reading the mailbox and billed.
   const allowed = await ownerStillAllowed(db, companyId, userId);
-  if (allowed === null) return { retry: true };
+  if (allowed === null) return isLastAttempt ? await refuse("save_failed") : { retry: true };
   if (!allowed) return await refuse("not_allowed");
 
   let account: { email: string; provider: string };
@@ -232,7 +235,8 @@ export async function bindUnipileAccount(db: SupabaseClient, type: AccountEventT
   catch (e) {
     const code = e instanceof Error ? e.message : "";
     if (code === "unipile_unsupported_account" || code === "unipile_no_email") return await refuse("unsupported_account");
-    return { retry: true };
+    // A transient Unipile error (timeout, 5xx) on every attempt: same as a save failure on the last attempt.
+    return isLastAttempt ? await refuse("save_failed") : { retry: true };
   }
 
   // Single use: only the first event for this state may bind. A second event (a duplicate delivery, or a second
@@ -317,7 +321,7 @@ export async function unipileFinishStatus(db: SupabaseClient, companyId: string,
   return expiresAt + FINISH_GRACE_MS > now ? { kind: "pending" } : { kind: "error", status: 409, error: bindFailureText(null) };
 }
 
-export type DisconnectResult = { ok: true } | { ok: false; status: 502; error: string };
+export type DisconnectResult = { ok: true } | { ok: false; status: 500 | 502; error: string };
 
 /**
  * Disconnects the company's mailbox. The provider must confirm the revoke (2xx or 404), otherwise nothing changes and
@@ -325,13 +329,16 @@ export type DisconnectResult = { ok: true } | { ok: false; status: 502; error: s
  */
 export async function disconnectConnection(db: SupabaseClient, companyId: string, userId: string, revoke: Revoke = revokeConnection): Promise<DisconnectResult> {
   const conn = await db.from("email_connections").select("grant_id").eq("company_id", companyId).maybeSingle();
+  if (conn.error) { console.error("[mail] disconnect failed: lookup", conn.error.code ?? "unknown"); return { ok: false, status: 500, error: "Något gick fel. Försök igen." }; }
   if (!conn.data) return { ok: true };
   const result = await revokeIfUnreferenced(db, conn.data.grant_id as string, revoke, { exceptCompany: companyId });
   if (result === "lookup_failed" || result === "revoke_failed") {
     console.error("[mail] disconnect failed:", result);
     return { ok: false, status: 502, error: "Kunde inte koppla från hos leverantören. Försök igen." };
   }
-  await db.from("email_connections").update({ status: "revoked" }).eq("company_id", companyId);
+  // The provider has removed it; if our row cannot be marked, say so: a retry revokes again (404 counts as done).
+  const marked = await db.from("email_connections").update({ status: "revoked" }).eq("company_id", companyId);
+  if (marked.error) { console.error("[mail] disconnect failed: update", marked.error.code ?? "unknown"); return { ok: false, status: 500, error: "Något gick fel. Försök igen." }; }
   await db.from("audit_log").insert({ company_id: companyId, user_id: userId, event: "E-post frånkopplad" });
   return { ok: true };
 }
