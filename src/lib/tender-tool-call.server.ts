@@ -20,26 +20,41 @@ const streamFailure = (type: unknown, message: string) => {
   const status = TRANSIENT_STREAM_ERRORS.get(type);
   return status ? new TenderGatewayError(message, status) : new Error(message);
 };
-export type TenderAnswer<T> = { value: T; fallback: string | null };
-export type TenderFallback = <T>(call: () => Promise<T>, otherwise: () => T) => Promise<T>;
 const stopsAnalysis = (e: unknown) =>
   e instanceof TenderRefusal ||
   (e instanceof TenderGatewayError && [401, 402, 403, 404].includes(e.status));
-// The only way to fall back: work gets the fallback function, and the answer names the first failure it covered.
-export async function tenderAnswer<T>(
-  work: (fallback: TenderFallback) => Promise<T>,
-): Promise<TenderAnswer<T>> {
-  let fallback: string | null = null;
-  const value = await work(async (call, otherwise) => {
+export class TenderAi {
+  readonly #key: string;
+  readonly #model: string;
+  #failed = false;
+  constructor(key: string, model: string) {
+    this.#key = key;
+    this.#model = model;
+  }
+  get failed() {
+    return this.#failed;
+  }
+  async tool<T>(c: ToolRequest, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
+    try {
+      return await streamTenderTool(
+        { ...c, key: this.#key, model: this.#model },
+        incomplete,
+        validate,
+      );
+    } catch (e) {
+      this.#failed = true;
+      throw e;
+    }
+  }
+  async fallback<T>(call: () => Promise<T>, otherwise: () => T): Promise<T> {
     try {
       return await call();
     } catch (e) {
       if (stopsAnalysis(e)) throw e;
-      fallback ??= e instanceof Error ? e.message : String(e);
+      this.#failed = true;
       return otherwise();
     }
-  });
-  return { value, fallback };
+  }
 }
 
 export function tenderDocumentBlock(bytes: Uint8Array) {
@@ -47,7 +62,8 @@ export function tenderDocumentBlock(bytes: Uint8Array) {
   return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: btoa(binary) } };
 }
 
-type ToolCall = { key: string; model: string; system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
+type ToolRequest = { system: string; content: unknown[]; retryContent?: unknown[]; tool: string; description: string; schema: unknown; label: string; maxTokens?: number; httpError?: (status: number, safe?: string) => string };
+type ToolCall = ToolRequest & { key: string; model: string };
 
 async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
   const content = [...c.content];
@@ -106,7 +122,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
 const isSchemaError = (e: unknown) => !!e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError';
 
 // Three attempts with backoff; access denials, refusals and malformed requests are terminal.
-export async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
+async function streamTenderTool<T>(c: ToolCall, incomplete: string, validate: (raw: unknown) => T): Promise<T> {
   let reason = '';
   let retryIncomplete = false;
   const rejected: TenderRejectedAttempt[] = [];

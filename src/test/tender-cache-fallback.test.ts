@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from "@/lib/tender-insights";
 import { TENDER_RISK_GROUPS } from "@/lib/tender-risk-checklist";
 import { runTenderJobStep } from "@/lib/tender-job.server";
+import { TenderAi } from "@/lib/tender-tool-call.server";
 
 const DOC = "00000000-0000-4000-8000-000000000001";
 const HASH = "a".repeat(64);
@@ -161,6 +162,13 @@ const overloadedMidStream = () =>
   ]);
 const refused = () =>
   sse([{ type: "message_delta", delta: { stop_reason: "refusal" } }, { type: "message_stop" }]);
+const refusedAfterText = () =>
+  sse([
+    { type: "content_block_start", index: 0, content_block: { type: "text" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Jag kan inte" } },
+    { type: "message_delta", delta: { stop_reason: "refusal" } },
+    { type: "message_stop" },
+  ]);
 const sent = <T>(body: Body): T => JSON.parse(body.messages[0]?.content[0]?.text ?? "null");
 const answers: Record<string, (body: Body) => Response> = {
   grupper: (body) => {
@@ -284,11 +292,47 @@ it("continuing after a failed step asks the merge model again", async () => {
   expect(savedRisks()).toHaveLength(2);
 });
 
-it("a refusal stops the step instead of becoming a fallback", async () => {
-  const fetch = gateway((tool) => (tool === "grupper" ? refused() : null));
+it.each([
+  ["with no output", refused],
+  ["after streamed text", refusedAfterText],
+])("a refusal %s stops the step instead of becoming a fallback", async (_, refusal) => {
+  const fetch = gateway((tool) => (tool === "grupper" ? refusal() : null));
   expect(await runStep()).toBe("error");
   expect(calls(fetch, "grupper")).toBe(1);
   expect(cachedSteps()).toEqual([]);
+});
+
+it.each([401, 402, 403, 404])(
+  "HTTP %i on the merge call stops the step without a retry or a fallback",
+  async (status) => {
+    const fetch = gateway((tool) => (tool === "grupper" ? new Response("{}", { status }) : null));
+    expect(await runStep()).toBe("error");
+    expect(calls(fetch, "grupper")).toBe(1);
+    expect(cachedSteps()).toEqual([]);
+  },
+);
+
+it("a failed model call marks the handle even when the caller catches the error", async () => {
+  const call = { system: "", content: [], tool: "grupper", description: "", schema: {}, label: "" };
+  gateway(() => toolAnswer("grupper", { groups: [] }));
+  const answered = new TenderAi("test-key", "test-model");
+  await answered.tool(call, "", (raw) => raw);
+  expect(answered.failed).toBe(false);
+  gateway(() => new Response("{}", { status: 400 }));
+  const caught = new TenderAi("test-key", "test-model");
+  expect(await caught.tool(call, "", (raw) => raw).catch(() => null)).toBeNull();
+  expect(caught.failed).toBe(true);
+});
+
+it("a fallback marks the handle even when the covered failure is not a model call", async () => {
+  const ai = new TenderAi("test-key", "test-model");
+  expect(
+    await ai.fallback(
+      () => Promise.reject(new Error("ogiltigt svar")),
+      () => "fallback",
+    ),
+  ).toBe("fallback");
+  expect(ai.failed).toBe(true);
 });
 
 it("429 on the second risk call: the first, unsourced answer is used but not cached", async () => {
@@ -342,6 +386,54 @@ it("429 on the operand repair: the unrepaired quantities are saved for the run b
   expect(await runStep()).toBe("done");
   expect(calls(fetch, "reparera_grundtal")).toBe(3);
   expect(saved("tender_quantities")).toBeTruthy();
+  expect(cachedSteps()).not.toContain("quantities");
+});
+
+it("429 on the repair after the supplement: the combined quantities are saved for the run but not cached", async () => {
+  state.job = jobFor("quantities");
+  const source = { document_id: DOC, page: 1, evidence: "Entreprenören utför håltagning." };
+  const primary = {
+    operands: [{ id: "n", label: "Lägenheter", value: "4", basis: "Text", source }],
+    items: [
+      {
+        post: "Ny gruppcentral per lägenhet",
+        unit: "st",
+        rule: "n",
+        terms: [{ factors: ["n"] }],
+        assumption: null,
+      },
+    ],
+    assumptions: [],
+  };
+  const supplement = {
+    operands: [{ id: "extra_n", label: "Lägenheter", value: "4", basis: "Text", source }],
+    items: [
+      {
+        post: "Huvudledning lägenhet",
+        unit: "st",
+        rule: "extra_n × extra_per_lgh",
+        terms: [{ factors: ["extra_n", "extra_per_lgh"] }],
+        assumption: null,
+      },
+    ],
+    assumptions: [],
+  };
+  const repairs: string[] = [];
+  const fetch = gateway((tool, body) => {
+    if (tool === "reparera_grundtal") {
+      repairs.push(body.messages[0]?.content[0]?.text ?? "");
+      return rateLimited();
+    }
+    if (tool !== "mangdregler") return null;
+    return toolAnswer(
+      "mangdregler",
+      body.system.includes("KOMPLETTERINGSKONTROLL") ? supplement : primary,
+    );
+  });
+  expect(await runStep()).toBe("done");
+  expect(calls(fetch, "reparera_grundtal")).toBe(3);
+  expect(repairs.every((text) => text.includes("extra_per_lgh"))).toBe(true);
+  expect(JSON.stringify(saved("tender_quantities"))).toContain("Huvudledning lägenhet");
   expect(cachedSteps()).not.toContain("quantities");
 });
 

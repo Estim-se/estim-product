@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { calculateTenderQuantities, type TenderQuantityRules } from '@/lib/tender-quantities';
 import { extractTenderQuantities } from '@/lib/tender-quantities-ai.server';
+import { TenderAi } from '@/lib/tender-tool-call.server';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const doc = { id, file_name: 'Teknik.pdf', file_type: 'pdf', page_count: 2, bytes: new Uint8Array([1]), doc_type: 'Teknisk beskrivning/Rambeskrivning', text: null };
@@ -75,13 +76,13 @@ describe('Tender quantity rules and arithmetic', () => {
     const wire = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
     const call = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({ start(c) { for (let i = 0; i < wire.length; i += 7) c.enqueue(new TextEncoder().encode(wire.slice(i,i+7))); c.close(); } })));
     vi.stubGlobal('fetch',call);
-    const result = (await extractTenderQuantities([{ ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Ritning', file_name: 'Ritning.pdf' }, doc, { ...doc, id: '00000000-0000-4000-8000-000000000003', file_type: 'xlsx', file_name: 'Objekt.xlsx', doc_type: 'Mängdförteckning', text: '18 lägenheter' }], 'test-key', 'anthropic/claude-sonnet-5')).value;
+    const result = await extractTenderQuantities([{ ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Ritning', file_name: 'Ritning.pdf' }, doc, { ...doc, id: '00000000-0000-4000-8000-000000000003', file_type: 'xlsx', file_name: 'Objekt.xlsx', doc_type: 'Mängdförteckning', text: '18 lägenheter' }], new TenderAi('test-key', 'anthropic/claude-sonnet-5'));
     expect(result.items[0]?.quantity).toBe('540'); expect(call).toHaveBeenCalledTimes(2);
     const body = JSON.parse(String(call.mock.calls[0]?.[1]?.body)); expect(body.messages[0].content[0].text).toContain('Objekt.xlsx'); expect(body.messages[0].content[2].text).toContain('Teknik.pdf'); expect(body.messages[0].content[4].text).toContain('Ritning.pdf');
   });
   it('retries incomplete streamed results twice and never retries a provider denial', async () => {
     const call = vi.fn(async () => new Response('data: {"type":"message_stop"}\n\n')); vi.stubGlobal('fetch',call);
-    await expect(extractTenderQuantities([doc],'test-key','test')).rejects.toThrow('fullständiga'); expect(call).toHaveBeenCalledTimes(3);
-    vi.stubGlobal('fetch',vi.fn(async () => new Response('private data',{status:403}))); await expect(extractTenderQuantities([doc],'test-key','test')).rejects.toThrow('fel 403');
+    await expect(extractTenderQuantities([doc],new TenderAi('test-key','test'))).rejects.toThrow('fullständiga'); expect(call).toHaveBeenCalledTimes(3);
+    vi.stubGlobal('fetch',vi.fn(async () => new Response('private data',{status:403}))); await expect(extractTenderQuantities([doc],new TenderAi('test-key','test'))).rejects.toThrow('fel 403');
   });
 });

@@ -18,6 +18,7 @@ import { validateTenderInsights, type TenderInsights } from '../src/lib/tender-i
 import { mergeTenderRisks, reconcileTenderIndexRisks } from '../src/lib/tender-risk-merging';
 import { extractRequirementQuantities } from '../src/lib/tender-requirements-ai.server';
 import { matchTenderCost } from '../src/lib/tender-calculation-ai.server';
+import { TenderAi } from '../src/lib/tender-tool-call.server';
 import { calculateTenderCost, emptyCalculationSettings, validateSettingsInput, type CalculationSettings } from '../src/lib/tender-calculation';
 import { withExamplePostTypes, sectionOfPost, TENDER_SECTIONS } from '../src/lib/tender-example-catalog';
 import { postMeaning } from '../src/lib/tender-post-matching';
@@ -32,6 +33,7 @@ process.env['LOVABLE_API_KEY'] = 'local-run';
 process.env['ANBUD_REQUIREMENTS_ENGINE'] = '1';
 const modelId = process.env['ANTHROPIC_MODEL_MAIN'] ?? 'claude-sonnet-5';
 const model = `anthropic/${modelId}`;
+const ai = new TenderAi('local-run', model);
 // USD per million tokens (input, output, cache write 5 min, cache read) for the models this script is used with.
 const PRICES: Record<string, [number, number, number, number]> = { 'claude-sonnet-5': [2, 10, 2.5, 0.2], 'claude-sonnet-5-5': [2, 10, 2.5, 0.1], 'claude-opus-5-5': [4, 20, 5, 0.2] };
 const price = PRICES[modelId] ?? [2, 10, 2.5, 0.2];
@@ -139,19 +141,19 @@ const inputs = (afFirst: boolean): TenderInsightInput[] => (afFirst ? [...docume
 const settings: CalculationSettings = settingsPath ? validateSettingsInput(JSON.parse(readFileSync(settingsPath, 'utf8'))) : withExamplePostTypes({ ...emptyCalculationSettings, hourly_rate: 650, material_markup: 15, list_discount: 30, establishment: 5, contingency: 5, example_values: true });
 const insightsWork = (async () => {
   const docs = inputs(true);
-  const key_data = (await extractTenderInsightStep('key_data', docs, 'local-run', model, {})).value as TenderInsights['key_data'];
-  const parts = await Promise.all(TENDER_RISK_GROUPS.map(async areas => (await extractTenderInsightStep('risks', docs, 'local-run', model, { key_data }, areas)).value as TenderInsights['risks']));
+  const key_data = await extractTenderInsightStep('key_data', docs, ai, {}) as TenderInsights['key_data'];
+  const parts = await Promise.all(TENDER_RISK_GROUPS.map(areas => extractTenderInsightStep('risks', docs, ai, { key_data }, areas) as Promise<TenderInsights['risks']>));
   let risks = mergeTenderRisks(validateTenderInsights({ key_data, risks: parts.flat(), questions: [] }, docs, true).risks);
-  risks = (await mergeTenderRiskGroups(risks, 'local-run', model)).value;
+  risks = await mergeTenderRiskGroups(risks, ai);
   risks = reconcileTenderIndexRisks(risks, key_data);
-  risks = await reviewTenderRiskFacts(risks, key_data, docs, 'local-run', model);
-  const questions = (await extractTenderInsightStep('questions', docs, 'local-run', model, { key_data, risks })).value as TenderInsights['questions'];
+  risks = await reviewTenderRiskFacts(risks, key_data, docs, ai);
+  const questions = await extractTenderInsightStep('questions', docs, ai, { key_data, risks }) as TenderInsights['questions'];
   return { key_data, risks, questions } as TenderInsights;
 })();
 const quantityWork = (async () => {
   const docs = inputs(false);
-  const quantities = (await extractRequirementQuantities(docs, 'local-run', model, settings.room_recipes ?? null, settings.post_types.map(t => ({ id: t.id, name: t.name, section: t.section })))).value;
-  const matches = await matchTenderCost(quantities, settings, docs, 'local-run', model);
+  const quantities = await extractRequirementQuantities(docs, ai, settings.room_recipes ?? null, settings.post_types.map(t => ({ id: t.id, name: t.name, section: t.section })));
+  const matches = await matchTenderCost(quantities, settings, docs, ai);
   return { quantities, matches };
 })();
 const [insights, { quantities, matches }] = await Promise.all([insightsWork, quantityWork]);

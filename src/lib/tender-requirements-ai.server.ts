@@ -1,5 +1,5 @@
 import type { TenderInsightInput } from './tender-insights-ai.server';
-import { streamTenderTool, tenderAnswer, tenderDocumentBlock, TenderIncompleteOutput } from './tender-tool-call.server';
+import { tenderDocumentBlock, TenderIncompleteOutput, type TenderAi } from './tender-tool-call.server';
 import { exampleRoomRecipes, roomRecipeSchema } from './tender-room-recipes';
 import { buildObjectModel } from './tender-object-model';
 import { typeCodesInText } from './tender-type-codes';
@@ -139,7 +139,7 @@ export function combineRequirementAnswers(answers: Requirements[]): Requirements
   return { requirements: answers.flatMap(a => a.requirements), counts: [...counts.values()].sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
-export async function extractRequirementQuantities(documents: TenderInsightInput[], key: string, model: string, rawRecipes: unknown = null, catalog: CatalogType[] = []) {
+export async function extractRequirementQuantities(documents: TenderInsightInput[], ai: TenderAi, rawRecipes: unknown = null, catalog: CatalogType[] = []) {
   if (!documents.length) throw new Error('Inga analyserbara dokument finns.');
   const recipes = rawRecipes ? roomRecipeSchema.parse(rawRecipes) : exampleRoomRecipes;
   const content: unknown[] = [{ type: 'text', text: catalogBlock(catalog) }];
@@ -149,7 +149,7 @@ export async function extractRequirementQuantities(documents: TenderInsightInput
   }
   const last = content.length - 1;
   content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
-  const call = (group: readonly number[]) => streamTenderTool({ key, model, system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: sectionInstruction(group) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade inga fullständiga krav', raw => {
+  const call = (group: readonly number[]) => ai.tool({ system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: sectionInstruction(group) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade inga fullständiga krav', raw => {
     return decodeRequirements(raw);
   });
   // The first call writes the document cache; the other two run together and read it.
@@ -170,11 +170,9 @@ export async function extractRequirementQuantities(documents: TenderInsightInput
   const thin = thinSectionGroups(documents, answers, groups, catalog);
   answers.push(...await Promise.all(thin.map(g => call(g))));
   const missing = missingDocumentedCategories(documents, combineRequirementAnswers(answers), catalog);
-  return tenderAnswer(async (fallback) => {
-    const followUp = !missing.length ? null : await fallback(() => streamTenderTool({ key, model, system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: followUpInstruction(missing, new Map(documents.map(d => [d.id, d.file_name])), catalog) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade ingen uppföljning', decodeRequirements),
+  const followUp = !missing.length ? null : await ai.fallback(() => ai.tool({ system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: followUpInstruction(missing, new Map(documents.map(d => [d.id, d.file_name])), catalog) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade ingen uppföljning', decodeRequirements),
       (): Requirements => ({ requirements: [], counts: [] }));
-    return quantitiesFromRequirementAnswers(documents, recipes, catalog, answers, followUp);
-  });
+  return quantitiesFromRequirementAnswers(documents, recipes, catalog, answers, followUp);
 }
 
 // Everything after the model's answers is deterministic code: the same answers, documents, catalog and recipes always
