@@ -92,14 +92,27 @@ Deno.serve(async (req) => {
       let grantId: string;
       try { grantId = await exchangeCode(code); } catch { return json({ error: "Kunde inte slutföra anslutningen. Försök igen." }, 502); }
       let grant: Awaited<ReturnType<typeof getGrant>>;
-      try { grant = await getGrant(grantId); } catch { await revokeConnection(grantId); return json({ error: "Det här kontot stöds inte." }, 400); }
+      // Nylas returns the SAME grant id when an already connected mailbox signs in again, so never revoke a grant
+      // that another company uses (it would cut off that company's mailbox).
+      const otherOwner = async () => {
+        const owner = await db.from("email_connections").select("company_id").eq("grant_id", grantId).limit(1).maybeSingle();
+        return Boolean(owner.error) || (Boolean(owner.data) && owner.data!.company_id !== companyId);
+      };
+      try { grant = await getGrant(grantId); } catch {
+        if (!(await otherOwner())) await revokeConnection(grantId);
+        return json({ error: "Det här kontot stöds inte." }, 400);
+      }
 
       const existing = await db.from("email_connections").select("grant_id").eq("company_id", companyId).maybeSingle();
       const saved = await db.from("email_connections").upsert({
         company_id: companyId, grant_id: grantId, email: grant.email, provider: grant.provider, status: "active",
         watch_address: grant.email, connected_by: userId,
       }, { onConflict: "company_id" });
-      if (saved.error) { await revokeConnection(grantId); return json({ error: "Kunde inte spara anslutningen. Kontot kan redan vara kopplat till ett annat företag." }, 409); }
+      if (saved.error) {
+        if (await otherOwner()) return json({ error: "Mejllådan är redan kopplad till ett annat företag." }, 409);
+        await revokeConnection(grantId);
+        return json({ error: "Kunde inte spara anslutningen. Kontot kan redan vara kopplat till ett annat företag." }, 409);
+      }
       if (existing.data && existing.data.grant_id !== grantId) await revokeConnection(existing.data.grant_id);
       await db.from("audit_log").insert({ company_id: companyId, user_id: userId, event: "E-post ansluten", after: { provider: grant.provider } });
       return json({ email: grant.email, provider: grant.provider });
