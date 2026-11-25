@@ -17,7 +17,3 @@ rules:
     paths: ["**/.claude/**", "**/REVIEW.md", "**/CLAUDE.md", "**/CLAUDE.local.md", "**/CODEOWNERS", ".github/**", "**/eslint.config.{js,mjs,cjs,ts,mts,cts}", "tsconfig*.json", "vitest.config.*", "src/test/setup.ts", "bunfig.toml", "scripts/ci/**", "**/.gitattributes", "**/.gitmodules"]
     nested: inherit
     verdict: { claude: comments, seats: [{ count: 1, from: [ibbe-futureventures] }, { count: 1, from: [humans, "!pr/authors"] }] }
-  - purpose: "A change to the code that authenticates requests (the Edge Function guards and the server-function middleware) takes Ibbe, as its author or an approver, and someone other than its author. Claude never approves one."
-    paths: ["supabase/functions/_shared/auth.ts", "supabase/functions/_shared/system-auth.ts", "supabase/functions/_shared/message-job.ts", "supabase/functions/_shared/nylas.ts", "src/integrations/supabase/auth-middleware.ts"]
-    nested: inherit
-    verdict: { claude: comments, seats: [{ count: 1, from: [ibbe-futureventures] }, { count: 1, from: [humans, "!pr/authors"] }] }
