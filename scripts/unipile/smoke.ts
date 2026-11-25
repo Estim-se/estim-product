@@ -89,9 +89,17 @@ switch (command) {
     show("Nycklar i mejlet", Object.keys(r.body as object));
     const m = unipile.parseEmail(r.body);
     show("Som appen tolkar det", { ...m, body: `${(m.body ?? "").slice(0, 300)}…`, headers: `${m.headers.length} rubriker` });
+    // The raw attachment objects: which fields exist (url, content, url_expires_at...), long values shortened.
+    const rawAttachments = ((r.body as { attachments?: unknown[] }).attachments ?? []) as Record<string, unknown>[];
+    show("Bilagor, råa fält", rawAttachments.map((a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, typeof v === "string" && v.length > 80 ? `${v.slice(0, 80)}… (${v.length} tecken)` : v]))));
     for (const a of m.attachments) {
       const d = await raw(`/${encodeURIComponent(id)}/emails/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(a.id)}`, { headers: { Accept: "*/*" } });
-      show(`Bilaga ${a.filename}: rått svar`, { status: d.status, contentType: d.contentType, body: typeof d.body === "string" ? d.body : Object.keys(d.body as object) });
+      show(`Bilaga ${a.filename}: rått svar`, { status: d.status, contentType: d.contentType, body: d.body });
+      const url = rawAttachments.find((x) => x.id === a.id)?.url;
+      if (typeof url === "string" && url) {
+        const viaUrl = await fetch(url, { headers: { "X-API-KEY": Deno.env.get("UNIPILE_API_KEY") ?? "" } });
+        show(`Bilaga ${a.filename}: via url-fältet`, { status: viaUrl.status, contentType: viaUrl.headers.get("content-type"), bytes: (await viaUrl.arrayBuffer()).byteLength, expected: a.size });
+      }
       try { show(`Bilaga ${a.filename}: appens nedladdning`, `${(await unipile.downloadAttachment(id, emailId, a.id)).length} bytes (förväntat ${a.size})`); }
       catch (e) { show(`Bilaga ${a.filename}: appens nedladdning misslyckades`, (e as Error).message); }
     }

@@ -91,6 +91,9 @@ Deno.test("email parsing maps v2 fields to the shared message shape", () => {
     { id: "at_2", filename: "bild.jpeg", content_type: "image/jpeg", size: 0, is_inline: true },
   ]);
   assertEquals(parseEmail({ id: "em_2", body: "", body_plain: "Bara text" }).body, "Bara text");
+  // real Gmail attachment ids are long tokens and must be kept whole
+  const longId = "ANGjdJ8" + "x".repeat(397);
+  assertEquals(parseEmail({ id: "em_4", attachments: [{ type: "file", id: longId, filename: "test.pdf", mimetype: "application/pdf", file_size: 13264 }] }).attachments[0]?.id, longId);
   assertThrows(() => parseEmail({ id: "" }), "invalid_id");
 });
 

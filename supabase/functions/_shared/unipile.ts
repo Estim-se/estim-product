@@ -155,7 +155,9 @@ export function parseEmail(data: unknown): MailMessage {
     ? data.attachments.slice(0, 50).filter(isObj).filter((a) => a.type === "file" || a.type === "img").map((a) => {
       const mime = str(a.mimetype, 100) ?? "";
       const fallback = `bild.${(mime.split("/")[1] ?? "bin").replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`;
-      return { id: str(a.id, 300) ?? "", filename: str(a.filename, 200) ?? fallback, content_type: mime, size: typeof a.file_size === "number" ? a.file_size : 0, is_inline: a.is_inline === true };
+      // Gmail attachment ids are long tokens (404 characters seen 2026-11-25): never cut them, a cut id is rejected.
+      const attachmentId = typeof a.id === "string" && a.id.length <= 4000 ? a.id : "";
+      return { id: attachmentId, filename: str(a.filename, 200) ?? fallback, content_type: mime, size: typeof a.file_size === "number" ? a.file_size : 0, is_inline: a.is_inline === true };
     }).filter((a) => a.id)
     : [];
   const html = str(data.body, 2_000_000), plain = str(data.body_plain, 2_000_000);
