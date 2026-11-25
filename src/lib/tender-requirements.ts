@@ -8,7 +8,7 @@ import { closestTenderPostType, GENERIC_MEANINGS, PACKAGE_MEANINGS, postMeaning,
 import { sectionOfPost } from './tender-example-catalog';
 import type { CalculationSettings } from './tender-calculation';
 import { verifyTenderSource } from './tender-source-verification';
-import { withoutNegatedTerms } from './tender-negation';
+import { BOUNDARY, END_WORD, withoutNegatedTerms } from './tender-negation';
 
 // Requirements engine (feature flag ANBUD_REQUIREMENTS_ENGINE). The model only reads the documents and lists
 // requirements: what is installed, per which unit (apartment, kitchen, bathroom, room type, premises, stairwell …) and
@@ -123,13 +123,13 @@ function localWorkNotPremises(r: Requirement) {
 
 // Options ("Option timer på handdukstork", "tillval") are their own rows, never priced as the main post.
 // Work of other trades (furniture, joinery, shelves, painting, flooring, tiling, plumbing fixtures) is no electrical
-// post: a requirement without catalog type that names such an object, while neither its quote nor (without a quote) its
-// name speaks of electrical work, never becomes a calculation row or a warning.
-const OTHER_TRADE = /hatthyll|skohyll|hyll(?:a|or|an)|klädstång|ankarkrok|krokar|möbl|möbel|garderob|snickeri|(?:golv|tak|dörr|fönster)?list(?:er|verk)?|målning|måla|tapet|spackl|kakel|klinker|plattsättning|golvbeläggning|plastmatta|parkett|innerdörr|dörrblad|fönster|bänkskiv|köksinredning|köksskåp|skåpsluck|tätskikt|vvs|blandare|duschvägg|toalettstol|badkar|diskbänk/;
-const ELECTRICAL_WORDS = /el|el-|uttag|kabel|ledning|belysning|armatur|lamp|strömställ|dimmer|central|matning|anslut|givare|detektor|brandvarn|ladd|tomrör|jordning|säkring|mätar|mätning|motor|golvvärme|värmekabel|handdukstork|spegelskåp|fläkt|spis|ugn|timer|automatik|porttelefon|data|tele|larm|ström|elektr|dosa|brytare/;
+// post: a requirement without catalog type that names such an object, while neither its name nor its quote speaks of
+// electrical work, never becomes a calculation row or a warning.
+const OTHER_TRADE = new RegExp(`hatthyll|skohyll|${BOUNDARY}hyll(?:a|or|an)${END_WORD}|klädstång|ankarkrok|${BOUNDARY}krokar${END_WORD}|${BOUNDARY}möbel|garderob|snickeri|${BOUNDARY}målning|${BOUNDARY}måla${END_WORD}|${BOUNDARY}tapet|spackl|klinker|plattsättning|golvbeläggning|plastmatta|${BOUNDARY}parkett|innerdörr|dörrblad|bänkskiv|köksinredning|köksskåp|skåpsluck|tätskikt|blandare|duschvägg|toalettstol|badkar|diskbänk`, 'u');
+const ELECTRICAL_WORDS = new RegExp(`${BOUNDARY}el(?!ler|ement|ev|va|ast|eg|it)|uttag|kabel|ledning|belysning|armatur|${BOUNDARY}lamp|strömställ|dimmer|central|matning|${BOUNDARY}anslut|givare|detektor|brandvarn|${BOUNDARY}ladd|tomrör|jordning|säkring|mätar|mätning|${BOUNDARY}motor|golvvärme|värmekabel|handdukstork|spegelskåp|fläkt|${BOUNDARY}spis|${BOUNDARY}ugn${END_WORD}|timer|automatik|porttelefon|${BOUNDARY}data|${BOUNDARY}tele|larm|${BOUNDARY}ström|elektr|${BOUNDARY}dosa|brytare`, 'u');
 export function otherTradeWork(r: Pick<Requirement, 'post' | 'source'>) {
   const name = r.post.toLocaleLowerCase('sv'), quote = r.source?.evidence.toLocaleLowerCase('sv') ?? '';
-  return OTHER_TRADE.test(`${name} ${quote}`) && !ELECTRICAL_WORDS.test(quote || name);
+  return OTHER_TRADE.test(`${name} ${quote}`) && !ELECTRICAL_WORDS.test(`${name} ${quote}`);
 }
 const CONTRACTOR_DUTY = /\bbas-?[pu]\b|byggarbetsmiljö|arbetsmiljösamordn|arbetsplatsorganisation|samordning av arbetarskydd/i;
 const APARTMENT_WORDS = /lägenhet|\blgh\b|bostad|\bkök|badrum|våtrum|\bwc\b|sovrum|vardagsrum|\bhall\b|samtliga rum|varje rum/i;
