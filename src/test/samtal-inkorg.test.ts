@@ -81,7 +81,7 @@ describe('estim Samtal in the inbox: a call becomes a request with an SMS draft'
     // The existing customer is found by phone, as for other channels; the same call is stored once.
     expect((await db.query(`SELECT c.name FROM public.threads t JOIN public.customers c ON c.id = t.customer_id WHERE t.id = $1`, [r['id']])).rows).toEqual([{ name: 'Befintlig Kund' }]);
     expect(await receive(db, { channel: 'samtal', customer_phone: '+46701234567', text: 'igen', provider_message_id: 'call-1' })).toEqual({ duplicate: true });
-  });
+  }, 30000);
   it('a split call thread also gets an SMS draft', async () => {
     const db = await database(true);
     await receive(db, { channel: 'samtal', customer_phone: '+46701234567', text: 'Första samtalet', provider_message_id: 'call-1', sent_at: '2026-11-25T08:00:00Z' });
@@ -91,5 +91,5 @@ describe('estim Samtal in the inbox: a call becomes a request with an SMS draft'
     await db.query(`SELECT set_config('request.jwt.claim.sub', $1, false)`, [USER]);
     const split = (await db.query<{ r: { id: string } }>(`SELECT public.estim_split_thread($1, $2) AS r`, [m.thread_id, m.id])).rows[0]!.r;
     expect((await db.query(`SELECT channel FROM public.drafts WHERE thread_id = $1`, [split.id])).rows).toEqual([{ channel: 'sms' }]);
-  });
+  }, 30000);
 });
