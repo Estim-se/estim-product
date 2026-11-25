@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildObjectModel } from '@/lib/tender-object-model';
-import { buildRequirementQuantities, decodeRequirements, stableRequirementId, type Requirement } from '@/lib/tender-requirements';
+import { buildRequirementQuantities, decodeRequirements, otherTradeWork, stableRequirementId, type Requirement } from '@/lib/tender-requirements';
 import { combineRequirementAnswers, REQUIREMENT_SECTION_GROUPS, thinSectionGroups } from '@/lib/tender-requirements-ai.server';
 import { exampleRoomRecipes } from '@/lib/tender-room-recipes';
 
@@ -220,14 +220,21 @@ describe('requirement identity and deduplication', () => {
     expect(status(q, 'Hatthylla med infästning hall')).toMatchObject({ status: 'Ej relevant' });
     expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Hatthylla med infästning hall, Skohylla och klädstång/.test(a.description))).toBe(true);
   });
-  it('whole words decide the trade: "hela" and "eller" are no electrical work, "el" and el-compounds are', () => {
+  it('whole words decide the trade: a stem inside a longer word does not count, and å, ä and ö are letters', () => {
     const q = build([req('Måla om hela väggen', 'lägenhet', 1, { section: 4, source: src('Entreprenören ska måla om hela väggen eller laga den efter ingrepp.') }),
-      req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') }),
-      req('Kanalisation i golvlist', 'lägenhet', 1, { section: 4, source: src('Kanalisation i golvlist i vardagsrum.') }),
-      req('Elanslutning av VVS-utrustning', 'fastighet', null, { fixed_quantity: 3, section: 7, source: src('Elanslutning av VVS-utrustning enligt VVS-handling.') })]);
+      req('Intyg från specialist', 'fastighet', null, { fixed_quantity: 1, section: 7, source: src('Intyg från behörig specialist lämnas.') })]);
     expect(status(q, 'Måla om hela väggen')).toMatchObject({ status: 'Ej relevant' });
-    expect(q.assumptions.some(a => /annan yrkesgrupps arbete\): Måla om hela väggen\./.test(a.description))).toBe(true);
-    expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toEqual(expect.arrayContaining(['El till garderob: 6', 'Kanalisation i golvlist: 6', 'Elanslutning av VVS-utrustning: 3']));
-    expect(['El till garderob', 'Kanalisation i golvlist', 'Elanslutning av VVS-utrustning'].map(p => status(q, p)?.status)).toEqual(['Saknar pris', 'Saknar pris', 'Saknar pris']);
+    expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toContain('Intyg från specialist: 1');
+    expect(otherTradeWork({ post: 'Pålist', source: null })).toBe(false);
+  });
+  it('el and every el-compound is electrical work; eller, element, elev, elva and elastisk are not', () => {
+    const q = build([req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') }),
+      req('Elåtgärder vid fönster', 'lägenhet', 1, { section: 4, source: src('Elåtgärder vid fönster i vardagsrum.') }),
+      req('Kanalisation i golvlist', 'lägenhet', 1, { section: 4, source: src('Kanalisation i golvlist i vardagsrum.') }),
+      req('Elanslutning av VVS-utrustning', 'fastighet', null, { fixed_quantity: 3, section: 7, source: src('Elanslutning av VVS-utrustning enligt VVS-handling.') }),
+      req('Målning av elevskåp', 'fastighet', null, { fixed_quantity: 2, section: 7, source: src('Elevskåp och element målas, elastisk fog vid elva fönster.') })]);
+    expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toEqual(expect.arrayContaining(['El till garderob: 6', 'Elåtgärder vid fönster: 6', 'Kanalisation i golvlist: 6', 'Elanslutning av VVS-utrustning: 3']));
+    expect(['El till garderob', 'Elåtgärder vid fönster', 'Kanalisation i golvlist', 'Elanslutning av VVS-utrustning'].map(p => status(q, p)?.status)).toEqual(['Saknar pris', 'Saknar pris', 'Saknar pris', 'Saknar pris']);
+    expect(status(q, 'Målning av elevskåp')).toMatchObject({ status: 'Ej relevant' });
   });
 });
