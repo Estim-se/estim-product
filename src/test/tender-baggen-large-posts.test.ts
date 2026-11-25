@@ -73,6 +73,6 @@ it('fills an omitted main-line post from a focused coverage call without droppin
  const extra={operands:[count],items:[{post:'Huvudledning lägenhet',unit:'st',rule:'Nya ledningar till alla lägenheter',terms:[{factors:['n']}],assumption:null}],assumptions:[]};
  const stream=(raw:unknown)=>[{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'mangdregler'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join('');
  const fetchMock=vi.fn().mockResolvedValueOnce(new Response(stream(primary))).mockResolvedValueOnce(new Response(stream(extra)));vi.stubGlobal('fetch',fetchMock);
- const result=await extractTenderQuantities([{id:excelId,file_name:'Objekt.xlsx',file_type:'xlsx',page_count:null,text:'Blad: Lista\nC2: Lägenhet\nC3: Lägenhet',bytes:new Uint8Array(),doc_type:'Mängdförteckning'}],'test','test');
+ const result=(await extractTenderQuantities([{id:excelId,file_name:'Objekt.xlsx',file_type:'xlsx',page_count:null,text:'Blad: Lista\nC2: Lägenhet\nC3: Lägenhet',bytes:new Uint8Array(),doc_type:'Mängdförteckning'}],'test','test')).value;
  expect(result.items.find(i=>i.post==='Huvudledning lägenhet')?.quantity).toBe('2');expect(result.items.find(i=>i.post==='Gruppcentral per lägenhet')?.quantity).toBe('2');expect(fetchMock).toHaveBeenCalledTimes(2);
 });

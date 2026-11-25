@@ -35,7 +35,7 @@ function gateway(json: string, stop = 'tool_use') {
   return fetch;
 }
 const run = async () => {
-  const result = await extractTenderInsightStep('risks', [af], 'test-key', 'test-model', { key_data }, areas);
+  const result = (await extractTenderInsightStep('risks', [af], 'test-key', 'test-model', { key_data }, areas)).value;
   return result.map(risk => {
     if (!('title' in risk)) throw Error('Expected a risk result');
     return risk;

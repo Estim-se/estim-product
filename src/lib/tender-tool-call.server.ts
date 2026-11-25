@@ -8,9 +8,38 @@ export type TenderRejectedAttempt = { attempt: number; reason: string; stop_reas
 export class TenderRejectedOutput extends Error {
   constructor(message: string, readonly attempts: TenderRejectedAttempt[]) { super(message); }
 }
+export class TenderRefusal extends TenderRejectedOutput {}
 type Capture = { raw: string; stop: string };
 export class TenderGatewayError extends Error {
   constructor(message: string, readonly status: number, readonly waitMs = 0) { super(message); }
+}
+const TRANSIENT_STREAM_ERRORS = new Map<unknown, number>(
+  Object.entries({ rate_limit_error: 429, api_error: 500, overloaded_error: 529 }),
+);
+const streamFailure = (type: unknown, message: string) => {
+  const status = TRANSIENT_STREAM_ERRORS.get(type);
+  return status ? new TenderGatewayError(message, status) : new Error(message);
+};
+export type TenderAnswer<T> = { value: T; fallback: string | null };
+export type TenderFallback = <T>(call: () => Promise<T>, otherwise: () => T) => Promise<T>;
+const stopsAnalysis = (e: unknown) =>
+  e instanceof TenderRefusal ||
+  (e instanceof TenderGatewayError && [401, 402, 403, 404].includes(e.status));
+// The only way to fall back: work gets the fallback function, and the answer names the first failure it covered.
+export async function tenderAnswer<T>(
+  work: (fallback: TenderFallback) => Promise<T>,
+): Promise<TenderAnswer<T>> {
+  let fallback: string | null = null;
+  const value = await work(async (call, otherwise) => {
+    try {
+      return await call();
+    } catch (e) {
+      if (stopsAnalysis(e)) throw e;
+      fallback ??= e instanceof Error ? e.message : String(e);
+      return otherwise();
+    }
+  });
+  return { value, fallback };
 }
 
 export function tenderDocumentBlock(bytes: Uint8Array) {
@@ -51,7 +80,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
         const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
         const raw = frame.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n'); if (!raw) continue;
         const event = JSON.parse(raw);
-        if (event.type === 'error') throw new Error('AI-analysen avbröts av leverantören.');
+        if (event.type === 'error') throw streamFailure(event.error?.type, 'AI-analysen avbröts av leverantören.');
         if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') blocks.set(event.index, event.content_block.name);
         if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta' && blocks.get(event.index) === c.tool) output.set(event.index, (output.get(event.index) ?? '') + event.delta.partial_json);
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') prose += event.delta.text ?? '';
@@ -66,7 +95,7 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
     capture.raw = prose ? `${tool}${tool ? '\n' : ''}[text]\n${prose}` : tool;
     capture.stop = stop;
   }
-  if (stop === 'refusal') throw new Error('AI:n avböjde att analysera anbudet.');
+  if (stop === 'refusal') throw new TenderRefusal('AI:n avböjde att analysera anbudet.', []);
   const json = [...output.values()];
   if (stop === 'max_tokens') throw new TenderIncompleteOutput('svaret klipptes vid maxgränsen för svarslängd');
   if (!finished) throw new TenderIncompleteOutput('svaret avbröts innan det var klart');
@@ -108,7 +137,8 @@ export async function streamTenderTool<T>(c: ToolCall, incomplete: string, valid
         // Terminal rejections of a received answer keep the raw output too; other failures pass through unchanged.
         if (!capture.raw || !(e instanceof Error)) throw e;
         reason = e.message; keep();
-        throw new TenderRejectedOutput(e.message, rejected);
+        const Rejected = e instanceof TenderRefusal ? TenderRefusal : TenderRejectedOutput;
+        throw new Rejected(e.message, rejected);
       }
       if (i < 2) await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** i));
     }

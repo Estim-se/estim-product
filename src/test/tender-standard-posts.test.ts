@@ -42,7 +42,7 @@ const posts = (q: TenderQuantities) => Object.fromEntries([...q.items, ...q.assu
 describe('standard posts are built by code regardless of the model answer', () => {
   it('end to end through the quantity step with a model answer missing the standard posts', async () => {
     vi.mocked(streamTenderTool).mockImplementation(async (_config, _message, validate) => validate(_config.tool === 'mangdregler' && vi.mocked(streamTenderTool).mock.calls.length === 1 ? structuredClone(modelAnswer) : { operands: [], items: [], assumptions: [] }) as never);
-    const q = await extractTenderQuantities(documents, 'test', 'test');
+    const q = (await extractTenderQuantities(documents, 'test', 'test')).value;
     const p = posts(q);
     // Bedrooms + half rooms: 142 × 3 + 27 × 3 = 507 sockets, 142 + 27 = 169 lamp outlets.
     expect(Number(p['Dubbla vägguttag sovrum enligt typrecept']?.quantity) + Number(p['Dubbla vägguttag halvrum enligt typrecept']?.quantity)).toBe(507);

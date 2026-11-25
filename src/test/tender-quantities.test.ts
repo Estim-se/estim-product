@@ -75,7 +75,7 @@ describe('Tender quantity rules and arithmetic', () => {
     const wire = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
     const call = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({ start(c) { for (let i = 0; i < wire.length; i += 7) c.enqueue(new TextEncoder().encode(wire.slice(i,i+7))); c.close(); } })));
     vi.stubGlobal('fetch',call);
-    const result = await extractTenderQuantities([{ ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Ritning', file_name: 'Ritning.pdf' }, doc, { ...doc, id: '00000000-0000-4000-8000-000000000003', file_type: 'xlsx', file_name: 'Objekt.xlsx', doc_type: 'Mängdförteckning', text: '18 lägenheter' }], 'test-key', 'anthropic/claude-sonnet-5');
+    const result = (await extractTenderQuantities([{ ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Ritning', file_name: 'Ritning.pdf' }, doc, { ...doc, id: '00000000-0000-4000-8000-000000000003', file_type: 'xlsx', file_name: 'Objekt.xlsx', doc_type: 'Mängdförteckning', text: '18 lägenheter' }], 'test-key', 'anthropic/claude-sonnet-5')).value;
     expect(result.items[0]?.quantity).toBe('540'); expect(call).toHaveBeenCalledTimes(2);
     const body = JSON.parse(String(call.mock.calls[0]?.[1]?.body)); expect(body.messages[0].content[0].text).toContain('Objekt.xlsx'); expect(body.messages[0].content[2].text).toContain('Teknik.pdf'); expect(body.messages[0].content[4].text).toContain('Ritning.pdf');
   });

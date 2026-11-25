@@ -19,7 +19,7 @@ it('saves unlinked Risk rows as flagged warnings instead of failing the risk cal
  const areas=TENDER_RISK_GROUPS[1];if(!areas)throw Error('Missing financial group');
  const raw={risks:[],risk_checklist:areas.map(area=>({area,assessment:'Risk',af_code:'AFC.999'}))};
  vi.stubGlobal('fetch',vi.fn(async()=>new Response([{type:'content_block_start',index:0,content_block:{type:'tool_use',name:'risker'}},{type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(raw)}},{type:'message_delta',delta:{stop_reason:'tool_use'}},{type:'message_stop'}].map(e=>`data: ${JSON.stringify(e)}\n\n`).join(''))));
- const result=await extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFC.46 Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas);
+ const result=(await extractTenderInsightStep('risks',[{...doc,doc_type:'AF',text:'AFC.46 Garantitid 10 år',bytes:new Uint8Array()}],'test','test',{key_data:TENDER_KEY_FIELDS.map(field=>({field,value:NOT_SPECIFIED,source:null}))},areas)).value;
  const risks=result.map(risk=>{if(!('title' in risk))throw Error('Expected a risk result');return risk;});
  expect(risks.map(r=>r.title).sort()).toEqual([...areas].sort());expect(risks.every(r=>r.source.flag==='Källa saknas – kontrollera')).toBe(true);
 });

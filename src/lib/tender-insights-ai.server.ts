@@ -1,6 +1,6 @@
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS, tenderInsightsWireSchema, validateTenderInsights, type InsightDocument, type TenderInsights } from './tender-insights';
 import { TENDER_RISK_AREAS, tenderRiskChecklistPrompt, tenderRiskReviewWireSchema, tenderRiskReviewWireSchemaFor, tenderChecklistRows, validateTenderRiskReview, tenderRiskReviewProblem, tenderAfRetryText, type TenderRiskArea } from './tender-risk-checklist';
-import { streamTenderTool, tenderDocumentBlock, TenderGatewayError, TenderIncompleteOutput } from './tender-tool-call.server';
+import { streamTenderTool, tenderAnswer, tenderDocumentBlock, TenderIncompleteOutput } from './tender-tool-call.server';
 import { z } from 'zod';
 import { ensureRiskQuestions, ensureTenderDateQuestion, retainTenderQuestions, mergeTenderRisks, needsRiskQuestion } from './tender-risk-merging';
 
@@ -55,22 +55,24 @@ export async function extractTenderInsightStep(step: TenderInsightStep, document
     return text ? [{ type: 'text', text: `Dokument-id: ${d.id}. Endast AFC/AFD-avsnitt från AF:\n${text}` }] : [];
   }) : [];
   const run = () => streamTenderTool({ key, model, system: `${step === 'risks' ? RISK_BASE : BASE}\n${s.prompt}`, content: [...content, ...tail], ...(retryContent.length ? { retryContent: [...retryContent, { type: 'text', text: tenderRiskChecklistPrompt(areas) }] } : {}), tool: s.tool, description: s.description, schema: step === 'risks' ? tenderRiskReviewWireSchemaFor(areas) : s.schema, label: s.label }, `AI:n returnerade ingen fullständig anbudsanalys för ${s.label.toLowerCase()}`, validate);
-  if (step !== 'risks') return run();
-  // A risk answer that assesses areas as risks but gives only unsourced placeholders (an empty risk list) is asked once
-  // more; the answer with the most source-backed risks is kept, so documented values are not lost to a short answer.
-  const sourced = (r: Awaited<ReturnType<typeof run>>) => r.filter(x => 'source' in x && x.source && !('flag' in x.source && x.source.flag)).length;
-  const first = await run();
-  if (sourced(first) || !first.length) return first;
-  const second = await run().catch(() => first);
-  return sourced(second) > sourced(first) ? second : first;
+  return tenderAnswer(async (fallback) => {
+    if (step !== 'risks') return run();
+    // A risk answer that assesses areas as risks but gives only unsourced placeholders (an empty risk list) is asked once
+    // more; the answer with the most source-backed risks is kept, so documented values are not lost to a short answer.
+    const sourced = (r: Awaited<ReturnType<typeof run>>) => r.filter(x => 'source' in x && x.source && !('flag' in x.source && x.source.flag)).length;
+    const first = await run();
+    if (sourced(first) || !first.length) return first;
+    const second = await fallback(run, () => first);
+    return sourced(second) > sourced(first) ? second : first;
+  });
 }
 
-export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){
+export async function mergeTenderRiskGroups(risks:TenderInsights['risks'],key:string,model:string){return tenderAnswer(async (fallback)=>{
  if(risks.length<2)return risks;
  const schema={type:'object',additionalProperties:false,properties:{groups:{type:'array',items:{type:'array',items:{type:'integer'}}}},required:['groups']};
- const groups=await streamTenderTool({key,model,system:'Gruppera risker som beskriver SAMMA konkreta problem i anbudsunderlaget, även med olika rubriker/källor. Returnera indexgrupper. Olika riskområden ska inte slås ihop bara för att de har samma källa. Varje index måste finnas exakt en gång. Inga nya risktexter, fakta eller källor. Saknade befintliga elhandlingar, samma felaktiga VS-ritning och samma föreskrivna flyttfirma är exempel på möjliga dubbletter.',content:[{type:'text',text:JSON.stringify(risks.map((r,index)=>({...r,index})))}],tool:'grupper',description:'Grupper av samma risk utan ändring av underlaget.',schema,label:'Sammanslagning av risker'},'Ofullständig risksammanslagning',raw=>{
+ const groups=await fallback(()=>streamTenderTool({key,model,system:'Gruppera risker som beskriver SAMMA konkreta problem i anbudsunderlaget, även med olika rubriker/källor. Returnera indexgrupper. Olika riskområden ska inte slås ihop bara för att de har samma källa. Varje index måste finnas exakt en gång. Inga nya risktexter, fakta eller källor. Saknade befintliga elhandlingar, samma felaktiga VS-ritning och samma föreskrivna flyttfirma är exempel på möjliga dubbletter.',content:[{type:'text',text:JSON.stringify(risks.map((r,index)=>({...r,index})))}],tool:'grupper',description:'Grupper av samma risk utan ändring av underlaget.',schema,label:'Sammanslagning av risker'},'Ofullständig risksammanslagning',raw=>{
   const out=z.object({groups:z.array(z.array(z.number().int().min(0).max(risks.length-1)).min(1)).max(60)}).strict().parse(raw);const indices=out.groups.flat();if(indices.length!==risks.length||new Set(indices).size!==risks.length)throw Error('Alla risker måste bevaras.');return out.groups;
- }).catch(e => { if (e instanceof TenderGatewayError && [401,402,403,404].includes(e.status)) throw e; return risks.map((_, index) => [index]); });return mergeTenderRisks(risks,groups);
+ }),()=>risks.map((_, index) => [index]));return mergeTenderRisks(risks,groups);});
 }
 
 export async function reviewTenderRiskFacts(risks:TenderInsights['risks'],keyData:TenderInsights['key_data'],documents:TenderInsightInput[],key:string,model:string){

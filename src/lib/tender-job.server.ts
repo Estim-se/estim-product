@@ -64,7 +64,7 @@ async function loadInputs(db: Db, job: Job, afFirst: boolean) {
   }
   return inputs;
 }
-async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, work: () => Promise<T>): Promise<T> {
+async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, work: () => Promise<import('./tender-tool-call.server').TenderAnswer<T>>): Promise<T> {
   const docs = await db.from('tender_documents').select('id,content_hash,doc_type').eq('tender_id', job.tender_id).eq('company_id', job.company_id).order('id');
   if (docs.error) throw Error('Kontrollsummorna kunde inte läsas.');
   const { tenderHash } = await import('./tender-source-parts');
@@ -74,10 +74,11 @@ async function cachedStep<T>(db: Db, job: Job, step: string, context: unknown, w
   const prior = await db.from('tender_result_cache').select('result').eq('company_id', job.company_id).eq('fingerprint', fingerprint).eq('step', step).maybeSingle();
   if (prior.error) throw Error('Sparade analysregler kunde inte läsas.');
   if (prior.data) return fromCacheForm(prior.data.result as T, docs.data);
-  const result = await work();
-  const saved = await db.from('tender_result_cache').upsert({ company_id: job.company_id, fingerprint, step, result: toCacheForm(result, docs.data) as never }, { onConflict: 'company_id,fingerprint,step' });
+  const { value, fallback } = await work();
+  if (fallback !== null) return value;
+  const saved = await db.from('tender_result_cache').upsert({ company_id: job.company_id, fingerprint, step, result: toCacheForm(value, docs.data) as never }, { onConflict: 'company_id,fingerprint,step' });
   if (saved.error) throw Error('Analysreglerna kunde inte sparas.');
-  return result;
+  return value;
 }
 
 async function insightRow(db: Db, job: Job) {
@@ -155,7 +156,7 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
     const allDone = riskSteps.every(k => k === step || job.steps[k] === 'done');
     const { mergeTenderRisks, reconcileTenderIndexRisks } = await import('./tender-risk-merging');
     sorted=mergeTenderRisks(sorted);
-    if(allDone){const {mergeTenderRiskGroups,reviewTenderRiskFacts}=await import('./tender-insights-ai.server');sorted=await cachedStep(db,job,'risk_merge',sorted,()=>mergeTenderRiskGroups(sorted,key,model));sorted=reconcileTenderIndexRisks(sorted,current.result.key_data??[]);sorted=await cachedStep(db,job,'risk_facts',{risks:sorted,key_data:current.result.key_data},()=>reviewTenderRiskFacts(sorted,current.result.key_data??[],inputs,key,model));}
+    if(allDone){const {mergeTenderRiskGroups,reviewTenderRiskFacts}=await import('./tender-insights-ai.server');const {tenderAnswer}=await import('./tender-tool-call.server');sorted=await cachedStep(db,job,'risk_merge',sorted,()=>mergeTenderRiskGroups(sorted,key,model));sorted=reconcileTenderIndexRisks(sorted,current.result.key_data??[]);sorted=await cachedStep(db,job,'risk_facts',{risks:sorted,key_data:current.result.key_data},()=>tenderAnswer(()=>reviewTenderRiskFacts(sorted,current.result.key_data??[],inputs,key,model)));}
     await saveInsights(db, job, { ...current.result, risks: sorted }, { ...current.steps, risks: allDone ? 'done' : 'running' }, 'analyzing');
     return { [step]: value };
   }
@@ -175,13 +176,13 @@ async function runStep(db: Db, job: Job, step: string): Promise<Record<string, u
   if (step === 'calculation') {
     const { emptyCalculationSettings, validateSettingsInput } = await import('./tender-calculation');
     const { tenderQuantitiesSchema } = await import('./tender-quantities');
-    const { matchTenderCost } = await import('./tender-calculation-ai.server');
+    const { matchTenderCost } = await import('./tender-calculation-ai.server'); const { tenderAnswer } = await import('./tender-tool-call.server');
     const q = await db.from('tender_quantities').select('result').eq('tender_id', job.tender_id).eq('analysis_run', job.analysis_run).eq('status', 'analysed').single();
     if (q.error || !q.data) throw new Error('Mängderna saknas.');
     const s = await db.from('tender_calculation_settings').select('hourly_rate,material_markup,list_discount,establishment,contingency,post_types,example_values,room_recipes').eq('company_id', job.company_id).maybeSingle();
     if (s.error) throw new Error('Kalkylinställningarna kunde inte hämtas.');
     const inputs = await loadInputs(db, job, false);
-    const result = await cachedStep(db, job, step, { quantities: q.data.result, settings: s.data }, () => matchTenderCost(tenderQuantitiesSchema.parse(q.data.result), s.data ? validateSettingsInput(s.data) : emptyCalculationSettings, inputs, key, model));
+    const result = await cachedStep(db, job, step, { quantities: q.data.result, settings: s.data }, () => tenderAnswer(() => matchTenderCost(tenderQuantitiesSchema.parse(q.data.result), s.data ? validateSettingsInput(s.data) : emptyCalculationSettings, inputs, key, model)));
     if (result.demolition?.flag) {
       // Flagged posts are also listed under Antaganden so they are checked before the bid is sent.
       const quantities = tenderQuantitiesSchema.parse(q.data.result);

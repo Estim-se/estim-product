@@ -1,5 +1,5 @@
 import type { TenderInsightInput } from './tender-insights-ai.server';
-import { streamTenderTool, tenderDocumentBlock, TenderIncompleteOutput } from './tender-tool-call.server';
+import { streamTenderTool, tenderAnswer, tenderDocumentBlock, TenderIncompleteOutput } from './tender-tool-call.server';
 import { exampleRoomRecipes, roomRecipeSchema } from './tender-room-recipes';
 import { buildObjectModel } from './tender-object-model';
 import { typeCodesInText } from './tender-type-codes';
@@ -170,9 +170,11 @@ export async function extractRequirementQuantities(documents: TenderInsightInput
   const thin = thinSectionGroups(documents, answers, groups, catalog);
   answers.push(...await Promise.all(thin.map(g => call(g))));
   const missing = missingDocumentedCategories(documents, combineRequirementAnswers(answers), catalog);
-  const followUp = !missing.length ? null : await streamTenderTool({ key, model, system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: followUpInstruction(missing, new Map(documents.map(d => [d.id, d.file_name])), catalog) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade ingen uppföljning', decodeRequirements)
-      .catch(() => ({ requirements: [], counts: [] }) as Requirements);
-  return quantitiesFromRequirementAnswers(documents, recipes, catalog, answers, followUp);
+  return tenderAnswer(async (fallback) => {
+    const followUp = !missing.length ? null : await fallback(() => streamTenderTool({ key, model, system: TENDER_REQUIREMENTS_PROMPT, content: [...content, { type: 'text', text: followUpInstruction(missing, new Map(documents.map(d => [d.id, d.file_name])), catalog) }], tool: 'krav', description: 'Krav per enhet med källa; koden räknar enheterna.', schema: requirementsWireSchema, label: 'Kravanalysen', httpError: status => `Kravanalysen misslyckades (fel ${status}).` }, 'AI:n returnerade ingen uppföljning', decodeRequirements),
+      (): Requirements => ({ requirements: [], counts: [] }));
+    return quantitiesFromRequirementAnswers(documents, recipes, catalog, answers, followUp);
+  });
 }
 
 // Everything after the model's answers is deterministic code: the same answers, documents, catalog and recipes always

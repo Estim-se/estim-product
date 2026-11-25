@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { TENDER_KEY_FIELDS, NOT_SPECIFIED } from '@/lib/tender-insights';
 import { TENDER_RISK_GROUPS } from '@/lib/tender-risk-checklist';
 const call=vi.hoisted(()=>vi.fn(async(_config:unknown)=>[]));
-vi.mock('@/lib/tender-tool-call.server',()=>({streamTenderTool:call,tenderDocumentBlock:vi.fn()}));
+vi.mock('@/lib/tender-tool-call.server',async original=>({...await original<typeof import('@/lib/tender-tool-call.server')>(),streamTenderTool:call,tenderDocumentBlock:vi.fn()}));
 import { extractTenderInsightStep } from '@/lib/tender-insights-ai.server';
 it.each([0,1,2])('limits risk call %i to exactly its assigned checklist areas',async index=>{
  const areas=TENDER_RISK_GROUPS[index];if(!areas)throw Error('Missing group');

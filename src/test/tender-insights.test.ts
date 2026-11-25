@@ -70,10 +70,10 @@ describe('Tender-wide extraction rules', () => {
     });
     vi.stubGlobal('fetch', call);
     const docs = [doc, { ...doc, id: '00000000-0000-4000-8000-000000000002', doc_type: 'Övrigt', text: 'Kontext' }];
-    const key_data = await extractTenderInsightStep('key_data', docs, 'test-key', 'anthropic/claude-sonnet-5') as ReturnType<typeof empty>['key_data'];
+    const key_data = (await extractTenderInsightStep('key_data', docs, 'test-key', 'anthropic/claude-sonnet-5')).value as ReturnType<typeof empty>['key_data'];
     expect(key_data).toHaveLength(17);
-    expect(await extractTenderInsightStep('risks', [{...doc,text:'Fysisk sida: 2\nAFC.45 Vite gäller.'}, ...docs.slice(1)], 'test-key', 'anthropic/claude-sonnet-5', { key_data })).toEqual([]);
-    expect(await extractTenderInsightStep('questions', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data, risks: [] })).toEqual([]);
+    expect((await extractTenderInsightStep('risks', [{...doc,text:'Fysisk sida: 2\nAFC.45 Vite gäller.'}, ...docs.slice(1)], 'test-key', 'anthropic/claude-sonnet-5', { key_data })).value).toEqual([]);
+    expect((await extractTenderInsightStep('questions', docs, 'test-key', 'anthropic/claude-sonnet-5', { key_data, risks: [] })).value).toEqual([]);
     expect(call).toHaveBeenCalledTimes(3);
     const body = JSON.parse(call.mock.calls[0]?.[1]?.body as string);
     expect(body.stream).toBe(true); expect(body.max_tokens).toBe(64000);

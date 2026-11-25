@@ -31,9 +31,9 @@ export const analyzeTenderQuantities = createServerFn({ method: 'POST' }).middle
     const settings=await db.from('tender_calculation_settings').select('room_recipes,post_types').maybeSingle();if(settings.error)throw Error('Typrecepten kunde inte hämtas.');
     const modelId = configured.startsWith('anthropic/') ? configured : `anthropic/${configured}`;
     // Same feature flag as the job pipeline: the requirements engine when ANBUD_REQUIREMENTS_ENGINE=1.
-    result = process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1'
+    result = (process.env['ANBUD_REQUIREMENTS_ENGINE'] === '1'
       ? await (await import('./tender-requirements-ai.server')).extractRequirementQuantities(inputs, key, modelId, settings.data?.room_recipes ?? null, Array.isArray(settings.data?.post_types) ? (settings.data.post_types as { id: string; name: string; section?: number }[]).map(t => ({ id: t.id, name: t.name, section: t.section })) : [])
-      : await extractTenderQuantities(inputs, key, modelId, settings.data?.room_recipes ?? null);
+      : await extractTenderQuantities(inputs, key, modelId, settings.data?.room_recipes ?? null)).value;
   } catch (e) { error = e instanceof Error ? e.message.slice(0, 500) : 'Mängdanalysen misslyckades.'; }
   const saved = await db.rpc('estim_finish_tender_quantities', { tid: data.id, rid: data.run, p_result: result, p_error: error ?? '' });
   if (saved.error) throw new Error('Mängderna kunde inte sparas. Underlaget kan ha ändrats.');

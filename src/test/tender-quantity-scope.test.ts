@@ -29,14 +29,14 @@ it('audits cellar lights even when existing items cover every broad electrical a
  const primary={rules:{operands:[],items:[],assumptions:[]},items:TENDER_ELECTRICAL_SCOPE.map(([,name])=>({post:name,unit:'st' as const,quantity:'1',calculation:'1',rule:'Krav',certainty:'Hög' as const,sources:[]})),assumptions:[]};
  const empty={rules:{operands:[],items:[],assumptions:[]},items:[],assumptions:[]};
  vi.mocked(streamTenderTool).mockResolvedValueOnce(primary).mockResolvedValueOnce(empty);
- const result=await extractTenderQuantities([{id:'00000000-0000-4000-8000-000000000001',file_name:'El.pdf',file_type:'pdf',page_count:1,doc_type:'Teknisk beskrivning/Rambeskrivning',text:'12 st nya LED-armaturer i källaren.',bytes:new Uint8Array()}],'test','test');
+ const result=(await extractTenderQuantities([{id:'00000000-0000-4000-8000-000000000001',file_name:'El.pdf',file_type:'pdf',page_count:1,doc_type:'Teknisk beskrivning/Rambeskrivning',text:'12 st nya LED-armaturer i källaren.',bytes:new Uint8Array()}],'test','test')).value;
  expect(streamTenderTool).toHaveBeenCalledTimes(2);expect(result.items).toHaveLength(18);
 });
 it('includes exactly twelve source-backed cellar lights from the completion pass',async()=>{
  const doc={id:'00000000-0000-4000-8000-000000000001',file_name:'El.pdf',file_type:'pdf',page_count:1,doc_type:'Teknisk beskrivning/Rambeskrivning',text:'12 st nya LED-armaturer i källaren.',bytes:new Uint8Array()};
  const supplement=calculateTenderQuantities({operands:[{id:'extra_cellar',label:'Källararmaturer',value:'12',basis:'Text',source:{document_id:doc.id,page:1,evidence:doc.text}}],items:[{post:'LED-armaturer källare',unit:'st',rule:'Angivet fast antal',terms:[{factors:['extra_cellar']}],assumption:null}],assumptions:[]},[doc],undefined,true);
  vi.mocked(streamTenderTool).mockResolvedValueOnce({rules:{operands:[],items:[],assumptions:[]},items:[],assumptions:[]}).mockResolvedValueOnce(supplement);
- const out=await extractTenderQuantities([doc],'test','test');
+ const out=(await extractTenderQuantities([doc],'test','test')).value;
  expect(out.items.find(i=>i.post==='LED-armaturer källare')?.quantity).toBe('12');
  expect(out.items[0]?.certainty).toBe('Hög');
 });
