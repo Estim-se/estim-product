@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Finding, git, isMain, lineOf, report, resolveBase, warning } from './lib.ts';
+import { type Finding, childEnv, git, isMain, lineOf, report, resolveBase, warning } from './lib.ts';
 
 export type Advisory = { pkg: string; id: number | null; url: string; title: string; severity: string; vulnerable_versions: string };
 const BLOCKING = new Set(['high', 'critical']);
@@ -52,8 +52,10 @@ export function compareAudits(head: Advisory[], base: Advisory[] | null): { bloc
  * Runs bun audit in a directory. Exit 0 means no advisories ({}), exit 1 means advisories were found (a non-empty
  * object). Anything else (another exit code, an "error:" line, output that is not that object) throws.
  */
-export function runAudit(dir: string): Advisory[] {
-  const result = spawnSync('bun', ['audit', '--json'], { cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+export function runAudit(dir: string, env: Record<string, string> = childEnv()): Advisory[] {
+  // --no-env-file and childEnv(): no .env file and no inherited variable (BUN_CONFIG_REGISTRY, NPM_CONFIG_*) can
+  // send the audit to another registry.
+  const result = spawnSync('bun', ['--no-env-file', 'audit', '--json'], { cwd: dir, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (result.error) throw new Error(`bun audit could not run in ${dir}: ${result.error.message}`);
   return checkAuditRun(dir, result.status, result.stdout ?? '', result.stderr ?? '');
 }

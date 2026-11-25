@@ -1,9 +1,10 @@
 # Required check "ci": the guards in scripts/ci/, then type check, lint, tests and build.
 # It never runs conditionally: GitHub counts a skipped required check as passed.
 # Runs PR code with a read-only token and no secrets (pull_request, never pull_request_target).
-# The guards run first, before any code from the PR runs (no install scripts, tests, build or the repository's
-# bunfig.toml/tsconfig.json), so PR code cannot change them, their environment or their exit codes. They still trust
-# scripts/ci/, this file and the dependencies in package.json/bun.lock, which need review of their own.
+# The guards run first, before any code from the PR runs: no install scripts, tests or build, and not the repository's
+# bunfig.toml, tsconfig.json or .env files (bun --no-env-file, env = false), and their git and bun audit children get
+# only PATH, HOME and TMPDIR. They still run the PR's own copy of scripts/ci/ and this file, and import typescript as
+# locked in the PR's package.json/bun.lock, so those paths need review of their own (gate paths, #59).
 name: ci
 
 on:
@@ -69,29 +70,30 @@ jobs:
       - name: Write the guards' own bun and TypeScript config
         run: |
           # Used instead of the repository's bunfig.toml (preload, registry) and tsconfig.json (path aliases).
-          printf '[install]\nauto = "disable"\n' > "$RUNNER_TEMP/guard-bunfig.toml"
+          # env = false and --no-env-file: bun would otherwise load the checkout's .env files into the guards' env.
+          printf 'env = false\n[install]\nauto = "disable"\n' > "$RUNNER_TEMP/guard-bunfig.toml"
           printf '{}\n' > "$RUNNER_TEMP/guard-tsconfig.json"
 
       - name: Install for the guards (no scripts)
         id: guard-install
-        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
 
       # Every check below runs even when an earlier one failed, so one run shows every problem.
       - name: Edge Function guard
         if: ${{ !cancelled() && steps.guard-install.outcome == 'success' }}
-        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts
 
       - name: Migration guard
         if: ${{ !cancelled() }}
-        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/migration-guard.ts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/migration-guard.ts
 
       - name: Install-script guard
         if: ${{ !cancelled() }}
-        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/install-scripts-guard.ts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/install-scripts-guard.ts
 
       - name: Dependency audit
         if: ${{ !cancelled() }}
-        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
 
       # From here on, code from the PR runs.
       - name: Install

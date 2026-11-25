@@ -2,12 +2,15 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Advisory, auditBase, auditHead, checkAudit, checkAuditRun, compareAudits, parseAudit, runAudit } from './audit-guard';
+import { childEnv } from './lib';
 import { commitAll, git, tempDir, writeFiles } from './test-helpers';
 
 let cleanup = () => {};
 afterEach(() => cleanup());
 
 const advisory = (pkg: string, severity: string, ghsa: string, id = 1): Advisory => ({ pkg, id, url: `https://github.com/advisories/${ghsa}`, title: `${pkg} problem`, severity, vulnerable_versions: '<2.0.0' });
+// A lockfile bun audit can read, so it gets as far as asking the registry.
+const AUDITABLE = { 'package.json': '{"name":"x","dependencies":{"left-pad":"1.3.0"}}', 'bun.lock': '{\n  "lockfileVersion": 1,\n  "workspaces": { "": { "name": "x", "dependencies": { "left-pad": "1.3.0" } } },\n  "packages": {\n    "left-pad": ["left-pad@1.3.0", "", {}, "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQEVJdoaHZw40FV7v3uY56XtNo+/fZq+cbwtxuGl6p0qLrLA=="]\n  }\n}\n' };
 const LOCK = '{\n  "packages": {\n    "left-pad": ["left-pad@1.0.0", "", {}, "sha512-x"],\n    "nanoid": ["nanoid@3.3.16", "", {}, "sha512-y"],\n  }\n}\n';
 
 /**
@@ -106,14 +109,26 @@ describe('audit guard', () => {
     cleanup = t.cleanup;
     writeFiles(t.dir, { 'package.json': '{"name":"x"}' });
     expect(() => runAudit(t.dir)).toThrow(/bun audit could not run .*missing lockfile/);
-    writeFiles(t.dir, { 'bun.lock': LOCK });
-    const saved = process.env['BUN_CONFIG_REGISTRY'];
-    process.env['BUN_CONFIG_REGISTRY'] = 'http://127.0.0.1:9/';
+    writeFiles(t.dir, AUDITABLE);
+    expect(() => runAudit(t.dir, { ...childEnv(), BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9/' })).toThrow(/bun audit could not run in .*\(exit 1\): .*127\.0\.0\.1:9.*ConnectionRefused/);
+  });
+  it('runAudit ignores a registry set in the environment or in a .env file (review finding)', () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    writeFiles(t.dir, { ...AUDITABLE, '.env': 'BUN_CONFIG_REGISTRY=http://127.0.0.1:9/\nNPM_CONFIG_REGISTRY=http://127.0.0.1:9/\n' });
+    const saved = { ...process.env };
+    Object.assign(process.env, { BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9/', npm_config_registry: 'http://127.0.0.1:9/', GIT_DIR: '/nonexistent' });
     try {
-      expect(() => runAudit(t.dir)).toThrow(/bun audit could not run in .*\(exit 1\)/);
+      // With network the audit reaches the real registry; without it, it fails for another reason. It never uses 127.0.0.1:9.
+      let message = '';
+      try {
+        runAudit(t.dir);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).not.toMatch(/127\.0\.0\.1|ConnectionRefused/);
     } finally {
-      if (saved === undefined) delete process.env['BUN_CONFIG_REGISTRY'];
-      else process.env['BUN_CONFIG_REGISTRY'] = saved;
+      for (const name of ['BUN_CONFIG_REGISTRY', 'npm_config_registry', 'GIT_DIR']) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
     }
   });
   it('reports a base commit that is not in the clone instead of calling every advisory new', () => {

@@ -66,4 +66,4 @@ jobs:
             echo "::notice::main has no scripts/ci/pr-body.ts yet, so this run uses the PR's copy."
             script=head/scripts/ci/pr-body.ts
           fi
-          bun "$script"
+          bun --no-env-file "$script"

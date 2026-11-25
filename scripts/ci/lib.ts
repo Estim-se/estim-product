@@ -50,8 +50,23 @@ export function resolveBase(argv: string[], env: Record<string, string | undefin
   return value;
 }
 
+/**
+ * The environment for the guards' child processes (git, bun audit): PATH, HOME and TMPDIR only, plus GIT_CONFIG_NOSYSTEM.
+ * Nothing else is inherited, so variables such as GIT_DIR, GIT_CONFIG_*, BUN_CONFIG_REGISTRY or npm_config_* cannot
+ * point a child at another repository or registry. CI also runs every guard with bun --no-env-file, because bun
+ * otherwise loads the checkout's .env files into process.env, PATH included.
+ */
+export function childEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const out: Record<string, string> = { GIT_CONFIG_NOSYSTEM: '1' };
+  for (const name of ['PATH', 'HOME', 'TMPDIR']) {
+    const value = env[name];
+    if (value !== undefined) out[name] = value;
+  }
+  return out;
+}
+
 export function git(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', args, { cwd, env: childEnv(), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
 /** True when the module is the script bun or node was started with (not when a test imports it). */
