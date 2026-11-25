@@ -9,7 +9,7 @@ Status: **done** = on `feature/unipile-email` with tests; **planned** = steps 8â
 ## Ground rules
 
 ### D1. WhatsApp and `estim_receive` are not touched
-WhatsApp, SMS and forms share `estim_receive` and its rule "the customer's latest open thread". All email-specific
+WhatsApp, SMS, forms and Samtal (calls) share `estim_receive` and its rule "the customer's latest open thread". All email-specific
 behaviour is built in the email flow or in new, email-only database functions. New columns on shared tables are
 nullable. The AI budget (`AI_DAILY_CAP`) counts calls from all channels, but only the email flow checks it; WhatsApp is
 not limited by it. **Status:** rule.
