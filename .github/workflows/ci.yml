@@ -1,6 +1,9 @@
-# Required check "ci": type check, lint, tests, build and the guards in scripts/ci/.
+# Required check "ci": the guards in scripts/ci/, then type check, lint, tests and build.
 # It never runs conditionally: GitHub counts a skipped required check as passed.
 # Runs PR code with a read-only token and no secrets (pull_request, never pull_request_target).
+# The guards run first, before any code from the PR runs (no install scripts, tests, build or the repository's
+# bunfig.toml/tsconfig.json), so PR code cannot change them, their environment or their exit codes. They still trust
+# scripts/ci/, this file and the dependencies in package.json/bun.lock, which need review of their own.
 name: ci
 
 on:
@@ -13,7 +16,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # One group per PR, where a newer push cancels the older run. A push gets a group per commit: GitHub cancels a
+  # queued run when a newer one joins its group, even without cancel-in-progress, and a dropped push run would leave
+  # that push's migrations and dependencies unchecked (the next run compares against its head).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -21,10 +27,6 @@ jobs:
     name: ci
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      # The commit the guards compare against: the PR's base, or the commit before a push. Empty or all zeros
-      # (a manual run, a new branch) means there is none.
-      CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,6 +39,7 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.5
+          no-cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -44,11 +47,58 @@ jobs:
           node-version: 26
           package-manager-cache: false
 
-      - name: Install
-        id: install
-        run: bun install --frozen-lockfile
+      - name: Find the base commit
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # Pull request: the merge commit's first parent, which is the base branch this PR merges into (the event's
+          # base SHA can be older). Push: the commit before the push. A manual run or a new branch (empty or all
+          # zeros): none.
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=$(git rev-parse HEAD^1)
+          else
+            base=$PUSH_BEFORE
+          fi
+          case "$base" in
+            *[!0-9a-f]*) echo "::error::The base \"$base\" is not a commit SHA."; exit 1 ;;
+          esac
+          echo "CI_BASE_SHA=$base" >> "$GITHUB_ENV"
+          echo "Base commit: ${base:-none}"
+
+      - name: Write the guards' own bun and TypeScript config
+        run: |
+          # Used instead of the repository's bunfig.toml (preload, registry) and tsconfig.json (path aliases).
+          printf '[install]\nauto = "disable"\n' > "$RUNNER_TEMP/guard-bunfig.toml"
+          printf '{}\n' > "$RUNNER_TEMP/guard-tsconfig.json"
+
+      - name: Install for the guards (no scripts)
+        id: guard-install
+        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
 
       # Every check below runs even when an earlier one failed, so one run shows every problem.
+      - name: Edge Function guard
+        if: ${{ !cancelled() && steps.guard-install.outcome == 'success' }}
+        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts
+
+      - name: Migration guard
+        if: ${{ !cancelled() }}
+        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/migration-guard.ts
+
+      - name: Install-script guard
+        if: ${{ !cancelled() }}
+        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/install-scripts-guard.ts
+
+      - name: Dependency audit
+        if: ${{ !cancelled() }}
+        run: bun --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
+
+      # From here on, code from the PR runs.
+      - name: Install
+        id: install
+        if: ${{ !cancelled() }}
+        run: bun install --frozen-lockfile
+
       - name: Type check
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node_modules/.bin/tsc --noEmit -p tsconfig.json
@@ -64,22 +114,6 @@ jobs:
       - name: Build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node_modules/.bin/vite build
-
-      - name: Edge Function guard
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bun scripts/ci/edge-guard.ts
-
-      - name: Migration guard
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bun scripts/ci/migration-guard.ts
-
-      - name: Install-script guard
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bun scripts/ci/install-scripts-guard.ts
-
-      - name: Dependency audit
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bun scripts/ci/audit-guard.ts
 
       - name: Prettier on changed files (warning only)
         if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
