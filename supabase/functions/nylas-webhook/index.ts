@@ -173,10 +173,11 @@ async function handleUnipile(req: Request): Promise<Response> {
 
 async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
   const db = admin();
+  const folderCache = new Map<string, string | null>(); // Outlook Inbox ids, looked up once per event
   for (const [i, delay] of UNIPILE_RETRY_DELAYS_MS.entries()) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     try {
-      const outcome = await handleUnipileEvent(db, event, i === UNIPILE_RETRY_DELAYS_MS.length - 1);
+      const outcome = await handleUnipileEvent(db, event, i === UNIPILE_RETRY_DELAYS_MS.length - 1, folderCache);
       if (outcome.retry) continue;
       if (outcome.after) await outcome.after().catch((e) => console.error("[unipile] ai pipeline failed:", errCode(e)));
       return;
@@ -185,11 +186,19 @@ async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
   console.error("[unipile] gave up on event:", event.type); // the event id is in Unipile's dashboard for a replay
 }
 
-async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent, isLastAttempt: boolean): Promise<Outcome> {
-  const { type, accountId, payload } = event; // event.provider is used for the Gmail label filter below
+async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent, isLastAttempt: boolean, folderCache: Map<string, string | null>): Promise<Outcome> {
+  const { type, accountId, payload } = event; // event.provider is used for the Gmail label / Outlook folder filter below
   if (type === "email.new") {
     const ref = unipile.emailEventOf(payload);
-    if (!accountId || !ref || !unipile.shouldHandleEmailEvent(event.provider, ref)) return {};
+    if (!accountId || !ref) return {};
+    let inbox: string | null = null;
+    if (event.provider === "microsoft") {
+      const resolved = await unipile.resolveOutlookInbox(folderCache, accountId);
+      if (resolved === "error" && !isLastAttempt) return { retry: true };
+      if (resolved === "error" || resolved === null) console.info("[unipile] outlook inbox unknown:", resolved === "error" ? "lookup_failed" : "no_inbox_role"); // handled as before
+      else inbox = resolved;
+    }
+    if (!unipile.shouldHandleEmailEvent(event.provider, ref, inbox)) return {};
     return await processInbound(db, accountId, ref.emailId, unipileSource(accountId, ref.emailId));
   }
   if (type === "account.add" || type === "account.reconnect") return await bindUnipileAccount(db, type, payload, isLastAttempt);

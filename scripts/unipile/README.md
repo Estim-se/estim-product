@@ -15,6 +15,8 @@ Use your own test mailbox only: the scripts print mail data to the terminal.
 | Reply in the same thread | Works when the subject is kept (`Re: …`) |
 | Incoming mail (`email.new`) | Gmail sends one event per label; the app only handles `INBOX` |
 | Bounces (`email.new.bounce`) | `email_id` is the Message-ID of the bounced reply, which `send` returns as `message_id` |
+| Folders (`smoke.ts folders`) | `GET /{acc}/folders`. Outlook: opaque ids, names in the mailbox language ("Inkorg", "Skräppost"), roles `INBOX`, `SENT`, `DRAFTS`, `TRASH`, `SPAM` (Junk), `ARCHIVE`; other folders have no role. A mail's `folders` is exactly `[its folder id]`. Gmail: label ids (`INBOX`, `SPAM`, `CATEGORY_*`, `Label_…`) with roles where Unipile infers one. The app finds the Outlook Inbox by role `INBOX` and handles only `email.new` in that folder |
+| `email.new` per folder (Outlook) | Not observed live yet (needs the webhook endpoint in the dashboard, see step 11). Unipile's v2 docs: the event fires for mail upserted in the Inbox, in Sent items, and in the new folder when a mail is moved |
 | Header order (sender check, `EMAIL_SENDER_CHECK`) | Original top-to-bottom order for both. Gmail (44 headers): `Delivered-To`, `Received`, ARC headers, then the topmost `Authentication-Results` from `mx.google.com` (the sender's own ARC result from Microsoft is lower down and ignored). Outlook (76 headers): Microsoft's `Received` and ARC headers, then the topmost `Authentication-Results` (Microsoft's own, above `X-IncomingTopHeaderMarker`). Verdict `pass` on both. One mail each; Nylas (`fields=include_headers`) was not checked here |
 
 ## Before you start
@@ -103,7 +105,18 @@ Run everything from the repository root, with three terminals open.
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts reconnect https://<tunnel>.trycloudflare.com acc_...
    ```
 
-10. **Clean up:** delete the test accounts and the webhook endpoint, and stop the receiver and the tunnel.
+10. **Folders.** Lists id, name and role, and the Inbox id the app would filter on:
+
+   ```powershell
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts folders acc_...
+   ```
+
+11. **Junk on Outlook** (not done yet). With the receiver and webhook from steps 1-3 running, send a mail to the
+   Outlook account that lands in Skräppost (Junk), or move a received mail there. Terminal 1 shows `email.new` with
+   `folder_id`: record here whether Junk sends `email.new` at all, and that its `folder_id` is the folder with role
+   `SPAM` (the app then ignores it). Also record whether a mail you send yourself arrives as `email.new` in Sent items.
+
+12. **Clean up:** delete the test accounts and the webhook endpoint, and stop the receiver and the tunnel.
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts delete acc_...

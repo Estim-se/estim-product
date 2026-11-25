@@ -11,6 +11,8 @@
 //   emails <acc_id>                        the 5 latest mails (id, date, sender, subject, attachments)
 //   email <acc_id> <email_id>              one mail as the app parses it, plus every attachment downloaded,
 //                                          the header NAMES in order and the sender check verdict (EMAIL_SENDER_CHECK)
+//   folders <acc_id>                       the account's folders: id, name and role only (the app finds the Outlook
+//                                          Inbox by role INBOX, see shouldHandleEmailEvent)
 //   send <acc_id> <to> [reply_to_email_id] a test mail or reply, prints Unipile's raw answer
 //   webhook <public-url>                   creates the webhook endpoint with the app's events (needs a Service Key)
 //   webhooks                               lists webhook endpoints (needs a Service Key)
@@ -122,6 +124,15 @@ switch (command) {
     }
     break;
   }
+  case "folders": {
+    const id = need(args[0], "acc_ id");
+    try {
+      const folders = await unipile.listFolders(id);
+      for (const f of folders) console.log(`- ${f.id} | ${f.name} | role: ${f.role ?? "-"}`);
+      show("Inbox the app would use", unipile.inboxFolderId(folders) ?? "none (every event would be handled)");
+    } catch (e) { show("Could not list folders", (e as Error).message); }
+    break;
+  }
   case "send": {
     const id = need(args[0], "acc_ id"), to = need(args[1], "recipient");
     // Like the app (email-send): a reply keeps the original subject with "Re:", otherwise Outlook starts a new conversation.
@@ -153,5 +164,5 @@ switch (command) {
     break;
   }
   default:
-    console.log("Commands: link, account, emails, email, send, webhook, webhooks, delete. See the comment at the top of smoke.ts.");
+    console.log("Commands: link, reconnect, account, emails, email, folders, send, webhook, webhooks, delete. See the comment at the top of smoke.ts.");
 }

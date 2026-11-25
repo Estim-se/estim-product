@@ -9,7 +9,7 @@ function assertThrows(fn: () => unknown, includes: string) {
 }
 import {
   accountEventOf, authLinkBody, bounceEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
-  parseEvent, shouldHandleEmailEvent, verifyUnipileSignature,
+  parseEvent, shouldHandleEmailEvent, verifyUnipileSignature, inboxFolderId, parseFolders, resolveOutlookInbox, type MailFolder,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
 import { shouldSkip } from "./nylas.ts";
@@ -125,7 +125,7 @@ Deno.test("sent, draft and spam folders never become requests, and own mail is s
   const labels = ["IMPORTANT", "CATEGORY_PERSONAL", "INBOX"];
   assertEquals(["INBOX", "IMPORTANT", "CATEGORY_PERSONAL"].map((folderId) => shouldHandleEmailEvent("google", { folders: labels, folderId })), [true, false, false]);
   assertFalse(shouldHandleEmailEvent("google", { folders: ["SENT"], folderId: "SENT" }));
-  // other providers: opaque folder ids, every event is handled and the duplicate checks stop repeats
+  // Outlook without a known Inbox id (lookup failed / no INBOX role): every event is handled, as before
   assert(shouldHandleEmailEvent("microsoft", { folders: ["AAMkAD"], folderId: "AAMkAD" }));
   assert(shouldHandleEmailEvent(null, { folders: [], folderId: null }));
   const own = parseEmail({ id: "em_3", from: [{ email: "info@foretag.se" }], to: [{ email: "kund@example.com" }] });
@@ -168,4 +168,53 @@ Deno.test("provider routing: connections keep their provider, new ones follow EM
     Deno.env.delete("EMAIL_PROVIDER"); assertEquals(activeProvider(), "nylas");
     Deno.env.set("EMAIL_PROVIDER", " Unipile "); assertEquals(activeProvider(), "unipile");
   } finally { if (before === undefined) Deno.env.delete("EMAIL_PROVIDER"); else Deno.env.set("EMAIL_PROVIDER", before); }
+});
+
+/* ---------- Step 7: Outlook folders ---------- */
+
+// Shape of the real Outlook trial account (2026-11-25, Swedish mailbox): ids shortened, roles as returned.
+const OUTLOOK_FOLDERS = { object: "EmailFolderList", data: [
+  { object: "EmailFolder", id: "AQMk-arkiv", name: "Arkiv", role: "ARCHIVE", parent_id: "AQMk-root", total_count: 0, unread_count: 0 },
+  { object: "EmailFolder", id: "AQMk-inkorg", name: "Inkorg", role: "INBOX", parent_id: "AQMk-root", total_count: 3, unread_count: 1 },
+  { object: "EmailFolder", id: "AQMk-skickat", name: "Skickat", role: "SENT", parent_id: "AQMk-root", total_count: 3, unread_count: 0 },
+  { object: "EmailFolder", id: "AQMk-skrap", name: "Skräppost", role: "SPAM", parent_id: "AQMk-root", total_count: 0, unread_count: 0 },
+  { object: "EmailFolder", id: "AQMk-historik", name: "Konversationshistorik", parent_id: "AQMk-root", total_count: 0, unread_count: 0 },
+] };
+
+Deno.test("outlook folders: the Inbox is found by role, never by name", () => {
+  const { folders, nextCursor } = parseFolders(OUTLOOK_FOLDERS);
+  assertEquals(nextCursor, null);
+  assertEquals(folders.map((f) => f.role), ["ARCHIVE", "INBOX", "SENT", "SPAM", null]);
+  assertEquals(inboxFolderId(folders), "AQMk-inkorg");
+  assertEquals(inboxFolderId(folders.filter((f) => f.role !== "INBOX")), null); // no Inbox role
+  assertEquals(inboxFolderId([...folders, { id: "x", name: "Inbox", role: "INBOX" }]), null); // not exactly one
+  assertEquals(inboxFolderId([{ id: "y", name: "Inbox", role: null }]), null); // a folder named Inbox is not enough
+  assertThrows(() => parseFolders({ items: [] }), "unipile_invalid_folders");
+});
+
+Deno.test("outlook folders: only the Inbox becomes a request (Junk, Sent, other folders never)", () => {
+  const inbox = "AQMk-inkorg";
+  assert(shouldHandleEmailEvent("microsoft", { folders: [inbox], folderId: inbox }, inbox));
+  assertFalse(shouldHandleEmailEvent("microsoft", { folders: ["AQMk-skrap"], folderId: "AQMk-skrap" }, inbox)); // Junk
+  assertFalse(shouldHandleEmailEvent("microsoft", { folders: ["AQMk-skickat"], folderId: "AQMk-skickat" }, inbox)); // own mail, also from an alias
+  assertFalse(shouldHandleEmailEvent("microsoft", { folders: ["AQMk-arkiv"], folderId: "AQMk-arkiv" }, inbox));
+  // the event's folder_id decides; without it the mail's own folders
+  assertFalse(shouldHandleEmailEvent("microsoft", { folders: [inbox], folderId: "AQMk-skrap" }, inbox));
+  assert(shouldHandleEmailEvent("microsoft", { folders: [inbox], folderId: null }, inbox));
+  assertFalse(shouldHandleEmailEvent("microsoft", { folders: ["AQMk-skrap"], folderId: null }, inbox));
+  // Gmail is unchanged by an inbox id
+  assert(shouldHandleEmailEvent("google", { folders: ["INBOX"], folderId: "INBOX" }, inbox));
+});
+
+Deno.test("outlook folders: looked up once per cache; a failed lookup is reported, not cached", async () => {
+  const cache = new Map<string, string | null>();
+  let calls = 0;
+  const list = (_: string): Promise<MailFolder[]> => { calls++; return Promise.resolve(parseFolders(OUTLOOK_FOLDERS).folders); };
+  assertEquals(await resolveOutlookInbox(cache, "acc_1", list), "AQMk-inkorg");
+  assertEquals(await resolveOutlookInbox(cache, "acc_1", list), "AQMk-inkorg");
+  assertEquals(calls, 1);
+  const failing = (_: string): Promise<MailFolder[]> => Promise.reject(new Error("unipile_folders_503"));
+  assertEquals(await resolveOutlookInbox(cache, "acc_2", failing), "error");
+  assertEquals(cache.has("acc_2"), false);
+  assertEquals(await resolveOutlookInbox(cache, "acc_3", () => Promise.resolve([])), null);
 });

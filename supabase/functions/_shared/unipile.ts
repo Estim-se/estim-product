@@ -95,7 +95,7 @@ export function emailEventOf(payload: Record<string, unknown>): { emailId: strin
   return { emailId: id, folders, folderId: str(payload.folder_id, 200) };
 }
 
-/** Gmail label ids for mail that is never a customer request. Outlook folder ids are opaque; the sender check covers sent mail there. */
+/** Gmail label ids for mail that is never a customer request. Outlook folder ids are opaque: see inboxFolderId. */
 export function isNonInboxFolder(folders: string[]): boolean {
   return folders.some((f) => /^(SENT|DRAFT|DRAFTS|SPAM|TRASH)$/i.test(f));
 }
@@ -103,12 +103,65 @@ export function isNonInboxFolder(folders: string[]): boolean {
 /**
  * Whether an email.new event should be processed. Gmail sends one event per label for the same mail
  * (seen 2026-11-25: INBOX, IMPORTANT, CATEGORY_PERSONAL within milliseconds), so for Gmail only the INBOX event counts;
- * that also keeps the AI triage from running once per label. Other providers rely on the duplicate checks.
+ * that also keeps the AI triage from running once per label.
+ * Outlook folder ids are opaque, so the account's Inbox id (`outlookInboxId`, resolved by role through listFolders) is
+ * required: Junk mail, Sent items (also mail sent from an alias) and other folders never become requests. Without a
+ * known Inbox id every Outlook event is handled as before (no mail is lost). Other providers rely on the duplicate checks.
  */
-export function shouldHandleEmailEvent(provider: MailProvider | null, ref: { folders: string[]; folderId: string | null }): boolean {
+export function shouldHandleEmailEvent(provider: MailProvider | null, ref: { folders: string[]; folderId: string | null }, outlookInboxId?: string | null): boolean {
   if (isNonInboxFolder(ref.folderId ? [...ref.folders, ref.folderId] : ref.folders)) return false;
   if (provider === "google" && ref.folderId) return ref.folderId === "INBOX";
+  if (provider === "microsoft" && outlookInboxId) return ref.folderId ? ref.folderId === outlookInboxId : ref.folders.includes(outlookInboxId);
   return true;
+}
+
+/* ---------- Folders ---------- */
+
+export interface MailFolder { id: string; name: string; role: string | null }
+
+/** The folder list of GET /{account_id}/folders (v2: { data: EmailFolder[], next_cursor? }). */
+export function parseFolders(data: unknown): { folders: MailFolder[]; nextCursor: string | null } {
+  if (!isObj(data) || !Array.isArray(data.data)) throw new Error("unipile_invalid_folders");
+  const folders = data.data.slice(0, 500).filter(isObj).map((f) => ({ id: str(f.id, 1000) ?? "", name: str(f.name, 200) ?? "", role: str(f.role, 40) })).filter((f) => f.id);
+  return { folders, nextCursor: str(data.next_cursor, 1000) || null };
+}
+
+/** The account's folders (at most 5 pages of 100). Throws on any error: the caller retries rather than guessing. */
+export async function listFolders(accountId: string): Promise<MailFolder[]> {
+  const all: MailFolder[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 5; page++) {
+    const query: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+    const res = await unipileFetch(`/${encodeURIComponent(accountId)}/folders?limit=100${query}`);
+    if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`unipile_folders_${res.status}`); }
+    const parsed = parseFolders(await res.json());
+    all.push(...parsed.folders);
+    if (!parsed.nextCursor) break;
+    cursor = parsed.nextCursor;
+  }
+  return all;
+}
+
+/**
+ * The Inbox folder id: the one folder with role INBOX (Outlook names it in the mailbox language, e.g. "Inkorg", so the
+ * name is never used). null when there is not exactly one.
+ */
+export function inboxFolderId(folders: MailFolder[]): string | null {
+  const inbox = folders.filter((f) => f.role?.toUpperCase() === "INBOX");
+  return inbox.length === 1 ? inbox[0]!.id : null;
+}
+
+/**
+ * The Outlook Inbox id for an account, looked up once per cache (the webhook keeps one cache per event). "error" when
+ * the folder list could not be read (not cached, so a retry looks again).
+ */
+export async function resolveOutlookInbox(cache: Map<string, string | null>, accountId: string, list: (accountId: string) => Promise<MailFolder[]> = listFolders): Promise<string | null | "error"> {
+  if (cache.has(accountId)) return cache.get(accountId)!;
+  try {
+    const id = inboxFolderId(await list(accountId));
+    cache.set(accountId, id);
+    return id;
+  } catch { return "error"; }
 }
 
 /* ---------- Accounts and hosted auth ---------- */
