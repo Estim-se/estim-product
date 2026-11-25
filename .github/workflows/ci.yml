@@ -142,7 +142,7 @@ jobs:
       - name: Lint changed files
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
-          # Only the files this change adds or modifies. A weekly whole-repo health check is a separate step.
+          # Only the files this change adds or modifies. A weekly whole-repo health check will come later as its own workflow.
           if [ -z "$CI_BASE_SHA" ]; then
             echo "::notice title=lint::No base commit (a manual run or a new branch), so there are no changed files to lint."
             exit 0

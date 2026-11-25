@@ -14,7 +14,7 @@
 //   TABLE or CREATE of the same name starts over; a rename or schema move before the ENABLE fails. A table created
 //   inside CREATE SCHEMA, or without a schema when the change creates a schema, fails;
 // - DISABLE ROW LEVEL SECURITY fails, and so does a policy whose USING or WITH CHECK is a constant such as (true),
-//   (1=1) or (select true);
+//   (1=1) or (select true), unless its TO names service_role alone (service_role bypasses RLS anyway);
 // - temporary tables fail (CREATE TEMP TABLE, SELECT ... INTO TEMP): a migration never needs one;
 // - EXECUTE of SQL built at run time fails in a DO block (except format() with %I/%L only, see isSafeFormat), and so
 //   does EXECUTE in a DO block of any text that mentions a policy; in a function body EXECUTE fails when the body
@@ -245,6 +245,19 @@ export function evaluateConstant(expression: string): SqlValue | undefined {
 // A subquery without FROM, such as (select true) or exists (select 1), is constant too.
 const CONSTANT_WORDS = new Set(['true', 'false', 'not', 'and', 'or', 'null', 'is', 'isnull', 'notnull', 'unknown', 'distinct', 'from', 'in', 'between', 'symmetric', 'boolean', 'bool', 'int', 'integer', 'int2', 'int4', 'int8', 'smallint', 'bigint', 'numeric', 'decimal', 'real', 'float', 'text', 'varchar', 'char', 'character', 'varying', 'cast', 'as', 'case', 'when', 'then', 'else', 'end', 'select', 'exists', 'where']);
 
+/**
+ * True when a policy statement names its roles with TO and every one is service_role. Supabase's service_role bypasses
+ * RLS, so such a policy lets nobody through who wasn't through already, and Lovable writes them. A policy without TO,
+ * or with any other role beside service_role, is still checked.
+ */
+export function appliesOnlyToServiceRole(statement: string): boolean {
+  const head = statement.split(/\b(?:using|with\s+check)\b/i)[0] ?? '';
+  const to = /\bto\s+([\s\S]+)$/i.exec(head);
+  if (!to) return false;
+  const roles = (to[1] ?? '').split(',').map(r => r.trim().replace(/^"(.*)"$/, '$1'));
+  return roles.length > 0 && roles.every(r => r === 'service_role');
+}
+
 /** True when a policy expression names no column and calls no function, so it is the same for every row. */
 export function isConstantExpression(expression: string): boolean {
   const words = expression.match(/"(?:[^"]|"")*"|(?<![A-Za-z0-9_$.\u0080-\uffff])[A-Za-z_\u0080-\uffff][A-Za-z0-9_$\u0080-\uffff]*/g) ?? [];
@@ -394,8 +407,11 @@ function checkGroup(files: { path: string; sql: string }[]): Violation[] {
     for (const m of all.matchAll(/\bdisable\s+row\s+level\s+security\b/gi)) {
       violations.push({ file: path, line: lineAt(all, m.index), rule: 'disable-rls', problem: 'The migration disables row level security.', fix: 'Keep RLS enabled and change the policies instead.' });
     }
+    // Strings blanked but quoted names kept, so TO "service_role" reads as the role it names.
+    const allNames = sqlView(raw, { strings: 'blank', idents: 'keep', bodies: 'recurse' });
     for (const m of all.matchAll(/\b(?:create|alter)\s+policy\b/gi)) {
       const end = statementEnd(allStructure, m.index);
+      if (appliesOnlyToServiceRole(allNames.slice(m.index, end))) continue;
       const clause = /\b(using|with\s+check)\s*\(/gi;
       clause.lastIndex = m.index;
       for (let c = clause.exec(allStructure); c && c.index < end; c = clause.exec(allStructure)) {

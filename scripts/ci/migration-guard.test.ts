@@ -100,11 +100,19 @@ describe('migration guard: row level security in added migrations', () => {
   it('fails DISABLE ROW LEVEL SECURITY and policies that let every row through', () => {
     expect(rules('alter table a\n disable row level security;')).toEqual(['disable-rls@2']);
     expect(rules('create policy p on a for select using (true);')).toEqual(['permissive-policy@1']);
-    expect(rules('CREATE POLICY p ON a FOR ALL TO service_role USING(true) WITH CHECK(true);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on a for all to authenticated using (true);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on a for all to authenticated, service_role using (true);')).toEqual(['permissive-policy@1']);
+    expect(rules('create policy p on a for all to public using (true);')).toEqual(['permissive-policy@1']);
     expect(rules('create policy p on a for insert\n with   check ( ( true ) );')).toEqual(['permissive-policy@2']);
     expect(rules('alter policy p on a using (true);')).toEqual(['permissive-policy@1']);
     expect(rules('create policy p on a using (company_id = my_company()) with check (company_id = my_company());')).toEqual([]);
     expect(rules("create policy p on a using (status = 'true');")).toEqual([]);
+  });
+  it('lets a policy for service_role alone use (true), since service_role bypasses RLS', () => {
+    // The pattern of supabase/migrations/20261119102557 on main.
+    expect(rules('CREATE POLICY jobs_service ON public.ai_jobs FOR ALL TO service_role USING(true) WITH CHECK(true);')).toEqual([]);
+    expect(rules('create policy p on a for all to "service_role" using (true);')).toEqual([]);
+    expect(rules('alter policy p on a to service_role using (true);')).toEqual([]);
   });
   it('normalises table names', () => {
     expect(tableKey('Foo')).toBe('public.foo');
@@ -320,12 +328,12 @@ describe('migration guard: final fix round', () => {
 describe('migration guard: allowlist', () => {
   it('exempts a listed violation and requires a reason', () => {
     const entry = (reason: string) => JSON.stringify([{ file: NEW, rule: 'permissive-policy', reason }]);
-    let { root, base } = repo(entry('Service role only; documented in the PR.'));
-    writeFiles(root, { [NEW]: 'create policy p on a to service_role using (true);\n' });
+    let { root, base } = repo(entry('Public read of a lookup table; documented in the PR.'));
+    writeFiles(root, { [NEW]: 'create policy p on a to authenticated using (true);\n' });
     commitAll(root, 'add');
     expect(run(root, base)).toEqual([]);
     ({ root, base } = repo(entry('')));
-    writeFiles(root, { [NEW]: 'create policy p on a to service_role using (true);\n' });
+    writeFiles(root, { [NEW]: 'create policy p on a to authenticated using (true);\n' });
     commitAll(root, 'add');
     expect(run(root, base)).toEqual([expect.stringMatching(/^scripts\/ci\/migration-allowlist\.json:1: Entry 1 has no reason\./), expect.stringMatching(new RegExp(`^${NEW}:1: A policy uses USING \\(true\\)`))]);
   });
