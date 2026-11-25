@@ -12,6 +12,8 @@ import * as unipile from "../../supabase/functions/_shared/unipile.ts";
 const secret = Deno.env.get("UNIPILE_WEBHOOK_SECRET") ?? "";
 if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET is missing: signatures cannot be checked until the webhook exists (step 3 in the README).");
 
+const outlookInboxes = new Map<string, string | null>();
+
 Deno.serve({ port: 8787 }, async (req) => {
   const url = new URL(req.url);
   // Every call is logged, so a webhook configured with the wrong path is visible instead of silently ignored.
@@ -42,7 +44,10 @@ Deno.serve({ port: 8787 }, async (req) => {
     console.log("the app would bind:", unipile.accountEventOf(event.payload), "(state must match the one from 'link')");
   } else if (event.type === "email.new") {
     const ref = unipile.emailEventOf(event.payload);
-    console.log("mail:", ref, "| provider:", event.provider, ref && unipile.shouldHandleEmailEvent(event.provider, ref) ? "-> the app processes it" : "-> the app skips it (other label, sent, draft or spam)");
+    // Like the app: Outlook mail counts only in the folder with role INBOX (looked up from Unipile).
+    const inbox = event.provider === "microsoft" && event.accountId ? await unipile.resolveOutlookInbox(outlookInboxes, event.accountId) : null;
+    const handled = ref && unipile.shouldHandleEmailEvent(event.provider, ref, inbox === "error" ? null : inbox);
+    console.log("mail:", ref, "| provider:", event.provider, handled ? "-> the app processes it" : "-> the app skips it (other label or folder, sent, draft or spam)");
   } else if (event.type === "email.new.bounce") {
     console.log("the app would mark the reply with Message-ID", unipile.bounceEventOf(event.payload), "as not delivered");
   } else {
