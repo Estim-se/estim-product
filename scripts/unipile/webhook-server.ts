@@ -42,7 +42,7 @@ Deno.serve({ port: 8787 }, async (req) => {
     console.log("appen skulle binda:", unipile.accountEventOf(event.payload), "(state ska vara samma som från 'link')");
   } else if (event.type === "email.new") {
     const ref = unipile.emailEventOf(event.payload);
-    console.log("appen skulle hämta mejlet:", ref, ref && unipile.isNonInboxFolder(ref.folders) ? "→ hoppas över (skickat/utkast/skräp)" : "→ behandlas");
+    console.log("mejl:", ref, "| leverantör:", event.provider, ref && unipile.shouldHandleEmailEvent(event.provider, ref) ? "→ appen behandlar det" : "→ appen hoppar över (annan etikett, skickat, utkast eller skräp)");
   } else if (event.type === "email.new.bounce") {
     console.log("appen skulle markera svaret med Message-ID", unipile.bounceEventOf(event.payload), "som ej levererat");
   } else {

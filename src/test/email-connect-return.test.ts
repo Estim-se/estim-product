@@ -16,4 +16,9 @@ describe('return from the mailbox login', () => {
     expect(readConnectReturn('?account_id=acc_1&state=short')).toEqual({ kind: 'error' });
     expect(readConnectReturn('')).toEqual({ kind: 'error' });
   });
+  it('recognises a mailbox that Unipile already has linked', () => {
+    // as Unipile really redirects (2026-11-25)
+    expect(readConnectReturn(`?error_detail=acc_1&error_title=Account+already+exists&error_type=api%2Falready_exists&state=${STATE}`))
+      .toEqual({ kind: 'error', alreadyConnected: true });
+  });
 });

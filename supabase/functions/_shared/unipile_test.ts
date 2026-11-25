@@ -9,7 +9,7 @@ function assertThrows(fn: () => unknown, includes: string) {
 }
 import {
   accountEventOf, bounceEventOf, bounceReferenceOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
-  parseEvent, verifyUnipileSignature,
+  parseEvent, shouldHandleEmailEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
 import { shouldSkip } from "./nylas.ts";
@@ -42,9 +42,10 @@ Deno.test("signature: accepts the signed timestamp and body, rejects tampering, 
 });
 
 Deno.test("event envelope and pointers", () => {
-  const e = parseEvent({ id: "evt_1", type: "email.new", account_id: "acc_123", payload: { folder_id: "INBOX", email: { id: "em_1", folders: ["INBOX"] } } });
+  const e = parseEvent({ id: "evt_1", type: "email.new", account_id: "acc_123", account_provider: "google", payload: { folder_id: "INBOX", email: { id: "em_1", folders: ["INBOX"] } } });
   assertEquals(e.accountId, "acc_123");
-  assertEquals(emailEventOf(e.payload), { emailId: "em_1", folders: ["INBOX", "INBOX"] });
+  assertEquals(e.provider, "google");
+  assertEquals(emailEventOf(e.payload), { emailId: "em_1", folders: ["INBOX"], folderId: "INBOX" });
   assertEquals(parseEvent({ type: "email.new", account_id: "not-an-account" }).accountId, null);
   assertThrows(() => parseEvent("nope"), "invalid_event");
   assertThrows(() => parseEvent({ account_id: "acc_1" }), "invalid_type");
@@ -100,6 +101,13 @@ Deno.test("email parsing maps v2 fields to the shared message shape", () => {
 
 Deno.test("sent, draft and spam folders never become requests, and own mail is skipped", () => {
   assert(isNonInboxFolder(["SENT"])); assert(isNonInboxFolder(["INBOX", "SPAM"])); assertFalse(isNonInboxFolder(["INBOX", "Label_5"]));
+  // Gmail sends one email.new per label for the same mail (seen 2026-11-25): only the INBOX one is handled
+  const labels = ["IMPORTANT", "CATEGORY_PERSONAL", "INBOX"];
+  assertEquals(["INBOX", "IMPORTANT", "CATEGORY_PERSONAL"].map((folderId) => shouldHandleEmailEvent("google", { folders: labels, folderId })), [true, false, false]);
+  assertFalse(shouldHandleEmailEvent("google", { folders: ["SENT"], folderId: "SENT" }));
+  // other providers: opaque folder ids, every event is handled and the duplicate checks stop repeats
+  assert(shouldHandleEmailEvent("microsoft", { folders: ["AAMkAD"], folderId: "AAMkAD" }));
+  assert(shouldHandleEmailEvent(null, { folders: [], folderId: null }));
   const own = parseEmail({ id: "em_3", from: [{ email: "info@foretag.se" }], to: [{ email: "kund@example.com" }] });
   assertEquals(shouldSkip(own, "info@foretag.se"), "own_message");
 });

@@ -63,14 +63,17 @@ export async function verifyUnipileSignature(raw: Uint8Array, header: string | n
   return false;
 }
 
-export interface UnipileEvent { id: string; type: string; accountId: string | null; payload: Record<string, unknown> }
+export interface UnipileEvent { id: string; type: string; accountId: string | null; provider: MailProvider | null; payload: Record<string, unknown> }
 /** Validates the envelope of a (verified) Unipile webhook event. Throws on anything unexpected. */
 export function parseEvent(json: unknown): UnipileEvent {
   if (!isObj(json)) throw new Error("invalid_event");
   const type = str(json.type, 100);
   if (!type) throw new Error("invalid_type");
   const accountId = str(json.account_id, 300);
-  return { id: str(json.id, 200) ?? "", type, accountId: isUnipileAccount(accountId) ? accountId : null, payload: isObj(json.payload) ? json.payload : {} };
+  return {
+    id: str(json.id, 200) ?? "", type, accountId: isUnipileAccount(accountId) ? accountId : null,
+    provider: mapProvider(json.account_provider), payload: isObj(json.payload) ? json.payload : {},
+  };
 }
 
 /** The account inside account.add / account.reconnect, and the `state` we put in the auth link. */
@@ -83,18 +86,28 @@ export function accountEventOf(payload: Record<string, unknown>): { accountId: s
 }
 
 /** The email id inside email.new. The webhook is only a pointer: the mail itself is fetched with our API key. */
-export function emailEventOf(payload: Record<string, unknown>): { emailId: string; folders: string[] } | null {
+export function emailEventOf(payload: Record<string, unknown>): { emailId: string; folders: string[]; folderId: string | null } | null {
   const email = isObj(payload.email) ? payload.email : null;
   const id = email ? str(email.id, 300) : null;
   if (!id) return null;
   const folders = Array.isArray(email?.folders) ? email!.folders.filter((f): f is string => typeof f === "string").slice(0, 50) : [];
-  const folder = str(payload.folder_id, 200);
-  return { emailId: id, folders: folder ? [...folders, folder] : folders };
+  return { emailId: id, folders, folderId: str(payload.folder_id, 200) };
 }
 
 /** Gmail label ids for mail that is never a customer request. Outlook folder ids are opaque; the sender check covers sent mail there. */
 export function isNonInboxFolder(folders: string[]): boolean {
   return folders.some((f) => /^(SENT|DRAFT|DRAFTS|SPAM|TRASH)$/i.test(f));
+}
+
+/**
+ * Whether an email.new event should be processed. Gmail sends one event per label for the same mail
+ * (seen 2026-11-25: INBOX, IMPORTANT, CATEGORY_PERSONAL within milliseconds), so for Gmail only the INBOX event counts;
+ * that also keeps the AI triage from running once per label. Other providers rely on the duplicate checks.
+ */
+export function shouldHandleEmailEvent(provider: MailProvider | null, ref: { folders: string[]; folderId: string | null }): boolean {
+  if (isNonInboxFolder(ref.folderId ? [...ref.folders, ref.folderId] : ref.folders)) return false;
+  if (provider === "google" && ref.folderId) return ref.folderId === "INBOX";
+  return true;
 }
 
 /* ---------- Accounts and hosted auth ---------- */

@@ -28,7 +28,12 @@ function EmailDone() {
     started.current = true;
     const back = readConnectReturn(window.location.search);
     window.history.replaceState(null, '', window.location.pathname); // never leave the one-time code in the address bar or history
-    if (back.kind === 'error') { setMessage('Anslutningen avbröts. Försök igen från Kanaler.'); return; }
+    if (back.kind === 'error') {
+      setMessage(back.alreadyConnected
+        ? 'Den här brevlådan är redan kopplad till estim. Syns den inte under Kanaler, koppla från den där eller kontakta support.'
+        : 'Anslutningen avbröts. Försök igen från Kanaler.');
+      return;
+    }
     let alive = true;
     const done = (email: string) => { setMessage(`Klart! ${email} är ansluten.`); setTimeout(() => void navigate({ to: '/kanaler' }), 1500); };
     const fail = (e: unknown) => { if (alive) setMessage(e instanceof Error ? e.message : 'Något gick fel. Försök igen.'); };

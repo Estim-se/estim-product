@@ -186,10 +186,10 @@ async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
 }
 
 async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent): Promise<Outcome> {
-  const { type, accountId, payload } = event;
+  const { type, accountId, payload } = event; // event.provider is used for the Gmail label filter below
   if (type === "email.new") {
     const ref = unipile.emailEventOf(payload);
-    if (!accountId || !ref || unipile.isNonInboxFolder(ref.folders)) return {};
+    if (!accountId || !ref || !unipile.shouldHandleEmailEvent(event.provider, ref)) return {};
     return await processInbound(db, accountId, ref.emailId, unipileSource(accountId, ref.emailId));
   }
   if (type === "account.add" || type === "account.reconnect") return await bindAccount(db, payload);

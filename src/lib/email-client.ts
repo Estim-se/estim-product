@@ -35,9 +35,11 @@ export const finishEmailConnect = (state: string, code?: string) =>
   call<FinishResult>("nylas-connect", { action: "finish", state, ...(code ? { code } : {}) });
 
 /** Where /epost-klar stands after the provider redirected back: a Nylas code, a Unipile state, or a cancelled login. */
-export function readConnectReturn(search: string): { kind: "nylas"; code: string; state: string } | { kind: "unipile"; state: string } | { kind: "error" } {
+export function readConnectReturn(search: string): { kind: "nylas"; code: string; state: string } | { kind: "unipile"; state: string } | { kind: "error"; alreadyConnected?: true } {
   const params = new URLSearchParams(search);
   const state = params.get("state") ?? "", code = params.get("code");
+  // Unipile refuses a mailbox that is already linked (to this or another company) with api/already_exists.
+  if (params.get("error_type") === "api/already_exists") return { kind: "error", alreadyConnected: true };
   if (params.get("error") || params.get("error_title") || !/^[0-9a-f]{64}$/.test(state)) return { kind: "error" };
   return code ? { kind: "nylas", code, state } : { kind: "unipile", state };
 }
