@@ -29,6 +29,7 @@ import {
 import * as unipile from "../_shared/unipile.ts";
 import { revokeConnection } from "../_shared/mail-provider.ts";
 import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
+import { senderCheckEnabled, senderVerdict } from "../_shared/sender-auth.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
@@ -149,6 +150,7 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
     attachments: msg.attachments.filter((a) => !a.is_inline).map((a) => ({
       name: a.filename, type: a.content_type, size: a.size, load: () => source.download(msg.id, a.id),
     })),
+    ...(senderCheckEnabled() ? { senderCheck: senderVerdict(msg.headers, sender.email) } : {}),
   }, source.tag);
 }
 

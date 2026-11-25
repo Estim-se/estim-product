@@ -9,6 +9,7 @@ import { callAiFunction, dispatchAiJob, isNoReplySender, sha256Hex } from "./nyl
 import { notifyDraftReady } from "./notify.ts";
 import { pickAttachments, safeFileName } from "./mail-format.ts";
 import { aiDailyCap, FLOOD_WARNING, floodDecision, floodGuardV2 } from "./mail-flood.ts";
+import { type SenderVerdict, withUnverifiedWarning } from "./sender-auth.ts";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const AI_FAIL_TEXT = "AI kunde inte svara just nu";
@@ -21,6 +22,7 @@ export interface InboundMail {
   subject: string; text: string;    // text is already cleaned and cut
   ts: number | null;
   attachments: InboundAttachmentIn[];
+  senderCheck?: SenderVerdict;      // only set with EMAIL_SENDER_CHECK; "fail" warns on the draft and skips the notification
 }
 export interface Outcome { retry?: boolean; after?: () => Promise<void> }
 
@@ -64,6 +66,14 @@ async function senderMailsSince(db: SupabaseClient, companyId: string, email: st
   const count = await db.from("messages").select("id", { count: "exact", head: true }).eq("company_id", companyId)
     .in("thread_id", threadIds).eq("from", "kund").eq("channel", "email").gte("created_at", sinceIso);
   return count.error ? null : count.count ?? 0;
+}
+
+/** Appends the unverified-sender warning to the thread's draft. Runs after write-reply, which overwrites warnings. */
+async function warnUnverified(db: SupabaseClient, companyId: string, threadId: string): Promise<void> {
+  const draft = await db.from("drafts").select("warnings").eq("thread_id", threadId).eq("company_id", companyId).maybeSingle();
+  if (draft.error || !draft.data) { console.error("[mail] could not read draft for sender warning"); return; }
+  const res = await db.from("drafts").update({ warnings: withUnverifiedWarning(draft.data.warnings), needs_review: true }).eq("thread_id", threadId).eq("company_id", companyId);
+  if (res.error) console.error("[mail] could not save sender warning");
 }
 
 async function failJob(db: SupabaseClient, companyId: string, threadId: string, jobId: string, warning = AI_FAIL_TEXT) {
@@ -147,18 +157,33 @@ export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: str
     .eq("company_id", companyId).eq("channel", "email").eq("provider_message_id", mail.messageKey);
   if (extra.error) console.error(`[${tag}] could not save attachment info`);
 
+  // EMAIL_SENDER_CHECK: the From address could not be verified. Logged without address or content.
+  const unverified = mail.senderCheck === "fail";
+  if (unverified) {
+    const audit = await db.from("audit_log").insert({ company_id: companyId, event: "Overifierad avsändare", after: { thread_id: threadId, provider_message_id: mail.messageKey } });
+    if (audit.error) console.error(`[${tag}] could not log unverified sender`);
+  }
+
+  // The AI job; resolves "done" when the draft is ready, otherwise "other".
+  const runAi = async (): Promise<"done" | "other"> => {
+    if (flood === "store_no_ai") { await failJob(db, companyId, threadId, jobId, FLOOD_WARNING); return "other"; }
+    if (!(await aiAllowed(db, companyId, known))) { await failJob(db, companyId, threadId, jobId); return "other"; }
+    try { await dispatchAiJob(jobId); } catch { await failJob(db, companyId, threadId, jobId); return "other"; }
+    // The job runs in the background: wait for it.
+    for (let i = 0; i < 28; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const job = await db.from("ai_jobs").select("state").eq("id", jobId).maybeSingle();
+      if (job.data?.state === "done") return "done";
+      if (job.data?.state === "failed") return "other";
+    }
+    return "other";
+  };
+
   return {
     after: async () => {
-      if (flood === "store_no_ai") { await failJob(db, companyId, threadId, jobId, FLOOD_WARNING); return; }
-      if (!(await aiAllowed(db, companyId, known))) { await failJob(db, companyId, threadId, jobId); return; }
-      try { await dispatchAiJob(jobId); } catch { await failJob(db, companyId, threadId, jobId); return; }
-      // The job runs in the background: wait for it, then notify (once) when the draft is ready.
-      for (let i = 0; i < 28; i++) {
-        await new Promise((r) => setTimeout(r, 4000));
-        const job = await db.from("ai_jobs").select("state").eq("id", jobId).maybeSingle();
-        if (job.data?.state === "done") { await notifyDraftReady(db, companyId, threadId, jobId); return; }
-        if (job.data?.state === "failed") return;
-      }
+      const state = await runAi();
+      if (unverified) { await warnUnverified(db, companyId, threadId); return; } // never announce an unverified mail
+      if (state === "done") await notifyDraftReady(db, companyId, threadId, jobId); // notify (once) when the draft is ready
     },
   };
 }

@@ -1,6 +1,6 @@
 // Run with:  deno test --allow-env supabase/functions/_shared/sender_auth_test.ts
 function assertEquals(a: unknown, b: unknown, msg = "") { const x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error(`${msg} expected ${y} but got ${x}`); }
-import { parseAuthResults, senderVerdict } from "./sender-auth.ts";
+import { parseAuthResults, senderCheckEnabled, senderVerdict, UNVERIFIED_WARNING, withUnverifiedWarning } from "./sender-auth.ts";
 
 const ar = (value: string) => ({ name: "Authentication-Results", value });
 const GMAIL = "mx.google.com; dkim=pass header.i=@example.com header.s=s1 header.b=abc; spf=pass (google.com: domain of a@example.com designates 1.2.3.4 as permitted sender) smtp.mailfrom=a@example.com; dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com";
@@ -40,4 +40,17 @@ Deno.test("sender check: aligned DKIM or SPF passes a domain without DMARC; fail
 Deno.test("sender check: comments never count as results", () => {
   assertEquals(parseAuthResults("mx; spf=fail (dmarc=pass header.from=kund.se) smtp.mailfrom=kund.se").map((r) => `${r.method}=${r.result}`), ["spf=fail"]);
   assertEquals(senderVerdict([ar("mx; spf=fail (dmarc=pass header.from=kund.se; dkim=pass header.d=kund.se) smtp.mailfrom=kund.se")], "info@kund.se"), "fail");
+});
+
+Deno.test("sender check: off by default; the draft warning is appended once and keeps existing warnings", () => {
+  const before = Deno.env.get("EMAIL_SENDER_CHECK");
+  try {
+    Deno.env.delete("EMAIL_SENDER_CHECK"); assertEquals(senderCheckEnabled(), false);
+    Deno.env.set("EMAIL_SENDER_CHECK", ""); assertEquals(senderCheckEnabled(), false);
+    Deno.env.set("EMAIL_SENDER_CHECK", "true"); assertEquals(senderCheckEnabled(), true);
+  } finally { if (before === undefined) Deno.env.delete("EMAIL_SENDER_CHECK"); else Deno.env.set("EMAIL_SENDER_CHECK", before); }
+  assertEquals(withUnverifiedWarning(["Pris saknas"]), ["Pris saknas", UNVERIFIED_WARNING]);
+  assertEquals(withUnverifiedWarning(["Pris saknas", UNVERIFIED_WARNING]), ["Pris saknas", UNVERIFIED_WARNING]);
+  assertEquals(withUnverifiedWarning(null), [UNVERIFIED_WARNING]);
+  assertEquals(withUnverifiedWarning([1, "a"]), ["a", UNVERIFIED_WARNING]);
 });

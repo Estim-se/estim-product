@@ -10,6 +10,19 @@
 
 export type SenderVerdict = "pass" | "fail" | "unknown";
 
+export const UNVERIFIED_WARNING = "Avsändaren kunde inte verifieras. Kontrollera att mejlet verkligen kommer från kunden innan du svarar.";
+
+/** EMAIL_SENDER_CHECK=true turns the check on (default off). */
+export function senderCheckEnabled(): boolean {
+  return Deno.env.get("EMAIL_SENDER_CHECK")?.trim().toLowerCase() === "true";
+}
+
+/** The draft warnings with the unverified-sender warning appended once (existing warnings are kept). */
+export function withUnverifiedWarning(warnings: unknown): string[] {
+  const list = Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : [];
+  return list.includes(UNVERIFIED_WARNING) ? list : [...list, UNVERIFIED_WARNING];
+}
+
 /** Header values are cut at this length by parseMessage/parseEmail: a cut header may hide its dmarc result. */
 const HEADER_VALUE_LIMIT = 2000;
 
