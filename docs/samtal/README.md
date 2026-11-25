@@ -15,14 +15,17 @@ estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 | 2 | [inkorg.sql](inkorg.sql) | The inbox accepts the channel `samtal`; a call gets an SMS draft. **Done:** migration `20261125120828_e9d2cb95-…`, identical. |
 | 3a | [samtal-sletting.sql](samtal-sletting.sql) | Deletion functions. **Done:** migration `20261125121204_85ce6994-…`, identical. |
 | 3b | [samtal-sletting-cron.sql](samtal-sletting-cron.sql) | Hourly deletion schedule: pg_cron, pg_net, Vault. **Done:** migration `20261125121315_0faf7e7c-…`, identical; Vault holds `samtal_base_url` and `samtal_purge_secret`. |
-| 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. |
+| 3c | [samtal-sletting-hemmelighet.sql](samtal-sletting-hemmelighet.sql) | The purge route checks the secret against Vault through a server-only function. The app secret `SAMTAL_PURGE_SECRET` is not used. **Done:** migration `20261125122653_f3eda501-…`, identical. |
+| 4 | [samtal-worker-cron.sql](samtal-worker-cron.sql) | The processing queue every minute (`samtal-worker`). Run when step 5 (inbox) is merged. |
 
 All three prompts are below.
 
 ## Open points
 
 1. **Real SMS delivery is missing.** The inbox has no SMS provider today: an approved SMS reply is saved as *sent* without leaving estim (`deliverChannel` only delivers WhatsApp and e-mail). A call's reply draft is an SMS, so until an SMS provider is connected the owner must contact the customer in another way. This applies to all SMS in the inbox, not only Samtal.
-2. **The purge route `/api/public/samtal-purge` is not built yet.** It comes with the processing (step 4). Until then the hourly job reaches the app, gets 404 and deletes nothing. Retention therefore starts to work when that route is merged and published.
+2. **The purge route `/api/public/samtal-purge` exists since step 4.** Until the app is published with it, the hourly job gets 404 and deletes nothing.
+3. **Berget's response format is not documented with an example.** The transcript reader is tolerant: speaker per segment, else from the words. It must be checked against a real response once `BERGET_API_KEY` is set.
+4. **Data leaves estim for processing.** The audio goes to Berget AI (Stockholm, Swedish jurisdiction per Berget). The transcript goes to Claude through Lovable's AI gateway. Berget's retention of audio is not stated in what was read (their DPA was not read).
 
 ## Code: standard call and adapters (src/lib/samtal/)
 
@@ -49,6 +52,37 @@ Test adapter metadata (`<name>.json`, next to `<name>.mp3`, `.m4a`, `.wav` …):
 ```
 
 `from` may be left out (withheld number); `duration_seconds` may replace `ended_at`.
+
+## Processing (step 4)
+
+| File | What |
+|---|---|
+| [transcript.ts](../../src/lib/samtal/transcript.ts) | The transcript: segments with time, speaker and text. Reads an OpenAI-compatible `verbose_json` answer tolerantly. |
+| [stt.server.ts](../../src/lib/samtal/stt.server.ts) | Speech to text as a replaceable service. Berget: `https://api.berget.ai/v1/audio/transcriptions`, `KBLab/kb-whisper-large`, `language=sv`, `response_format=verbose_json`, `diarize=true`, `align=true`. Without `BERGET_API_KEY` it reports `stt_not_configured`. |
+| [ai.server.ts](../../src/lib/samtal/ai.server.ts) | Classification and extraction in one forced tool call through Lovable's AI gateway (`LOVABLE_API_KEY`). The model is `SAMTAL_AI_MODEL`, else `ANTHROPIC_MODEL_MAIN`. |
+| [interpretation.ts](../../src/lib/samtal/interpretation.ts) | The validated schema: job / private / uncertain; name, phone, address, place, type of job, description, desired time, urgency; uncertain points; suggested next steps. |
+| [customer-match.ts](../../src/lib/samtal/customer-match.ts) | Existing customer by phone, then by name and address together. A name alone never matches; same-named customers are listed as possible. |
+| [process.server.ts](../../src/lib/samtal/process.server.ts) | The job worker. |
+| [purge.server.ts](../../src/lib/samtal/purge.server.ts) | Deletion after retention. |
+| Routes | `/api/public/samtal-worker` and `/api/public/samtal-purge`. Both check `x-estim-secret` against Vault. |
+
+**Validation:**
+- Every field must cite a time span that lies in the call. A value without one is dropped and listed as uncertain.
+- The phone number is normalised.
+- Invalid dates are dropped, and so are next steps without a source.
+
+**The job worker:**
+- **Concurrency:** jobs are claimed under a lease, so many calls run at once and none is processed twice. One failing call never stops the others.
+- **Resuming:** a job resumes at the step it reached: transcribe, interpret, inbox.
+- **Retries:** transient errors are retried with backoff, up to five attempts. Without a speech-to-text or AI key the call waits hourly.
+- **Private calls:** the audio and text are deleted at once.
+- **Company isolation:** every read and write is bound to the job's company, and audio is read only from that company's own folder.
+- **Logging:** codes only.
+
+**Deletion after retention:**
+- Each due file is deleted only in its own company folder, then the call's content is removed with that company.
+- A file that cannot be deleted keeps its call for the next run.
+- Deletion runs even with the flag off, so retention keeps working if the module is switched off.
 
 ## Tables
 
@@ -174,7 +208,7 @@ When done, report:
 
 Run as migrations `20261125121204_85ce6994-…` and `20261125121315_0faf7e7c-…`, identical to the files. Vault holds `samtal_base_url` and `samtal_purge_secret`. The app secret SAMTAL_PURGE_SECRET was removed again: the secret lives only in Vault (3c).
 
-### 3c. The purge secret only in Vault
+### 3c. The purge secret only in Vault (done)
 
 ```
 Create a new migration with exactly the SQL in the file docs/samtal/samtal-sletting-hemmelighet.sql in the repository (estim Samtal). It adds one function, samtal_purge_secret_valid, that only service_role may call. It checks a given value against the Vault secret samtal_purge_secret and returns true or false, never the secret.
@@ -188,4 +222,19 @@ When done, report:
 1. The name of the migration file.
 2. That samtal_purge_secret_valid exists and only service_role has EXECUTE on it.
 3. The result of SELECT public.samtal_purge_secret_valid('wrong'), which must be false.
+```
+
+### 4. Processing queue every minute (run after step 5 is merged)
+
+```
+Create a new migration with exactly the SQL in the file docs/samtal/samtal-worker-cron.sql in the repository (estim Samtal). It schedules the job 'samtal-worker' every minute. The job calls the app's route /api/public/samtal-worker with the existing Vault secrets samtal_base_url and samtal_purge_secret.
+
+Rules:
+- Run the SQL unchanged.
+- Do not create or change any secret.
+- Change nothing else and do not change any code in the app.
+
+When done, report:
+1. The name of the migration file.
+2. The row for 'samtal-worker' in cron.job: schedule, active, and that it is the only job with that name.
 ```
