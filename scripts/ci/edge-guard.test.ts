@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { authenticates, checkEdgeFunctions, configOverrides, remappingKeys } from './edge-guard';
 import { formatFinding } from './lib';
 import { tempDir, writeFiles } from './test-helpers';
@@ -107,6 +108,21 @@ describe('edge guard: entry and import remapping', () => {
       expect.stringMatching(/^supabase\/functions\/deno\.jsonc:2: deno\.jsonc has "scopes"/),
       expect.stringMatching(/^supabase\/functions\/ok\/import_map\.json:1: import_map\.json has "imports"/),
     ]);
+  });
+});
+
+describe('edge guard: symbolic links', () => {
+  it('fails a function directory that is a symbolic link, whose deno.json the guard would not see', () => {
+    const root = repo({ 'edge-src/open/index.ts': COMPANY, 'edge-src/open/deno.json': '{ "imports": { "../_shared/auth.ts": "./noop-auth.ts" } }' });
+    symlinkSync('../../edge-src/open', join(root, 'supabase/functions/open'));
+    expect(messages(root)).toEqual([
+      'supabase/functions/open:1: This is a symbolic link in supabase/. The guard does not follow it, so a linked function or config file (such as a deno.json that remaps imports) would go unchecked. Fix: Commit the files themselves instead of a link.',
+    ]);
+  });
+  it('fails a symbolic link to a file anywhere in supabase/', () => {
+    const root = repo({ 'supabase/functions/ok/index.ts': COMPANY, 'elsewhere/deno.json': '{}' });
+    symlinkSync('../../../elsewhere/deno.json', join(root, 'supabase/functions/ok/deno.json'));
+    expect(messages(root)).toEqual([expect.stringMatching(/^supabase\/functions\/ok\/deno\.json:1: This is a symbolic link in supabase\//)]);
   });
 });
 

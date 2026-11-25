@@ -5,15 +5,16 @@
 //   header with the INTERNAL_FUNCTION_KEY setting (=== / !==, or a call such as safeEqual(a, b)).
 // Also, nothing may move the entry or remap imports: supabase/config.toml (read with a real TOML parser) may not set
 // entrypoint or import_map for a function, and no deno.json, deno.jsonc or import_map.json anywhere in supabase/ or at
-// the repository root may have imports, scopes or importMap. Exceptions only through
-// scripts/ci/edge-guard-allowlist.json, each with a reason.
+// the repository root may have imports, scopes or importMap. Nothing in supabase/ may be a symbolic link: the guard
+// would not see through it, and a linked function directory could bring its own deno.json. Exceptions (for the
+// authentication and entry-file rules only) through scripts/ci/edge-guard-allowlist.json, each with a reason.
 //
 // This is a static heuristic: it does not prove the guard call runs (dead code passes), and it trusts the _shared
 // modules, so those need review of their own.
 //
 // Usage: bun scripts/ci/edge-guard.ts [--root <repo>]
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import ts from 'typescript';
@@ -34,11 +35,13 @@ export const GUARD_IMPORTS: Record<string, string> = {
 const JS_FILE = /\.(?:js|mjs|cjs|jsx)$/i;
 const toPosix = (p: string) => p.split(sep).join('/');
 
-function walk(dir: string): string[] {
+/** Every file under `dir`. Symbolic links are not followed: they go to `links` instead. */
+function walk(dir: string, links: string[] = []): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walk(full));
+    if (entry.isSymbolicLink()) links.push(full);
+    else if (entry.isDirectory()) out.push(...walk(full, links));
     else out.push(full);
   }
   return out;
@@ -229,7 +232,8 @@ export function checkEdgeFunctions(root: string, parseTomlText: TomlParse = pars
   };
   for (const name of existsSync(functionsDir) ? readdirSync(functionsDir).sort() : []) {
     const dir = join(functionsDir, name);
-    if (name === '_shared' || !statSync(dir).isDirectory()) continue;
+    // lstat: a symbolic link is never followed here; the supabase/ walk below reports it.
+    if (name === '_shared' || !lstatSync(dir).isDirectory()) continue;
     const files = walk(dir);
     const index = join(dir, 'index.ts');
     if (!allowed(name, 'entry-files')) {
@@ -259,7 +263,11 @@ export function checkEdgeFunctions(root: string, parseTomlText: TomlParse = pars
   }
   // Deno also reads config files in parent directories, so look everywhere in supabase/ and at the root.
   const supabaseDir = join(root, 'supabase');
-  const configFiles = [...(existsSync(supabaseDir) ? walk(supabaseDir) : []), ...DENO_CONFIGS.map(f => join(root, f)).filter(f => existsSync(f))];
+  const links: string[] = [];
+  const configFiles = [...(existsSync(supabaseDir) ? walk(supabaseDir, links) : []), ...DENO_CONFIGS.map(f => join(root, f)).filter(f => existsSync(f))];
+  for (const link of links.sort()) {
+    findings.push({ file: rel(link), line: 1, problem: 'This is a symbolic link in supabase/. The guard does not follow it, so a linked function or config file (such as a deno.json that remaps imports) would go unchecked.', fix: 'Commit the files themselves instead of a link.' });
+  }
   for (const file of configFiles) {
     const base = file.slice(file.lastIndexOf(sep) + 1);
     if (!DENO_CONFIGS.includes(base)) continue;
