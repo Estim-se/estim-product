@@ -8,7 +8,7 @@ function assertThrows(fn: () => unknown, includes: string) {
   throw new Error("expected an error");
 }
 import {
-  accountEventOf, authLinkBody, bindFailureAction, bounceEventOf, orphanAction, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
+  accountEventOf, authLinkBody, bounceEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
   parseEvent, shouldHandleEmailEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
@@ -168,39 +168,4 @@ Deno.test("provider routing: connections keep their provider, new ones follow EM
     Deno.env.delete("EMAIL_PROVIDER"); assertEquals(activeProvider(), "nylas");
     Deno.env.set("EMAIL_PROVIDER", " Unipile "); assertEquals(activeProvider(), "unipile");
   } finally { if (before === undefined) Deno.env.delete("EMAIL_PROVIDER"); else Deno.env.set("EMAIL_PROVIDER", before); }
-});
-
-Deno.test("bind failure: never deletes a reconnect or a known account; retries transient errors until the last attempt", () => {
-  const add = "account.add" as const, re = "account.reconnect" as const;
-  // unique violation: the account is bound elsewhere
-  assertEquals(bindFailureAction({ type: add, errorCode: "23505", isLastAttempt: false, accountKnown: false }), "delete");
-  assertEquals(bindFailureAction({ type: add, errorCode: "23505", isLastAttempt: false, accountKnown: true }), "ignore");
-  assertEquals(bindFailureAction({ type: re, errorCode: "23505", isLastAttempt: true, accountKnown: false }), "ignore");
-  // any other error: retry, and only a new unknown account is deleted on the last attempt
-  assertEquals(bindFailureAction({ type: add, errorCode: "08006", isLastAttempt: false, accountKnown: false }), "retry");
-  assertEquals(bindFailureAction({ type: add, errorCode: null, isLastAttempt: false, accountKnown: false }), "retry");
-  assertEquals(bindFailureAction({ type: add, errorCode: "08006", isLastAttempt: true, accountKnown: false }), "delete");
-  assertEquals(bindFailureAction({ type: add, errorCode: "08006", isLastAttempt: true, accountKnown: true }), "retry");
-  assertEquals(bindFailureAction({ type: re, errorCode: "08006", isLastAttempt: false, accountKnown: false }), "retry");
-  assertEquals(bindFailureAction({ type: re, errorCode: "08006", isLastAttempt: true, accountKnown: true }), "retry");
-});
-
-Deno.test("orphan: a new unknown account with an expired or used state is deleted, nothing else", () => {
-  const now = Date.parse("2026-11-25T12:00:00Z");
-  const iso = (ms: number) => new Date(now + ms).toISOString();
-  const add = "account.add" as const, re = "account.reconnect" as const;
-  const expired = { used_at: null, expires_at: iso(-1000) };
-  const usedLongAgo = { used_at: iso(-10 * 60_000), expires_at: iso(20 * 60_000) };
-  const usedJustNow = { used_at: iso(-5_000), expires_at: iso(20 * 60_000) };
-  const open = { used_at: null, expires_at: iso(60_000) };
-  assertEquals(orphanAction({ type: add, stateRow: expired, accountKnown: false, isLastAttempt: false, now }), "delete");
-  assertEquals(orphanAction({ type: add, stateRow: usedLongAgo, accountKnown: false, isLastAttempt: false, now }), "delete");
-  // a duplicate delivery while the first binding may still be saving: wait, decide on the last attempt
-  assertEquals(orphanAction({ type: add, stateRow: usedJustNow, accountKnown: false, isLastAttempt: false, now }), "retry");
-  assertEquals(orphanAction({ type: add, stateRow: usedJustNow, accountKnown: false, isLastAttempt: true, now }), "delete");
-  // never: no row (other environment), reconnect, account already bound, state still claimable
-  assertEquals(orphanAction({ type: add, stateRow: null, accountKnown: false, isLastAttempt: true, now }), "ignore");
-  assertEquals(orphanAction({ type: re, stateRow: expired, accountKnown: false, isLastAttempt: true, now }), "ignore");
-  assertEquals(orphanAction({ type: add, stateRow: usedLongAgo, accountKnown: true, isLastAttempt: true, now }), "ignore");
-  assertEquals(orphanAction({ type: add, stateRow: open, accountKnown: false, isLastAttempt: true, now }), "ignore");
 });

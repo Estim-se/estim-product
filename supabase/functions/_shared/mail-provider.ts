@@ -26,8 +26,10 @@ export async function sendReply(args: {
   return await nylasSendReply(args);
 }
 
-/** Removes the connection at its provider. Best effort: a failure never blocks disconnecting in Estim. */
-export async function revokeConnection(connectionId: string): Promise<void> {
-  if (providerOf(connectionId) === "unipile") await deleteAccount(connectionId);
-  else await revokeGrant(connectionId);
+/**
+ * Removes the connection at its provider. true when the provider confirmed it (2xx, or 404: already gone).
+ * Callers decide WHETHER to revoke through connection-binding.ts (never an id still referenced by another row).
+ */
+export async function revokeConnection(connectionId: string): Promise<boolean> {
+  return providerOf(connectionId) === "unipile" ? await deleteAccount(connectionId) : await revokeGrant(connectionId);
 }

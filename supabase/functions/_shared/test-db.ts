@@ -3,7 +3,7 @@
 // flag that is off changes nothing) and check rows after a scenario.
 //
 // Supported: from(table).select(cols, { count: "exact", head: true }) / insert / update / upsert({ onConflict }) /
-// delete, filters eq / is / gt / gte / lt / in / ilike / not(col, "in", "(a,b)") / contains, limit, maybeSingle,
+// delete, filters eq / neq / is / gt / gte / lt / in / ilike / not(col, "in", "(a,b)") / contains, limit, maybeSingle,
 // a chained .select() after a write, rpc(name, args), storage.from(bucket).upload and auth.admin.getUserById.
 // Unique columns per table give a 23505 error like Postgres. fail() makes the next matching call return an error.
 
@@ -55,6 +55,7 @@ class Query implements PromiseLike<DbResult> {
 
   private add(text: string, test: (row: Row) => boolean): this { this.filters.push({ text, test }); return this; }
   eq(col: string, v: unknown) { return this.add(`.eq(${col},${show(v)})`, (r) => r[col] === v); }
+  neq(col: string, v: unknown) { return this.add(`.neq(${col},${show(v)})`, (r) => r[col] !== v); }
   is(col: string, v: null) { return this.add(`.is(${col},${show(v)})`, (r) => r[col] == null); }
   gt(col: string, v: unknown) { return this.add(`.gt(${col},${show(v)})`, (r) => r[col] != null && compare(r[col], v) > 0); }
   gte(col: string, v: unknown) { return this.add(`.gte(${col},${show(v)})`, (r) => r[col] != null && compare(r[col], v) >= 0); }

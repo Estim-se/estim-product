@@ -172,46 +172,13 @@ export async function getAccount(accountId: string): Promise<{ email: string; pr
   return parseAccount(await res.json());
 }
 
-export async function deleteAccount(accountId: string): Promise<void> {
-  await unipileFetch(`/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" }).catch(() => undefined); // best effort
+/** Deletes the account at Unipile. true on 2xx or 404 (already gone); false when Unipile could not be reached or refused. */
+export async function deleteAccount(accountId: string): Promise<boolean> {
+  const res = await unipileFetch(`/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" }).catch(() => null);
+  return Boolean(res && (res.ok || res.status === 404));
 }
 
-/* ---------- Binding decisions (pure, unit tested) ---------- */
-
-export type AccountEventType = "account.add" | "account.reconnect";
-const UNIQUE_VIOLATION = "23505";
-/** A state used this recently may belong to a binding that is still running (or retrying) for the same event. */
-export const STATE_IN_FLIGHT_MS = 2 * 60_000;
-
-/**
- * What to do when saving the connection failed. `accountKnown` = the account id is already in email_connections
- * (or that could not be checked). Never deletes on a reconnect (that is the company's live account) or a known account.
- *  - unique violation (the account is bound elsewhere): delete a new, unknown account; otherwise leave it.
- *  - any other error: retry (the caller un-claims the state first); only a new, unknown account on the last attempt
- *    is deleted, so an unbound account does not keep reading the mailbox and being billed.
- */
-export function bindFailureAction(args: { type: AccountEventType; errorCode: string | null | undefined; isLastAttempt: boolean; accountKnown: boolean }): "delete" | "retry" | "ignore" {
-  const deletable = args.type === "account.add" && !args.accountKnown;
-  if (args.errorCode === UNIQUE_VIOLATION) return deletable ? "delete" : "ignore";
-  return deletable && args.isLastAttempt ? "delete" : "retry";
-}
-
-/**
- * What to do with an account whose state could not be claimed. `stateRow` = our oauth_states row for the state
- * (null: no row at all, it may belong to another environment, so never touch it). A new account (account.add) that
- * is not in email_connections and whose state is expired or used is an orphan: Unipile created it, it reads the whole
- * mailbox and is billed, so it is deleted. A state used within STATE_IN_FLIGHT_MS is retried first, because a duplicate
- * delivery of the same event may arrive while the first binding is still saving.
- */
-export function orphanAction(args: { type: AccountEventType; stateRow: { used_at: string | null; expires_at: string } | null; accountKnown: boolean; isLastAttempt: boolean; now?: number }): "delete" | "retry" | "ignore" {
-  if (!args.stateRow || args.type !== "account.add" || args.accountKnown) return "ignore";
-  const now = args.now ?? Date.now();
-  const usedAt = args.stateRow.used_at ? Date.parse(args.stateRow.used_at) : NaN;
-  const expired = !(Date.parse(args.stateRow.expires_at) > now);
-  if (Number.isNaN(usedAt) && !expired) return "ignore"; // still claimable: not an orphan
-  if (!Number.isNaN(usedAt) && now - usedAt < STATE_IN_FLIGHT_MS && !args.isLastAttempt) return "retry";
-  return "delete";
-}
+/* Binding decisions (bindFailureAction, orphanAction) live in connection-binding.ts, shared with Nylas. */
 
 /* ---------- Reading mail ---------- */
 

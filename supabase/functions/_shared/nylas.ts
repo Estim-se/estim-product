@@ -154,8 +154,10 @@ export async function getGrant(grantId: string): Promise<{ email: string; provid
   return { email, provider };
 }
 
-export async function revokeGrant(grantId: string): Promise<void> {
-  await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }).catch(() => undefined); // best effort
+/** Revokes the grant at Nylas. true on 2xx or 404 (already gone); false when Nylas could not be reached or refused. */
+export async function revokeGrant(grantId: string): Promise<boolean> {
+  const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }).catch(() => null);
+  return Boolean(res && (res.ok || res.status === 404));
 }
 
 /* ---------- Reading mail ---------- */

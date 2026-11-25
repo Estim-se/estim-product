@@ -7,7 +7,7 @@
 //  finish     { state }            -> { email, provider } | { pending: true }
 //                                     Unipile: the signed account.add webhook binds the account to the state;
 //                                     /epost-klar asks until that has happened
-//  disconnect {}                   -> { ok: true }
+//  disconnect {}                   -> { ok: true } | 502 when the provider did not confirm the revoke (nothing changed)
 //
 // Rules: only an owner ("ägare") of an ACTIVE company; the OAuth state is random (256 bit), stored only as a hash,
 // single use and bound to user + company; the mailbox address and the account come from the provider, never from the
@@ -17,7 +17,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import { handleOptions, json } from "../_shared/cors.ts";
 import { requireCompany } from "../_shared/auth.ts";
 import { buildAuthUrl, env, exchangeCode, getGrant, newState, sha256Hex } from "../_shared/nylas.ts";
-import { activeProvider, revokeConnection } from "../_shared/mail-provider.ts";
+import { activeProvider } from "../_shared/mail-provider.ts";
+import { bindConnection, disconnectConnection, revokeIfUnreferenced, unipileFinishStatus } from "../_shared/connection-binding.ts";
 import { createAuthLink, isUnipileAccount } from "../_shared/unipile.ts";
 
 const NYLAS_STATE_MINUTES = 10;
@@ -66,18 +67,12 @@ Deno.serve(async (req) => {
       const stateHash = await sha256Hex(state);
 
       if (!code) {
-        // Unipile: the webhook claims the state when it stores the account. Here we only report how far it has come,
-        // and only to the user and company that started it.
-        const row = await db.from("oauth_states").select("used_at,expires_at").eq("state_hash", stateHash).eq("user_id", userId).eq("company_id", companyId).maybeSingle();
-        if (row.error) return json({ error: "Något gick fel. Försök igen." }, 500);
-        if (!row.data) return json({ error: "Anslutningen är ogiltig. Försök igen." }, 400);
-        if (!row.data.used_at) {
-          return Date.parse(row.data.expires_at) > Date.now() ? json({ pending: true }) : json({ error: "Anslutningen har gått ut. Försök igen." }, 400);
-        }
-        const conn = await db.from("email_connections").select("email,provider,status").eq("company_id", companyId).maybeSingle();
-        if (conn.error) return json({ error: "Något gick fel. Försök igen." }, 500);
-        if (!conn.data || conn.data.status !== "active") return json({ error: "Kunde inte slutföra anslutningen. Försök igen." }, 409);
-        return json({ email: conn.data.email, provider: conn.data.provider });
+        // Unipile: the webhook claims the state and records the outcome of this attempt (connection-binding.ts).
+        // Here we only report it, and only to the user and company that started it.
+        const status = await unipileFinishStatus(db, companyId, userId, stateHash);
+        if (status.kind === "pending") return json({ pending: true });
+        if (status.kind === "error") return json({ error: status.error }, status.status);
+        return json({ email: status.email, provider: status.provider });
       }
 
       // Nylas: exchange the one-time code.
@@ -92,40 +87,28 @@ Deno.serve(async (req) => {
       let grantId: string;
       try { grantId = await exchangeCode(code); } catch { return json({ error: "Kunde inte slutföra anslutningen. Försök igen." }, 502); }
       let grant: Awaited<ReturnType<typeof getGrant>>;
-      // Nylas returns the SAME grant id when an already connected mailbox signs in again, so never revoke a grant
-      // that another company uses (it would cut off that company's mailbox).
-      const otherOwner = async () => {
-        const owner = await db.from("email_connections").select("company_id").eq("grant_id", grantId).limit(1).maybeSingle();
-        return Boolean(owner.error) || (Boolean(owner.data) && owner.data!.company_id !== companyId);
-      };
+      // Nylas returns the SAME grant id when an already connected mailbox signs in again, so a grant that any
+      // email_connections row references (another company's, or our own live one) is never revoked.
       try { grant = await getGrant(grantId); } catch {
-        if (!(await otherOwner())) await revokeConnection(grantId);
+        await revokeIfUnreferenced(db, grantId);
         return json({ error: "Det här kontot stöds inte." }, 400);
       }
 
-      const existing = await db.from("email_connections").select("grant_id").eq("company_id", companyId).maybeSingle();
-      const saved = await db.from("email_connections").upsert({
-        company_id: companyId, grant_id: grantId, email: grant.email, provider: grant.provider, status: "active",
-        watch_address: grant.email, connected_by: userId,
-      }, { onConflict: "company_id" });
-      if (saved.error) {
-        if (await otherOwner()) return json({ error: "Mejllådan är redan kopplad till ett annat företag." }, 409);
-        await revokeConnection(grantId);
+      const bound = await bindConnection(db, {
+        providerName: "nylas", companyId, userId, connectionId: grantId, email: grant.email, mailProvider: grant.provider,
+        isNew: true, isLastAttempt: true, stateHash,
+      });
+      if (bound.status === "failed") {
+        if (bound.stage === "lookup") return json({ error: "Något gick fel. Försök igen." }, 500);
+        if (bound.boundElsewhere) return json({ error: "Mejllådan är redan kopplad till ett annat företag." }, 409);
         return json({ error: "Kunde inte spara anslutningen. Kontot kan redan vara kopplat till ett annat företag." }, 409);
       }
-      if (existing.data && existing.data.grant_id !== grantId) await revokeConnection(existing.data.grant_id);
-      await db.from("audit_log").insert({ company_id: companyId, user_id: userId, event: "E-post ansluten", after: { provider: grant.provider } });
       return json({ email: grant.email, provider: grant.provider });
     }
 
     if (input?.action === "disconnect") {
-      const conn = await db.from("email_connections").select("grant_id").eq("company_id", companyId).maybeSingle();
-      if (conn.data) {
-        await revokeConnection(conn.data.grant_id);
-        await db.from("email_connections").update({ status: "revoked" }).eq("company_id", companyId);
-        await db.from("audit_log").insert({ company_id: companyId, user_id: userId, event: "E-post frånkopplad" });
-      }
-      return json({ ok: true });
+      const result = await disconnectConnection(db, companyId, userId);
+      return result.ok ? json({ ok: true }) : json({ error: result.error }, result.status);
     }
     return json({ error: "Okänd åtgärd." }, 400);
   } catch (e) {
