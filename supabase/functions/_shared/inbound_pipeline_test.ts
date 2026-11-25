@@ -199,6 +199,36 @@ Deno.test("flood guard v2: unknown senders get only their share of the AI cap, k
   assert(fetched(off, "triage-email") && fetched(off, "interpret-request"), "flag off changed the AI cap");
 });
 
+Deno.test("flood guard v2: one sender at the per-sender hard cap is dropped", async () => {
+  const db = pipelineDb(knownSender(30));
+  await withEnv({ EMAIL_FLOOD_GUARD_V2: "true" }, db, () => run(db));
+  assert(!db.calls.some((c) => c.startsWith("rpc.estim_receive")), "stored");
+});
+
+Deno.test("failed counts: with the flag a retry or no AI; without it read as 0 exactly as before", async () => {
+  const companyCount = ".select(id,count).eq(company_id,c1).eq(from,kund)";
+  const on = pipelineDb();
+  on.fail(companyCount);
+  await withEnv({ EMAIL_FLOOD_GUARD_V2: "true" }, on, async () => assertEquals(await ingestMail(asClient(on), mail(), "nylas"), { retry: true }));
+
+  const off = pipelineDb();
+  off.fail(companyCount);
+  await withEnv({}, off, () => run(off));
+  assertEquals(off.normalized(), GOLDEN_NEW_SENDER);
+
+  const noAi = pipelineDb(knownSender(1));
+  noAi.fail("ai_calls.select", undefined, 5);
+  await withEnv({ EMAIL_FLOOD_GUARD_V2: "true" }, noAi, () => run(noAi));
+  assert(noAi.calls.some((c) => c.startsWith("rpc.estim_receive")), "not stored");
+  assert(!fetched(noAi, "interpret-request"), "AI ran without a budget count");
+  assertEquals(noAi.rows("ai_jobs").map((j) => j.state), ["failed"]);
+
+  const offAi = pipelineDb();
+  offAi.fail("ai_calls.select", undefined, 5);
+  await withEnv({}, offAi, () => run(offAi));
+  assertEquals(offAi.normalized(), GOLDEN_NEW_SENDER);
+});
+
 /* ---------- EMAIL_SENDER_CHECK ---------- */
 
 Deno.test("sender check fail: audit row, warning on the draft, no notification", async () => {

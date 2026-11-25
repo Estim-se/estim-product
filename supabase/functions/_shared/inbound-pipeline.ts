@@ -8,7 +8,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import { callAiFunction, dispatchAiJob, isNoReplySender, sha256Hex } from "./nylas.ts";
 import { notifyDraftReady } from "./notify.ts";
 import { pickAttachments, safeFileName } from "./mail-format.ts";
-import { aiDailyCap, FLOOD_WARNING, floodDecision, floodGuardV2 } from "./mail-flood.ts";
+import { aiBudgetLeft, FLOOD_WARNING, floodDecision, floodGuardV2 } from "./mail-flood.ts";
 import { type SenderVerdict, withUnverifiedWarning } from "./sender-auth.ts";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -38,7 +38,7 @@ export async function aiAllowed(db: SupabaseClient, companyId: string, known?: b
   if (Deno.env.get("AI_ENABLED") === "false") return false;
   const since = new Date(Date.now() - 86_400_000).toISOString();
   const used = await db.from("ai_calls").select("id", { count: "exact", head: true }).eq("company_id", companyId).gte("created_at", since);
-  return (used.count ?? 0) < aiDailyCap({ known, flag: floodGuardV2() });
+  return aiBudgetLeft({ used: used.error ? null : used.count ?? 0, known, flag: floodGuardV2() });
 }
 
 /** Does this sender already have an open mail thread? Then the mail is a continuation and needs no triage. */
@@ -98,7 +98,8 @@ export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: str
   const inbound = await db.from("messages").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("from", "kund").eq("channel", "email").gte("created_at", hourAgo);
   const senderCount = flag ? await senderMailsSince(db, companyId, mail.fromEmail, hourAgo) : 0;
   if (senderCount === null) return { retry: true };
-  const flood = floodDecision({ senderCount, companyCount: inbound.count ?? 0, flag });
+  const flood = floodDecision({ senderCount, companyCount: inbound.error ? null : inbound.count ?? 0, flag });
+  if (flood === "retry") return { retry: true };
   if (flood === "drop") { console.info(`[${tag}] skipped message: inbound_rate_limited`); return {}; }
   if (flood === "store_no_ai") console.info(`[${tag}] flood: stored without ai`);
 
