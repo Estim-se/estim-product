@@ -177,17 +177,17 @@ Deno.test("1d: two account.add with one state -> loser deleted, winner kept", as
   const db = bindDb();
   const rec = recorder();
   // Both deliveries see the unused state and race to claim it.
-  const [a, b] = await Promise.all([
-    bindUnipileAccount(asClient(db), "account.add", addEvent("acc_A"), false, unipileDeps(rec)),
-    bindUnipileAccount(asClient(db), "account.add", addEvent("acc_B"), false, unipileDeps(rec)),
-  ]);
-  assertEquals(db.rows("email_connections").map((r) => r.grant_id), ["acc_A"]);
-  assertEquals(a, {});
-  if (b.retry) { // the loser saw the winner still in flight: its retry deletes it once the winner recorded success
+  const outcomes = await Promise.all(["acc_A", "acc_B"].map((id) => bindUnipileAccount(asClient(db), "account.add", addEvent(id), false, unipileDeps(rec))));
+  const bound = db.rows("email_connections").map((r) => r.grant_id);
+  assertEquals(bound.length, 1); // which delivery wins the claim depends on timing
+  const winner = bound[0] as string, loser = winner === "acc_A" ? "acc_B" : "acc_A";
+  assertEquals(outcomes[winner === "acc_A" ? 0 : 1], {});
+  if (outcomes[loser === "acc_A" ? 0 : 1]!.retry) { // the loser saw the winner in flight: its retry deletes it once the winner recorded success
     assertEquals(rec.revoked, []);
-    assertEquals(await bindUnipileAccount(asClient(db), "account.add", addEvent("acc_B"), false, unipileDeps(rec)), {});
+    assertEquals(await bindUnipileAccount(asClient(db), "account.add", addEvent(loser), false, unipileDeps(rec)), {});
   }
-  assertEquals(rec.revoked, ["acc_B"]);
+  assertEquals(rec.revoked, [loser]);
+  assertEquals(events(db, BIND_OK_EVENT).length, 1);
 });
 
 Deno.test("1e: a duplicate delivery while the binding is still in flight never deletes, also on the last attempt", async () => {
