@@ -5,25 +5,25 @@
 //
 // Listens on http://localhost:8787. Expose it with:  cloudflared tunnel --url http://localhost:8787
 //   POST /webhook  Unipile events
-//   GET  /klar     where the browser lands after the hosted login (shows the query Unipile adds)
+//   GET  /done     where the browser lands after the hosted login (shows the query Unipile adds)
 
 import * as unipile from "../../supabase/functions/_shared/unipile.ts";
 
 const secret = Deno.env.get("UNIPILE_WEBHOOK_SECRET") ?? "";
-if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET saknas: signaturer kan inte kontrolleras förrän webhooken är skapad (steg 3 i README).");
+if (!secret) console.warn("UNIPILE_WEBHOOK_SECRET is missing: signatures cannot be checked until the webhook exists (step 3 in the README).");
 
 Deno.serve({ port: 8787 }, async (req) => {
   const url = new URL(req.url);
   // Every call is logged, so a webhook configured with the wrong path is visible instead of silently ignored.
-  console.log(`\n-> ${new Date().toISOString()} ${req.method} ${url.pathname}${req.headers.has("unipile-signature") ? " (från Unipile)" : ""}`);
+  console.log(`\n-> ${new Date().toISOString()} ${req.method} ${url.pathname}${req.headers.has("unipile-signature") ? " (from Unipile)" : ""}`);
 
-  if (req.method === "GET" && url.pathname === "/klar") {
+  if (req.method === "GET" && url.pathname === "/done") {
     const params = Object.fromEntries(url.searchParams);
-    console.log("\n== Webbläsaren kom tillbaka efter inloggning ==\n", params);
-    return new Response(`<meta charset="utf-8"><p>Klart. Titta i terminalen.</p><pre>${JSON.stringify(params, null, 2).replace(/</g, "&lt;")}</pre>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+    console.log("\n== The browser came back after sign-in ==\n", params);
+    return new Response(`<meta charset="utf-8"><p>Done. Check the terminal.</p><pre>${JSON.stringify(params, null, 2).replace(/</g, "&lt;")}</pre>`, { headers: { "content-type": "text/html; charset=utf-8" } });
   }
   if (req.method !== "POST" || url.pathname !== "/webhook") {
-    console.log("   fel adress: webhooken i Unipiles dashboard ska sluta på /webhook");
+    console.log("   wrong path: the webhook in Unipile's dashboard must end with /webhook");
     return new Response("not found", { status: 404 });
   }
 
@@ -33,18 +33,18 @@ Deno.serve({ port: 8787 }, async (req) => {
   let event: unipile.UnipileEvent | null = null;
   try { event = unipile.parseEvent(JSON.parse(new TextDecoder().decode(raw))); } catch { /* reported below */ }
 
-  console.log(`\n== ${new Date().toISOString()} ${event?.type ?? "okänd händelse"} | signatur ${valid ? "OK" : "FEL"} ==`);
-  if (!header) console.log("Ingen unipile-signature-rubrik i anropet.");
-  if (!event) { console.log("Kunde inte tolka kroppen."); return new Response("ok"); }
-  console.log("konto:", event.accountId, "| nycklar i payload:", Object.keys(event.payload));
+  console.log(`\n== ${new Date().toISOString()} ${event?.type ?? "unknown event"} | signature ${valid ? "OK" : "INVALID"} ==`);
+  if (!header) console.log("No unipile-signature header on the call.");
+  if (!event) { console.log("Could not parse the body."); return new Response("ok"); }
+  console.log("account:", event.accountId, "| payload keys:", Object.keys(event.payload));
 
   if (event.type === "account.add" || event.type === "account.reconnect") {
-    console.log("appen skulle binda:", unipile.accountEventOf(event.payload), "(state ska vara samma som från 'link')");
+    console.log("the app would bind:", unipile.accountEventOf(event.payload), "(state must match the one from 'link')");
   } else if (event.type === "email.new") {
     const ref = unipile.emailEventOf(event.payload);
-    console.log("mejl:", ref, "| leverantör:", event.provider, ref && unipile.shouldHandleEmailEvent(event.provider, ref) ? "→ appen behandlar det" : "→ appen hoppar över (annan etikett, skickat, utkast eller skräp)");
+    console.log("mail:", ref, "| provider:", event.provider, ref && unipile.shouldHandleEmailEvent(event.provider, ref) ? "-> the app processes it" : "-> the app skips it (other label, sent, draft or spam)");
   } else if (event.type === "email.new.bounce") {
-    console.log("appen skulle markera svaret med Message-ID", unipile.bounceEventOf(event.payload), "som ej levererat");
+    console.log("the app would mark the reply with Message-ID", unipile.bounceEventOf(event.payload), "as not delivered");
   } else {
     console.log("payload:", JSON.stringify(event.payload));
   }

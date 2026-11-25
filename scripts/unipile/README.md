@@ -1,89 +1,104 @@
-# Unipile: lokalt test
+# Unipile: local test
 
-Testar appens Unipile-kod (`supabase/functions/_shared/unipile.ts`) mot ett riktigt provkonto hos Unipile, utan Lovable,
-utan databasen och utan att röra appen. Inget här driftsätts.
+Tests the app's Unipile code (`supabase/functions/_shared/unipile.ts`) against a real Unipile trial account, without
+Lovable, without the database and without touching the app. Nothing in this folder is deployed.
 
-Använd bara din egen testbrevlåda: skripten skriver ut mejldata i terminalen.
+Use your own test mailbox only: the scripts print mail data to the terminal.
 
-## Förberedelser
+## What was verified (2026-11-25, Gmail and Outlook)
 
-1. Skapa ett eget provkonto på unipile.com (7 dagar, inget kort) och hämta en API-nyckel i dashboarden.
-2. Kopiera `.env.example` till `.env` i den här mappen och fyll i `UNIPILE_API_KEY`. `.env` ignoreras av git.
-3. Installera tunneln (gratis, inget konto):
+| Area | Result |
+| --- | --- |
+| Hosted auth link, `account.add` with our state, signed | Works; the event arrives before the browser returns |
+| Mailbox address | In `user_id` (and `name`) on the account |
+| Reading mail and downloading attachments | Works; attachment ids are long tokens and must not be cut |
+| Reply in the same thread | Works when the subject is kept (`Re: …`) |
+| Incoming mail (`email.new`) | Gmail sends one event per label; the app only handles `INBOX` |
+| Bounces (`email.new.bounce`) | `email_id` is the Message-ID of the bounced reply, which `send` returns as `message_id` |
+
+## Before you start
+
+1. Create a Unipile trial account (7 days, no card) and create an **Account API Key** in the v2 dashboard
+   (`dashboardv2.unipile.com` → API Keys). The app only needs this key type.
+2. Copy `.env.example` to `.env` in this folder and fill in `UNIPILE_API_KEY`. `.env` is git-ignored.
+3. Install the tunnel (free, no account):
 
    ```powershell
    winget install --id Cloudflare.cloudflared
    ```
 
-## Steg
+   Open a new terminal afterwards so `cloudflared` is on the path, or run it as
+   `& "C:\Program Files (x86)\cloudflared\cloudflared.exe"`.
 
-Kör allt från repots rotmapp. Ha tre terminaler öppna.
+## Steps
 
-1. **Terminal 1: starta mottagaren**
+Run everything from the repository root, with three terminals open.
+
+1. **Terminal 1: start the receiver.**
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/webhook-server.ts
    ```
 
-2. **Terminal 2: starta tunneln** och kopiera adressen som slutar på `trycloudflare.com`.
+2. **Terminal 2: start the tunnel** and copy the address ending in `trycloudflare.com`.
 
    ```powershell
    cloudflared tunnel --url http://localhost:8787
    ```
 
-3. **Skapa webhooken i Unipiles dashboard** (en vanlig API-nyckel, Account API Key, får inte skapa webhooks):
-   Webhooks → Add endpoint → URL `https://<tunnel>.trycloudflare.com/webhook`, händelserna `email.new`,
-   `email.new.bounce`, `account.add`, `account.reconnect`, `account.status.disconnected`, `account.status.running`
-   och `account.remove`. Lägg endpointens secret i `.env` som `UNIPILE_WEBHOOK_SECRET` och starta om mottagaren i terminal 1.
+3. **Create the webhook in Unipile's v2 dashboard** (an Account API Key cannot create webhooks):
+   Webhooks → Add endpoint → URL `https://<tunnel>.trycloudflare.com/webhook` (note the `/webhook` path) and the events
+   `email.new`, `email.new.bounce`, `account.add`, `account.reconnect`, `account.status.disconnected`,
+   `account.status.running` and `account.remove`. Put the endpoint's secret in `.env` as `UNIPILE_WEBHOOK_SECRET` and
+   restart the receiver. With a Service Key the script can do the same: `smoke.ts webhook https://<tunnel>.trycloudflare.com`.
 
-   Har du en Service Key kan skriptet göra samma sak: `smoke.ts webhook https://<tunnel>.trycloudflare.com`.
-
-4. **Koppla din Gmail.** Öppna länken som skrivs ut och logga in.
+4. **Connect a mailbox.** Open the printed link and sign in. Use `microsoft` instead of `google` for Outlook/Microsoft 365.
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts link https://<tunnel>.trycloudflare.com google
    ```
 
-   Kontrollera i terminal 1: `account.add` med **signatur OK** och samma `state` som skrevs ut. Webbläsaren visar `account_id`.
+   Terminal 1 should show `account.add` with **signature OK** and the same state as printed by `link`.
+   Linking a mailbox that is already linked returns `api/already_exists` instead.
 
-5. **Kontot:** visar om Unipiles `name` är e-postadressen (det appen sparar).
+5. **Check the account** (what the app stores as provider and address):
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts account acc_...
    ```
 
-6. **Ett mejl med bilaga.** Skicka ett mejl med en PDF från en annan adress till den kopplade brevlådan. Terminal 1 visar
-   `email.new` med mejlets id. Hämta det:
+6. **A mail with an attachment.** Send a mail with a PDF from another address to the connected mailbox. Terminal 1
+   shows `email.new`; `emails` lists the latest mails with their ids (first column). Fetch the mail:
 
    ```powershell
-   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts email acc_... <mejl-id>
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts emails acc_...
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts email acc_... MAIL_ID
    ```
 
-   Kontrollera att bilagan laddas ned med rätt storlek.
+   The attachment should download with the expected size.
 
-7. **Svara i samma tråd**, till avsändaren i steg 6:
+7. **Reply in the same thread** to the sender from step 6:
 
    ```powershell
-   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts send acc_... <din-andra-adress> <mejl-id>
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts send acc_... SENDER_ADDRESS MAIL_ID
    ```
 
-   Kontrollera i den andra brevlådan att svaret hamnar i samma tråd. Terminal 1 ska visa `email.new` för det skickade
-   mejlet, markerat "hoppas över".
+   Check that the reply lands in the same conversation, and that the raw answer contains `message_id`.
 
-8. **En studs.** Skicka till en adress som inte finns, till exempel `finns-inte-12345@gmail.com`:
+8. **A bounce.** Send to an address that does not exist, for example `does-not-exist-12345@gmail.com`:
 
    ```powershell
-   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts send acc_... finns-inte-12345@gmail.com
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts send acc_... does-not-exist-12345@gmail.com
    ```
 
-   Terminal 1 skriver ut hela `email.new.bounce`. Den behövs för att koppla studsar till skickade svar.
+   Terminal 1 shows `email.new.bounce` with the Message-ID of the mail from this step.
 
-9. **Valfritt:** upprepa steg 4–7 med ett Microsoft-konto (`link ... microsoft`).
+9. **Clean up:** delete the test accounts and the webhook endpoint, and stop the receiver and the tunnel.
 
-10. **Städa:** ta bort testkontot och webhooken när du är klar.
+   ```powershell
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts delete acc_...
+   ```
 
-    ```powershell
-    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts delete acc_...
-    ```
-
-Skicka utdatan från steg 5, 6, 7 och 8 till utvecklaren som bygger integrationen. Mejltexter kan klippas bort.
+PowerShell treats `<` and `>` as operators: replace every placeholder (`acc_...`, `MAIL_ID`, `<tunnel>`) with the real
+value. If a webhook seems missing, the endpoint's **Deliveries** list in the dashboard shows each attempt and its HTTP
+status.
