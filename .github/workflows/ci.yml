@@ -1,0 +1,196 @@
+# Scope: the guards catch mistakes by agents, Lovable and people (a forgotten RLS, a missing auth guard, a permissive
+# policy). Deliberate lexical evasion (\r line ends in comments, string continuation, tarball or git dependencies,
+# ALTER ... OWNER TO / SET SCHEMA) is out of scope and needs review; the follow-up is a real-database RLS check.
+#
+# Required check "ci": the guards in scripts/ci/, then type check, lint, tests and build.
+# It never runs conditionally: GitHub counts a skipped required check as passed.
+# Runs PR code with a read-only token and no secrets (pull_request, never pull_request_target).
+# The guards run first, before any code from the PR runs: no install scripts, tests or build, and not the repository's
+# bunfig.toml, tsconfig.json or .env files (bun --no-env-file, env = false), and their git and bun audit children get
+# only PATH, HOME and TMPDIR. They still run the PR's own copy of scripts/ci/ and this file, which are gate paths (#59).
+# Nothing else they run comes from the PR: the Edge Function guard's typescript is installed outside the checkout from
+# the base commit's package.json and bun.lock, and that guard runs last of them. The base commit reaches each step
+# through the step output steps.base.outputs.sha, which no later step can change, never through GITHUB_ENV.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, lovable]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per PR, where a newer push cancels the older run. A push gets a group per commit: GitHub cancels a
+  # queued run when a newer one joins its group, even without cancel-in-progress, and a dropped push run would leave
+  # that push's migrations and dependencies unchecked (the next run compares against its head).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history, so the base commit is always present for the guards.
+          fetch-depth: 0
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.5
+          no-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+
+      - name: Find the base commit
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # Pull request: the merge commit's first parent, which is the base branch this PR merges into (the event's
+          # base SHA can be older). Push: the commit before the push. A manual run or a new branch (empty or all
+          # zeros): where this commit meets main, so a manual run on a PR branch checks what the branch changes
+          # instead of passing with nothing to compare (on main itself that is this commit).
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=$(git rev-parse HEAD^1)
+          else
+            base=$PUSH_BEFORE
+          fi
+          case "$base" in
+            *[!0-9a-f]*) echo "::error::The base \"$base\" is not a commit SHA."; exit 1 ;;
+            *[!0]*) ;;
+            *)
+              if ! base=$(git merge-base HEAD origin/main); then
+                echo "::error title=No base commit::This commit shares no history with origin/main, so there is nothing to compare against."
+                exit 1
+              fi
+              ;;
+          esac
+          # The guards compare trees, so a forced push is compared with the commit before it too: what the push
+          # changed, including migrations it edited or dropped. That commit may be gone from the clone, so fetch it;
+          # if it is still missing, fail rather than pass with nothing to compare against.
+          if [ "$EVENT_NAME" = push ] && [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$base" || true
+            if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              echo "::error title=No base commit::The commit before this push ($base) is not in the clone and could not be fetched, so the migration guard, the audit and lint have nothing to compare against. Check what this push changed by hand."
+              exit 1
+            fi
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "Base commit: ${base:-none}"
+
+      - name: Write the guards' own bun and TypeScript config
+        run: |
+          # Used instead of the repository's bunfig.toml (preload, registry) and tsconfig.json (path aliases).
+          # env = false and --no-env-file: bun would otherwise load the checkout's .env files into the guards' env.
+          printf 'env = false\n[install]\nauto = "disable"\n' > "$RUNNER_TEMP/guard-bunfig.toml"
+          printf '{}\n' > "$RUNNER_TEMP/guard-tsconfig.json"
+
+      - name: No committed node_modules
+        run: |
+          # A node_modules committed by mistake, at any depth, is in the checkout before any install. Matched by path,
+          # not through .gitignore, which the change itself could edit.
+          git ls-files -- ':(glob)**/node_modules' ':(glob)**/node_modules/**' > "$RUNNER_TEMP/committed-node-modules"
+          rm -rf node_modules
+          if [ -s "$RUNNER_TEMP/committed-node-modules" ]; then
+            head -n 20 "$RUNNER_TEMP/committed-node-modules"
+            echo "::error title=node_modules::This change commits files under a node_modules directory. Fix: git rm -r --cached <that node_modules>, and commit."
+            exit 1
+          fi
+
+      - name: Install the guards' tools from the base commit (no scripts)
+        id: guard-install
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          # Outside the checkout, from the base commit's package.json and bun.lock: a check never runs code from the
+          # change it checks, so a change to bun.lock cannot change what the Edge Function guard runs.
+          mkdir "$RUNNER_TEMP/guard-tools"
+          git show "$CI_BASE_SHA:package.json" > "$RUNNER_TEMP/guard-tools/package.json"
+          git show "$CI_BASE_SHA:bun.lock" > "$RUNNER_TEMP/guard-tools/bun.lock"
+          cd "$RUNNER_TEMP/guard-tools"
+          bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" install --frozen-lockfile --ignore-scripts
+
+      # Every check below runs even when an earlier one failed, so one run shows every problem.
+      - name: Migration guard
+        if: ${{ !cancelled() }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/migration-guard.ts
+
+      - name: Install-script guard
+        if: ${{ !cancelled() }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/install-scripts-guard.ts
+
+      - name: Dependency audit
+        if: ${{ !cancelled() }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
+
+      # Last of the guards: it runs typescript, a package, so nothing it runs can change a guard before it.
+      - name: Edge Function guard
+        if: ${{ !cancelled() && steps.guard-install.outcome == 'success' }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/edge-guard.ts --typescript "$RUNNER_TEMP/guard-tools/node_modules/typescript/lib/typescript.js"
+
+      # From here on, code from the PR runs.
+      - name: Install
+        id: install
+        if: ${{ !cancelled() }}
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/tsc --noEmit -p tsconfig.json
+
+      - name: Lint changed files
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          # Only the files this change adds or modifies. A weekly whole-repo health check will come later as its own workflow.
+          # The file types eslint.config.js lints ("files"); keep the two in step.
+          git diff -z --name-only --diff-filter=ACMR "$CI_BASE_SHA" HEAD -- '*.ts' '*.tsx' > "$RUNNER_TEMP/lint-files"
+          if [ ! -s "$RUNNER_TEMP/lint-files" ]; then
+            echo "No changed files to lint."
+            exit 0
+          fi
+          xargs -0 node_modules/.bin/eslint --no-warn-ignored -- < "$RUNNER_TEMP/lint-files"
+
+      - name: Tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/vitest run
+
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node_modules/.bin/vite build
+
+      - name: Prettier on changed files (warning only)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set +e
+          git diff -z --name-only --diff-filter=ACMR "$CI_BASE_SHA" HEAD > "$RUNNER_TEMP/changed-files"
+          if [ ! -s "$RUNNER_TEMP/changed-files" ]; then
+            echo "No changed files to check."
+            exit 0
+          fi
+          xargs -0 node_modules/.bin/prettier --check --ignore-unknown -- < "$RUNNER_TEMP/changed-files"
+          if [ $? -ne 0 ]; then
+            echo "::warning title=prettier::Some changed files are not formatted. Run node_modules/.bin/prettier --write on them. This never fails CI."
+          fi
+          exit 0
