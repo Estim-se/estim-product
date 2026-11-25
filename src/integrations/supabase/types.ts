@@ -981,6 +981,333 @@ export type Database = {
           },
         ]
       }
+      samtal_calls: {
+        Row: {
+          audio_path: string | null
+          caller_phone: string | null
+          classification: string | null
+          company_id: string
+          content_deleted_at: string | null
+          created_at: string
+          customer_id: string | null
+          delete_after: string
+          duration_seconds: number | null
+          ended_at: string | null
+          error_code: string | null
+          extraction: Json | null
+          id: string
+          number_id: string | null
+          provider: string
+          provider_call_id: string
+          started_at: string
+          status: string
+          thread_id: string | null
+          transcript: Json | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          audio_path?: string | null
+          caller_phone?: string | null
+          classification?: string | null
+          company_id: string
+          content_deleted_at?: string | null
+          created_at?: string
+          customer_id?: string | null
+          delete_after: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          error_code?: string | null
+          extraction?: Json | null
+          id?: string
+          number_id?: string | null
+          provider: string
+          provider_call_id: string
+          started_at: string
+          status?: string
+          thread_id?: string | null
+          transcript?: Json | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          audio_path?: string | null
+          caller_phone?: string | null
+          classification?: string | null
+          company_id?: string
+          content_deleted_at?: string | null
+          created_at?: string
+          customer_id?: string | null
+          delete_after?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          error_code?: string | null
+          extraction?: Json | null
+          id?: string
+          number_id?: string | null
+          provider?: string
+          provider_call_id?: string
+          started_at?: string
+          status?: string
+          thread_id?: string | null
+          transcript?: Json | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_calls_company_id_customer_id_fkey"
+            columns: ["company_id", "customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_calls_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_calls_company_id_number_id_fkey"
+            columns: ["company_id", "number_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_numbers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_calls_company_id_thread_id_fkey"
+            columns: ["company_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_calls_company_id_user_id_fkey"
+            columns: ["company_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
+      samtal_jobs: {
+        Row: {
+          attempts: number
+          call_id: string
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          lease_token: string | null
+          lease_until: string | null
+          run_after: string
+          state: string
+          step: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          call_id: string
+          company_id: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          run_after?: string
+          state?: string
+          step?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          run_after?: string
+          state?: string
+          step?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_jobs_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_numbers: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          id: string
+          phone_e164: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          phone_e164: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          phone_e164?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_numbers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_numbers_company_id_user_id_fkey"
+            columns: ["company_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
+      samtal_settings: {
+        Row: {
+          auto_process: boolean
+          company_id: string
+          created_at: string
+          provider: string | null
+          provider_error: string | null
+          provider_status: string
+          retention_days: number
+          updated_at: string
+        }
+        Insert: {
+          auto_process?: boolean
+          company_id: string
+          created_at?: string
+          provider?: string | null
+          provider_error?: string | null
+          provider_status?: string
+          retention_days?: number
+          updated_at?: string
+        }
+        Update: {
+          auto_process?: boolean
+          company_id?: string
+          created_at?: string
+          provider?: string | null
+          provider_error?: string | null
+          provider_status?: string
+          retention_days?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_tasks: {
+        Row: {
+          address: string | null
+          call_id: string
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          due_at: string | null
+          id: string
+          kind: string
+          state: string
+          title: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          call_id: string
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          due_at?: string | null
+          id?: string
+          kind: string
+          state?: string
+          title: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          due_at?: string | null
+          id?: string
+          kind?: string
+          state?: string
+          title?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_tasks_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_tasks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_tasks_company_id_user_id_fkey"
+            columns: ["company_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
       tender_calculation_matches: {
         Row: {
           analysis_run: string
@@ -1807,6 +2134,66 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_claim_jobs: {
+        Args: { p_lease_seconds: number; p_limit: number }
+        Returns: {
+          attempts: number
+          call_id: string
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          lease_token: string | null
+          lease_until: string | null
+          run_after: string
+          state: string
+          step: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "samtal_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      samtal_decide_task: {
+        Args: { p_decision: string; p_task: string }
+        Returns: {
+          address: string | null
+          call_id: string
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          due_at: string | null
+          id: string
+          kind: string
+          state: string
+          title: string
+          updated_at: string
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "samtal_tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      samtal_is_owner: { Args: never; Returns: boolean }
+      samtal_register_call: { Args: { payload: Json }; Returns: Json }
+      samtal_release_job: {
+        Args: {
+          p_error: string
+          p_job: string
+          p_retry_seconds: number
+          p_state: string
+          p_step: string
+          p_token: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
