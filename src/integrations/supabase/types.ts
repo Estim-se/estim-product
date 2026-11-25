@@ -2181,7 +2181,19 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      samtal_due_for_deletion: {
+        Args: { p_limit: number }
+        Returns: {
+          audio_path: string
+          call_id: string
+          company_id: string
+        }[]
+      }
       samtal_is_owner: { Args: never; Returns: boolean }
+      samtal_mark_deleted: {
+        Args: { p_call: string; p_company: string }
+        Returns: boolean
+      }
       samtal_register_call: { Args: { payload: Json }; Returns: Json }
       samtal_release_job: {
         Args: {
