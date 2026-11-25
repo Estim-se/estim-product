@@ -15,6 +15,7 @@ Use your own test mailbox only: the scripts print mail data to the terminal.
 | Reply in the same thread | Works when the subject is kept (`Re: …`) |
 | Incoming mail (`email.new`) | Gmail sends one event per label; the app only handles `INBOX` |
 | Bounces (`email.new.bounce`) | `email_id` is the Message-ID of the bounced reply, which `send` returns as `message_id` |
+| Header order (sender check, `EMAIL_SENDER_CHECK`) | Original top-to-bottom order for both. Gmail (44 headers): `Delivered-To`, `Received`, ARC headers, then the topmost `Authentication-Results` from `mx.google.com` (the sender's own ARC result from Microsoft is lower down and ignored). Outlook (76 headers): Microsoft's `Received` and ARC headers, then the topmost `Authentication-Results` (Microsoft's own, above `X-IncomingTopHeaderMarker`). Verdict `pass` on both. One mail each; Nylas (`fields=include_headers`) was not checked here |
 
 ## Before you start
 

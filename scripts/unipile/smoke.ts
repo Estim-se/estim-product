@@ -9,7 +9,8 @@
 //   reconnect <public-url> <acc_id>        signs an existing account in again (what 'Anslut igen' does in the app)
 //   account <acc_id>                       raw account + what the app would store (provider, address)
 //   emails <acc_id>                        the 5 latest mails (id, date, sender, subject, attachments)
-//   email <acc_id> <email_id>              one mail as the app parses it, plus every attachment downloaded
+//   email <acc_id> <email_id>              one mail as the app parses it, plus every attachment downloaded,
+//                                          the header NAMES in order and the sender check verdict (EMAIL_SENDER_CHECK)
 //   send <acc_id> <to> [reply_to_email_id] a test mail or reply, prints Unipile's raw answer
 //   webhook <public-url>                   creates the webhook endpoint with the app's events (needs a Service Key)
 //   webhooks                               lists webhook endpoints (needs a Service Key)
@@ -18,6 +19,7 @@
 // This prints mail data from YOUR OWN test mailbox to your terminal only. Do not use it on customer mailboxes.
 
 import * as unipile from "../../supabase/functions/_shared/unipile.ts";
+import { senderVerdict } from "../../supabase/functions/_shared/sender-auth.ts";
 
 const EVENTS = ["email.new", "email.new.bounce", "account.add", "account.reconnect", "account.status.disconnected", "account.status.running", "account.remove"];
 const [command, ...args] = Deno.args;
@@ -95,6 +97,15 @@ switch (command) {
     show("Keys in the mail", Object.keys(r.body as object));
     const m = unipile.parseEmail(r.body);
     show("As the app parses it", { ...m, body: `${(m.body ?? "").slice(0, 300)}…`, headers: `${m.headers.length} headers` });
+    // Header order check for the sender check: only names, plus the authserv-id (who added it) of each
+    // Authentication-Results header. The provider's own header must come first (topmost).
+    show("Header names in order", m.headers.map((h, i) => {
+      const isAr = /^(arc-)?authentication-results$/i.test(h.name.trim());
+      const segments = h.value.split(";").map((s) => s.trim());
+      const authserv = (/^i=\d+$/.test(segments[0] ?? "") ? segments[1] : segments[0]) ?? ""; // ARC starts with i=<n>
+      return `${i + 1}. ${h.name}${isAr ? ` [authserv-id: ${authserv && !authserv.includes("=") ? authserv.split(/\s/)[0] : "none"}]` : ""}`;
+    }).join("\n"));
+    show("Sender check verdict", senderVerdict(m.headers, m.from[0]?.email ?? ""));
     // The raw attachment objects: which fields exist (url, content, url_expires_at...), long values shortened.
     const rawAttachments = ((r.body as { attachments?: unknown[] }).attachments ?? []) as Record<string, unknown>[];
     show("Attachments, raw fields", rawAttachments.map((a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, typeof v === "string" && v.length > 80 ? `${v.slice(0, 80)}… (${v.length} characters)` : v]))));
