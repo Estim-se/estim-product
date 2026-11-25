@@ -105,9 +105,21 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node_modules/.bin/tsc --noEmit -p tsconfig.json
 
-      - name: Lint
+      - name: Lint changed files
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: node_modules/.bin/eslint .
+        run: |
+          # Only the files this change adds or modifies. A weekly whole-repo health check is a separate step.
+          if [ -z "$CI_BASE_SHA" ]; then
+            echo "::notice title=lint::No base commit (a manual run or a new branch), so there are no changed files to lint."
+            exit 0
+          fi
+          git diff -z --name-only --diff-filter=ACMR "$CI_BASE_SHA" HEAD -- \
+            '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' > "$RUNNER_TEMP/lint-files"
+          if [ ! -s "$RUNNER_TEMP/lint-files" ]; then
+            echo "No changed files to lint."
+            exit 0
+          fi
+          xargs -0 node_modules/.bin/eslint --no-warn-ignored -- < "$RUNNER_TEMP/lint-files"
 
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
