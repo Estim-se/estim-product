@@ -63,7 +63,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,...(previousId?{previous_id:previousId}:{})});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
     const redirectTo = `${origin}/inbjudan?token=${token}`;
-    let sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
+    const sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
     // Existing recipients receive a sign-in email pointing to the same bound invitation.
     if (sent.error?.code === 'email_exists' || sent.error?.message.toLowerCase().includes('already')) {
       const { createClient } = await import('@supabase/supabase-js');

@@ -7,8 +7,7 @@ import { useWorkspace } from './workspace-provider';
 type Doc = { id: string; name: string; doc_type: DocType; description: string; file_path: string; file_name: string; uploaded_at: string };
 type Draft = { name: string; doc_type: DocType; description: string; file: File | null };
 const empty: Draft = { name: '', doc_type: 'forsakring', description: '', file: null };
-// The table is newer than the generated client types; keep the cast in one place.
-const docs = () => (supabase as any).from('company_documents');
+const docs = () => supabase.from('company_documents');
 const bucket = () => supabase.storage.from('company-documents');
 
 // Company document library (real mode only). Files live in a private bucket under
@@ -39,16 +38,19 @@ export function DocumentLibrary() {
     if (draft.file) { const err = documentFileError(draft.file); if (err) return setMsg(err); }
     setBusy(true); setMsg('');
     try {
-      let file_path = current?.file_path, file_name = current?.file_name, uploaded_at = current?.uploaded_at;
+      let stored: Pick<Doc, 'file_path' | 'file_name' | 'uploaded_at'> | undefined = current;
       if (draft.file) {
-        file_path = documentPath(cid, draft.file.name, crypto.randomUUID());
-        const up = await bucket().upload(file_path, draft.file, { contentType: draft.file.type });
+        const path = documentPath(cid, draft.file.name, crypto.randomUUID());
+        const up = await bucket().upload(path, draft.file, { contentType: draft.file.type });
         if (up.error) throw up.error;
-        file_name = draft.file.name; uploaded_at = new Date().toISOString();
+        stored = { file_path: path, file_name: draft.file.name, uploaded_at: new Date().toISOString() };
       }
+      // A new document always has a file (checked above); this only narrows the type.
+      if (!stored) throw new Error('Dokumentet saknar fil.');
+      const { file_path, file_name, uploaded_at } = stored;
       const row = { name: draft.name.trim(), doc_type: draft.doc_type, description: draft.description.trim(), file_path, file_name, uploaded_at };
       const r = current ? await docs().update(row).eq('id', current.id).select().single() : await docs().insert(row).select().single();
-      if (r.error) { if (draft.file) await bucket().remove([file_path!]); throw r.error; }
+      if (r.error) { if (draft.file) await bucket().remove([file_path]); throw r.error; }
       // Replaced file: remove the old original after the row points to the new one.
       if (current && draft.file && current.file_path !== file_path) await bucket().remove([current.file_path]);
       reset(); await load(); setMsg(current ? 'Dokumentet är uppdaterat.' : 'Dokumentet är sparat.');

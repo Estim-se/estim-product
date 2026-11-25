@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled, selectDocuments, requestedDocuments, documentPromiseWithoutAttachment, type LibraryDocument } from '../../supabase/functions/_shared/document-policy';
 import { deliverWhatsApp } from '../../supabase/functions/_shared/whatsapp';
 import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// A chainable stand-in for the Supabase query builder: every filter returns itself, and awaiting it gives the result.
+type Result = { data: unknown; error: unknown };
+type Builder = { select: () => Builder; eq: (key: string, value: unknown) => Builder; order: () => Builder; update: (value: Record<string, unknown>) => Builder;
+  single: () => Promise<Result>; maybeSingle: () => Promise<Result>; then: (resolve: (value: Result) => unknown) => Promise<unknown> };
+type SentBody = { to: string; text: string; document_url?: string; document_filename?: string };
 
 const insurance: LibraryDocument = { id: 'insurance', name: 'Försäkringsbevis', doc_type: 'forsakring', description: 'när kunden frågar om försäkring', file_path: 'company/insurance.pdf', file_name: 'original.PDF' };
 const certificate = { ...insurance, id: 'certificate', name: 'Certifikat', file_path: 'company/certificate.png', file_name: 'original.png' };
@@ -20,10 +27,10 @@ function fixture(docs: LibraryDocument[], enabled = true) {
       if (patch) { const id = String(filters['id']); if (filters['state'] && states[id] !== filters['state']) return { data: null, error: true }; states[id] = String(patch['state']); return { data: { id }, error: null }; }
       return { data: docs.map(d => ({ ...d, document_id: d.id, state: states[d.id] })), error: null };
     };
-    const builder: any = { select: () => builder, eq: (key: string, value: unknown) => { filters[key] = value; return builder; }, order: () => builder, update: (value: Record<string, unknown>) => { patch = value; return builder; }, single: async () => result(), maybeSingle: async () => result(), then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
+    const builder: Builder = { select: () => builder, eq: (key: string, value: unknown) => { filters[key] = value; return builder; }, order: () => builder, update: (value: Record<string, unknown>) => { patch = value; return builder; }, single: async () => result(), maybeSingle: async () => result(), then: (resolve: (value: Result) => unknown) => Promise.resolve(result()).then(resolve) };
     return builder;
   } };
-  return { db, signed, states };
+  return { db: db as unknown as SupabaseClient, signed, states };
 }
 
 describe('WhatsApp document rules', () => {
@@ -72,9 +79,9 @@ describe('WhatsApp document rules', () => {
     try { expect((await deliverDocumentReply(f.db, 'm', input)).sent).toBe(true); expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ to: '46700000000', text: input.text, document_url: 'https://storage.example.test/signed', document_filename: 'Försäkringsbevis.pdf' }); expect(f.states['insurance']).toBe('sent'); } finally { vi.unstubAllGlobals(); }
   });
   it('sends text first then every document with its name', async () => {
-    const f = fixture([insurance, certificate]); const bodies: any[] = [];
+    const f = fixture([insurance, certificate]); const bodies: SentBody[] = [];
     vi.stubGlobal('fetch', vi.fn(async (_url: unknown, options: RequestInit) => { bodies.push(JSON.parse(String(options.body))); return Response.json({ ok: true, message_id: `id-${bodies.length}` }); }));
-    try { expect((await deliverDocumentReply(f.db, 'm', input)).sent).toBe(true); expect(bodies.map(b => b.text)).toEqual([input.text, 'Försäkringsbevis', 'Certifikat']); expect(bodies[0]).toEqual({ to: '46700000000', text: input.text }); expect(bodies[2].document_filename).toBe('Certifikat.png'); } finally { vi.unstubAllGlobals(); }
+    try { expect((await deliverDocumentReply(f.db, 'm', input)).sent).toBe(true); expect(bodies.map(b => b.text)).toEqual([input.text, 'Försäkringsbevis', 'Certifikat']); expect(bodies[0]).toEqual({ to: '46700000000', text: input.text }); expect(bodies[2]?.document_filename).toBe('Certifikat.png'); } finally { vi.unstubAllGlobals(); }
   });
   it('blocks stale document answers when the setting is off', async () => {
     const f = fixture([insurance], false), request = vi.fn(); vi.stubGlobal('fetch', request);

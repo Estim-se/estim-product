@@ -1,9 +1,10 @@
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { DOCUMENT_URL_SECONDS, documentFilename, documentsEnabled, documentPromiseWithoutAttachment } from './document-policy.ts';
 import { deliverWhatsApp, type WhatsAppInput } from './whatsapp.ts';
 
 // Reservations are created atomically with the outgoing message. Never retry an
 // uncertain document delivery: the durable reservation prevents duplicates.
-export async function deliverDocumentReply(db: any, messageId: string, input: WhatsAppInput) {
+export async function deliverDocumentReply(db: SupabaseClient, messageId: string, input: WhatsAppInput) {
   const company = await db.from('messages').select('company_id,thread_id,document_ids').eq('id', messageId).single();
   if (!company.data || company.error) throw new Error('Message missing');
   const cid = company.data.company_id;

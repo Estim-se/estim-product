@@ -2,7 +2,7 @@ import type { Thread } from '@/data/inbox';
 export type Quote = NonNullable<Thread['q']>;
 
 // Pure calculations preserve the prototype rounding and deduction rules.
-export const kr = (n: number) => Math.round(n).toLocaleString('sv-SE').replace(/ /g,' ') + ' kr';
+export const kr = (n: number) => Math.round(n).toLocaleString('sv-SE').replace(/\u202F/g,' ') + ' kr';
 export const esc = (s: unknown) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const paras = (s: string) => s.split('\n').map(x => `<p>${esc(x)||'&nbsp;'}</p>`).join('');
 export function calc(q: Quote, withAdd?: boolean){

@@ -23,6 +23,15 @@ import { loadConversation, formatConversation } from '../_shared/conversation.ts
 import { documentsEnabled, selectDocuments, requestedDocuments, documentPromiseWithoutAttachment, type LibraryDocument } from '../_shared/document-policy.ts';
 import { whatsappReplyFocus, whatsappPriceRelevant, whatsappContentProblems } from '../_shared/whatsapp-reply-policy.ts';
 
+// Saved on the thread by interpret-request (save_interpretation); only the fields this reply reads.
+interface StoredInterpretation {
+  customer_questions?: { question: string }[];
+  follow_up_questions?: string[];
+  risks?: { type: string; text: string }[];
+  assumptions?: string[];
+  recommended_action?: string;
+}
+
 interface Reply { text: string; why: string; answered_questions: string[]; document_ids?: string[]; material_product_reference?: string | null }
 
 Deno.serve(async (req) => {
@@ -50,7 +59,7 @@ Deno.serve(async (req) => {
     variant: pick(input?.variant ?? draft.data?.variant, ["std", "kort", "formell"] as const, "std"),
     messages: msgs.data.map((m) => ({ from: m.from, text: m.text, time: m.sent_at })),
     quote: q.data ? { nr: q.data.nr, owners: q.data.owners, addOn: q.data.add_on, prisform: q.data.prisform, lines: q.data.lines } as Quote : null,
-    interpretation: threadRow.data.interpretation as Record<string, any> | null,
+    interpretation: threadRow.data.interpretation as StoredInterpretation | null,
     attachments: (input?.channel ?? draft.data?.channel) === 'wa' ? [] : Array.isArray(draft.data?.attachments) ? draft.data.attachments as string[] : [],
     suggested_times: [] as string[],
   };
@@ -58,7 +67,8 @@ Deno.serve(async (req) => {
   const quote: Quote | null = body.quote ?? null;
   const fixedPrice = quote?.prisform === "fast";
   const channel = body.channel ?? "email";
-  let library: LibraryDocument[] = [], used: string[] = [];
+  let library: LibraryDocument[] = [];
+  const used: string[] = [];
   let latestDocumentGroup: string[] = [];
   const enabled = channel === 'wa' && documentsEnabled(company.data.settings);
   if (channel === 'wa') {
