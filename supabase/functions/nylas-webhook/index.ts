@@ -1,35 +1,52 @@
 // POST/GET /nylas-webhook   (verify_jwt = false: the signature is the authentication)
+// Receives both Nylas and Unipile webhooks (the name is kept so the deployed URL does not change).
+// A request with an `unipile-signature` header is Unipile; everything else is Nylas.
 //
 // Nylas -> estim. GET answers the one-time challenge. POST receives notifications:
 //   message.created            -> store the mail as a thread/message, then run the AI steps
 //   message.send_success/failed/bounce_detected -> delivery status
 //   grant.expired / grant.deleted               -> mark the mailbox connection
 //
+// Unipile -> estim (API v2 events):
+//   email.new                  -> same as message.created
+//   account.add / account.reconnect -> bind the account to the company through our one-time state
+//   account.status.disconnected / account.remove / account.status.running -> mark the mailbox connection
+//
 // Security rules:
-//  - The HMAC is checked over the RAW bytes (gzip bytes if compressed) BEFORE anything is decompressed or parsed.
-//  - The webhook body is only a pointer (grant id + message id). The mail is fetched from Nylas by id.
-//  - Unknown or inactive grants are ignored before any Nylas API call.
-//  - Transient failures answer 503 (Nylas retries 503, not 500). Everything else answers 200.
-//  - The AI steps run AFTER the answer (EdgeRuntime.waitUntil) so Nylas is never kept waiting.
+//  - The HMAC is checked over the RAW bytes BEFORE anything is decompressed or parsed.
+//  - The webhook body is only a pointer (account/grant id + message id). The mail is fetched by id with our key.
+//  - Unknown or inactive connections are ignored before any provider API call.
+//  - Nylas: transient failures answer 503 (Nylas retries 503, not 500). Everything else answers 200.
+//  - Unipile must get 2xx within 5 seconds, so it is answered right after the signature check and the work runs
+//    afterwards (EdgeRuntime.waitUntil) with our own retries.
+//  - The AI steps run AFTER the answer so the provider is never kept waiting.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
-  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, htmlToText, parseNotification, pointer,
-  shouldSkip, stripQuoted, verifyNylasSignature, type NylasMessage,
+  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, mailText, parseNotification, pointer, readBounded,
+  shouldSkip, verifyNylasSignature,
 } from "../_shared/nylas.ts";
+import * as unipile from "../_shared/unipile.ts";
+import { bindUnipileAccount } from "../_shared/connection-binding.ts";
 import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
+import { senderCheckEnabled, senderVerdict } from "../_shared/sender-auth.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
 const MAX_BODY_CHARS = 8000;
+const MAX_WEBHOOK_BYTES = 1_000_000;
+const UNIPILE_RETRY_DELAYS_MS = [0, 5_000, 20_000];
 
 const text = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain" } });
+const background = (job: Promise<unknown>) => { if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(job); else return job; };
 
 function admin(): SupabaseClient {
   return createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "POST" && req.headers.has("unipile-signature")) return await handleUnipile(req);
+
   // Nylas calls GET once when the webhook is created or reactivated: echo the challenge as plain text.
   if (req.method === "GET") {
     const challenge = new URL(req.url).searchParams.get("challenge");
@@ -39,8 +56,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return text("Method not allowed", 405);
 
   // 1) Authenticate BEFORE parsing or decompressing: the signature covers the raw (possibly gzipped) bytes.
-  const raw = new Uint8Array(await req.arrayBuffer());
-  if (raw.length > 1_000_000) return text("Too large", 413);
+  const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
+  if (!raw) return text("Too large", 413);
   let secret: string;
   try { secret = env("NYLAS_WEBHOOK_SECRET"); } catch { console.error("[nylas] webhook secret missing"); return text("Not configured", 503); }
   if (!(await verifyNylasSignature(raw, req.headers.get("x-nylas-signature"), secret))) return text("Invalid signature", 401);
@@ -56,10 +73,7 @@ Deno.serve(async (req) => {
   try {
     const outcome = await handle(admin(), event.type, event.object);
     if (outcome.retry) return text("retry later", 503);
-    if (outcome.after) {
-      const job = outcome.after().catch((e) => console.error("[nylas] ai pipeline failed:", errCode(e)));
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(job); else await job;
-    }
+    if (outcome.after) await background(outcome.after().catch((e) => console.error("[nylas] ai pipeline failed:", errCode(e))));
     return text("ok");
   } catch (e) {
     console.error("[nylas] handler error:", errCode(e));
@@ -70,7 +84,7 @@ Deno.serve(async (req) => {
 async function handle(db: SupabaseClient, type: string, object: Record<string, unknown>): Promise<Outcome> {
   if (type.startsWith("message.created")) { // also covers a truncated variant: we always re-fetch by id
     const ref = pointer(object);
-    return ref ? await processInbound(db, ref.grantId, ref.id) : {};
+    return ref ? await processInbound(db, ref.grantId, ref.id, nylasSource(ref.grantId, ref.id)) : {};
   }
   if (type === "message.send_success" || type === "message.send_failed" || type === "message.bounce_detected") {
     const ref = pointer(object);
@@ -88,31 +102,123 @@ async function handle(db: SupabaseClient, type: string, object: Record<string, u
   return {};
 }
 
-async function processInbound(db: SupabaseClient, grantId: string, messageId: string): Promise<Outcome> {
-  // Unknown or inactive grant: ignore without spending an API call.
-  const conn = await db.from("email_connections").select("company_id,email,watch_address,status").eq("grant_id", grantId).maybeSingle();
+/* ---------- Shared inbound path (both providers) ---------- */
+
+interface MailSource { tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array> }
+
+const nylasSource = (grantId: string, messageId: string): MailSource => ({
+  tag: "nylas", fetch: () => getMessage(grantId, messageId), download: (m, a) => downloadAttachment(grantId, m, a),
+});
+const unipileSource = (accountId: string, emailId: string): MailSource => ({
+  tag: "unipile", fetch: () => unipile.getEmail(accountId, emailId), download: (m, a) => unipile.downloadAttachment(accountId, m, a),
+});
+
+const BOUNCE_ERROR = "Mejlet kunde inte levereras (studsade).";
+/**
+ * Marks our sent reply as not delivered. The reply is found by the Message-ID stored when it was sent. Only the signed
+ * email.new.bounce event does this: it says whether the failure is permanent, which the bounce mail itself does not
+ * reliably show (a "delayed" report looks like a failure). Bounce mails from mailer-daemon are skipped by shouldSkip.
+ */
+async function markBounced(db: SupabaseClient, connectionId: string, messageId: string): Promise<Outcome> {
+  const res = await db.rpc("estim_email_status", { p_grant: connectionId, p_msg: messageId, new_status: "not_sent", err: BOUNCE_ERROR });
+  return res.error ? { retry: true } : {};
+}
+
+async function processInbound(db: SupabaseClient, connectionId: string, messageId: string, source: MailSource): Promise<Outcome> {
+  // Unknown or inactive connection: ignore without spending an API call.
+  const conn = await db.from("email_connections").select("company_id,email,watch_address,status").eq("grant_id", connectionId).maybeSingle();
   if (conn.error) return { retry: true };
   if (!conn.data || conn.data.status !== "active") return {};
   const companyId: string = conn.data.company_id;
 
-  // Cheap duplicate check BEFORE the Nylas API call (the pipeline checks again).
+  // Cheap duplicate check BEFORE the provider API call (the pipeline checks again).
   const dup = await db.from("messages").select("id").eq("company_id", companyId).eq("provider_message_id", messageId).maybeSingle();
   if (dup.data) return {};
 
-  let msg: NylasMessage;
-  try { msg = await getMessage(grantId, messageId); } catch { return { retry: true }; }
+  let msg: unipile.MailMessage;
+  try { msg = await source.fetch(); } catch { return { retry: true }; }
   const reason = shouldSkip(msg, conn.data.email, conn.data.watch_address);
-  if (reason) { console.info("[nylas] skipped message:", reason); return {}; }
+  if (reason) { console.info(`[${source.tag}] skipped message:`, reason); return {}; }
 
   const sender = msg.from[0]!;
-  const cleaned = stripQuoted(htmlToText(msg.body ?? msg.snippet ?? "")).slice(0, MAX_BODY_CHARS);
+  const cleaned = mailText(msg.body ?? msg.snippet ?? "", MAX_BODY_CHARS);
   if (!cleaned) return {};
 
   return await ingestMail(db, {
     companyId, messageKey: msg.id,
     fromEmail: sender.email, fromName: sender.name, subject: msg.subject ?? "", text: cleaned, ts: msg.date,
     attachments: msg.attachments.filter((a) => !a.is_inline).map((a) => ({
-      name: a.filename, type: a.content_type, size: a.size, load: () => downloadAttachment(grantId, msg.id, a.id),
+      name: a.filename, type: a.content_type, size: a.size, load: () => source.download(msg.id, a.id),
     })),
-  }, "nylas");
+    ...(senderCheckEnabled() ? { senderCheck: senderVerdict(msg.headers, sender.email) } : {}),
+  }, source.tag);
+}
+
+/* ---------- Unipile ---------- */
+
+async function handleUnipile(req: Request): Promise<Response> {
+  const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
+  if (!raw) return text("Too large", 413);
+  let secret: string;
+  try { secret = env("UNIPILE_WEBHOOK_SECRET"); } catch { console.error("[unipile] webhook secret missing"); return text("Not configured", 503); }
+  if (!(await unipile.verifyUnipileSignature(raw, req.headers.get("unipile-signature"), secret))) return text("Invalid signature", 401);
+
+  let event: unipile.UnipileEvent;
+  try { event = unipile.parseEvent(JSON.parse(new TextDecoder().decode(raw))); } catch { return text("ok"); } // signed but unexpected
+
+  // Answer within Unipile's 5 second limit; the work (and the AI steps) run afterwards with our own retries.
+  await background(runWithRetries(event));
+  return text("ok");
+}
+
+async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
+  const db = admin();
+  const folderCache = new Map<string, string | null>(); // Outlook Inbox ids, looked up once per event
+  for (const [i, delay] of UNIPILE_RETRY_DELAYS_MS.entries()) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try {
+      const outcome = await handleUnipileEvent(db, event, i === UNIPILE_RETRY_DELAYS_MS.length - 1, folderCache);
+      if (outcome.retry) continue;
+      if (outcome.after) await outcome.after().catch((e) => console.error("[unipile] ai pipeline failed:", errCode(e)));
+      return;
+    } catch (e) { console.error("[unipile] handler error:", errCode(e)); }
+  }
+  console.error("[unipile] gave up on event:", event.type); // the event id is in Unipile's dashboard for a replay
+}
+
+async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent, isLastAttempt: boolean, folderCache: Map<string, string | null>): Promise<Outcome> {
+  const { type, accountId, payload } = event; // event.provider is used for the Gmail label / Outlook folder filter below
+  if (type === "email.new") {
+    const ref = unipile.emailEventOf(payload);
+    if (!accountId || !ref) return {};
+    let inbox: string | null = null;
+    if (event.provider === "microsoft") {
+      const resolved = await unipile.resolveOutlookInbox(folderCache, accountId);
+      if (resolved === "error" && !isLastAttempt) return { retry: true };
+      if (resolved === "error" || resolved === null) console.info("[unipile] outlook inbox unknown:", resolved === "error" ? "lookup_failed" : "no_inbox_role"); // handled as before
+      else inbox = resolved;
+    }
+    if (!unipile.shouldHandleEmailEvent(event.provider, ref, inbox)) return {};
+    return await processInbound(db, accountId, ref.emailId, unipileSource(accountId, ref.emailId));
+  }
+  if (type === "account.add" || type === "account.reconnect") return await bindUnipileAccount(db, type, payload, isLastAttempt);
+  if (type === "account.status.disconnected" || type === "account.remove") {
+    if (!accountId) return {};
+    const res = await db.rpc("estim_email_grant_state", { p_grant: accountId, new_state: type === "account.remove" ? "revoked" : "expired" });
+    return res.error ? { retry: true } : {};
+  }
+  if (type === "account.status.running") {
+    // The provider recovered on its own (e.g. a temporary token problem): an expired connection is usable again.
+    if (!accountId) return {};
+    const res = await db.from("email_connections").update({ status: "active", last_event_at: new Date().toISOString() }).eq("grant_id", accountId).eq("status", "expired");
+    return res.error ? { retry: true } : {};
+  }
+  if (type === "email.new.bounce") {
+    // The event names our bounced mail by Message-ID (email_id). The update is scoped to this account's company
+    // inside estim_email_status, so a forged id could at most mark one of that company's own replies.
+    const bounced = unipile.bounceEventOf(payload);
+    if (!accountId || !bounced) return {};
+    return await markBounced(db, accountId, bounced);
+  }
+  return {};
 }

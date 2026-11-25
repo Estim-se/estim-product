@@ -1,7 +1,9 @@
 // Everything that talks to Nylas, plus mail cleaning and filtering.
-// No imports on purpose: pure functions that can be unit tested without Deno.
+// Pure functions that can be unit tested without network (the only import is the header limit from sender-auth.ts).
 // Rules: never log mail content, addresses, subjects, headers, tokens or Nylas
 // response bodies. Log short error codes only.
+
+import { headerValueLimit } from "./sender-auth.ts";
 
 const enc = new TextEncoder();
 
@@ -50,6 +52,34 @@ export async function verifyNylasSignature(raw: Uint8Array, header: string | nul
   const signature = new Uint8Array(hex.match(/../g)!.map((h) => parseInt(h, 16)));
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   return await crypto.subtle.verify("HMAC", key, signature, raw as BufferSource); // constant-time
+}
+
+/**
+ * Reads a request or response body of at most `maxBytes`, or returns null (too large). A too large content-length is
+ * refused before reading anything (and the body cancelled); otherwise the stream is read and cancelled as soon as the
+ * limit is passed, so a missing or lying content-length cannot make us buffer more than `maxBytes`.
+ */
+export async function readBounded(source: Request | Response, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = source.headers.get("content-length");
+  if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared.trim()) > maxBytes) {
+    await source.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!source.body) return new Uint8Array(0);
+  const reader = source.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) { await reader.cancel().catch(() => undefined); return null; }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  return out;
 }
 
 /** Decompress ONLY after the signature has been verified. Capped to stop decompression bombs. */
@@ -129,8 +159,10 @@ export async function getGrant(grantId: string): Promise<{ email: string; provid
   return { email, provider };
 }
 
-export async function revokeGrant(grantId: string): Promise<void> {
-  await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }).catch(() => undefined); // best effort
+/** Revokes the grant at Nylas. true on 2xx or 404 (already gone); false when Nylas could not be reached or refused. */
+export async function revokeGrant(grantId: string): Promise<boolean> {
+  const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }).catch(() => null);
+  return Boolean(res && (res.ok || res.status === 404));
 }
 
 /* ---------- Reading mail ---------- */
@@ -145,7 +177,7 @@ export interface NylasMessage {
 export function parseMessage(data: unknown): NylasMessage {
   if (!isObj(data)) throw new Error("invalid_message");
   const headers = Array.isArray(data.headers)
-    ? data.headers.slice(0, 300).filter(isObj).map((h) => ({ name: str(h.name, 200) ?? "", value: str(h.value, 2000) ?? "" })).filter((h) => h.name)
+    ? data.headers.slice(0, 300).filter(isObj).map((h) => { const name = str(h.name, 200) ?? ""; return { name, value: str(h.value, headerValueLimit(name)) ?? "" }; }).filter((h) => h.name)
     : [];
   return {
     id: needStr(data.id, 300, "id"), thread_id: str(data.thread_id, 300), subject: str(data.subject, 1000),
@@ -215,6 +247,15 @@ export function htmlToText(input: string): string {
     .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * The text stored for a received mail: HTML to text, quoted history cut, at most `max` characters. When cutting leaves
+ * nothing (a forwarded mail that starts with "Från:"), the whole text is kept instead of dropping the mail as empty.
+ */
+export function mailText(raw: string, max: number): string {
+  const plain = htmlToText(raw);
+  return (stripQuoted(plain) || plain).slice(0, max);
+}
+
 /** Cuts the quoted history ("På … skrev", "On … wrote:", > lines) so only the new text is kept. */
 export function stripQuoted(text: string): string {
   const out: string[] = [];
@@ -228,11 +269,16 @@ export function stripQuoted(text: string): string {
 
 /* ---------- Sending mail ---------- */
 
-/** Downloads one attachment. The caller has already checked type and size. */
+/** Largest attachment we keep (the declared size is never trusted: the download itself is bounded). */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/** Downloads one attachment, at most MAX_ATTACHMENT_BYTES (otherwise throws attachment_too_large; the mail is kept). */
 export async function downloadAttachment(grantId: string, messageId: string, attachmentId: string): Promise<Uint8Array> {
   const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}/attachments/${encodeURIComponent(attachmentId)}/download?message_id=${encodeURIComponent(messageId)}`, { timeoutMs: 30_000, headers: { Accept: "*/*" } });
-  if (!res.ok) throw new Error(`nylas_attachment_${res.status}`); // never log the body
-  return new Uint8Array(await res.arrayBuffer());
+  if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`nylas_attachment_${res.status}`); } // never log the body
+  const bytes = await readBounded(res, MAX_ATTACHMENT_BYTES);
+  if (!bytes) throw new Error("attachment_too_large");
+  return bytes;
 }
 
 /** Sends a reply. `html` must already be safe (see mail-format.ts renderHtml). */
