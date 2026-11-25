@@ -1,4 +1,5 @@
 // Shared streamed Claude extraction with status-aware bounded recovery.
+import { tenderAiRequest } from './tender-ai-config.server';
 export const TENDER_MAX_OUTPUT_TOKENS = 64000;
 
 export class TenderIncompleteOutput extends Error {}
@@ -25,10 +26,12 @@ async function attempt(c: ToolCall, capture: Capture): Promise<unknown> {
   // Cache the large document prefix so a retry does not pay for the documents twice.
   const last = content.length - 1;
   if (last >= 0) content[last] = { ...(content[last] as object), cache_control: { type: 'ephemeral' } };
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/messages', {
-    method: 'POST', headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json', 'X-Lovable-AIG-SDK': 'fetch' },
+  // Lovable's gateway with its key (production and the Lovable preview), otherwise the Anthropic Messages API.
+  const route = tenderAiRequest(c.key, c.model);
+  const response = await fetch(route.url, {
+    method: 'POST', headers: route.headers,
     signal: AbortSignal.timeout(150_000),
-    body: JSON.stringify({ model: c.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'tool', name: c.tool } }),
+    body: JSON.stringify({ model: route.model, max_tokens: c.maxTokens ?? TENDER_MAX_OUTPUT_TOKENS, stream: true, output_config: { effort: 'medium' }, system: `${c.system}\nAnvänd alltid verktyget ${c.tool} för hela det strukturerade resultatet. Skriv inte resultatet som vanlig text.`, messages: [{ role: 'user', content }], tools: [{ name: c.tool, description: c.description, strict: true, input_schema: c.schema }], tool_choice: { type: 'tool', name: c.tool } }),
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { message?: string; error?: { message?: string } } | null;
