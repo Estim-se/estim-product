@@ -1,7 +1,9 @@
 // Everything that talks to Nylas, plus mail cleaning and filtering.
-// No imports on purpose: pure functions that can be unit tested without Deno.
+// Pure functions that can be unit tested without network (the only import is the header limit from sender-auth.ts).
 // Rules: never log mail content, addresses, subjects, headers, tokens or Nylas
 // response bodies. Log short error codes only.
+
+import { headerValueLimit } from "./sender-auth.ts";
 
 const enc = new TextEncoder();
 
@@ -175,7 +177,7 @@ export interface NylasMessage {
 export function parseMessage(data: unknown): NylasMessage {
   if (!isObj(data)) throw new Error("invalid_message");
   const headers = Array.isArray(data.headers)
-    ? data.headers.slice(0, 300).filter(isObj).map((h) => ({ name: str(h.name, 200) ?? "", value: str(h.value, 2000) ?? "" })).filter((h) => h.name)
+    ? data.headers.slice(0, 300).filter(isObj).map((h) => { const name = str(h.name, 200) ?? ""; return { name, value: str(h.value, headerValueLimit(name)) ?? "" }; }).filter((h) => h.name)
     : [];
   return {
     id: needStr(data.id, 300, "id"), thread_id: str(data.thread_id, 300), subject: str(data.subject, 1000),

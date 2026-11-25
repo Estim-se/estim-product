@@ -4,6 +4,7 @@
 // Log short error codes only. Unipile account ids start with "acc_"; they are stored in email_connections.grant_id.
 
 import { env, MAX_ATTACHMENT_BYTES, readBounded, type Addr, type NylasMessage } from "./nylas.ts";
+import { headerValueLimit } from "./sender-auth.ts";
 
 /** The provider-neutral message shape the inbound pipeline already uses. */
 export type MailMessage = NylasMessage;
@@ -194,7 +195,7 @@ export function parseEmail(data: unknown): MailMessage {
   const id = str(data.id, 300);
   if (!id) throw new Error("invalid_id");
   const headers = Array.isArray(data.headers)
-    ? data.headers.slice(0, 300).filter(isObj).map((h) => ({ name: str(h.name, 200) ?? "", value: str(h.value, 2000) ?? "" })).filter((h) => h.name)
+    ? data.headers.slice(0, 300).filter(isObj).map((h) => { const name = str(h.name, 200) ?? ""; return { name, value: str(h.value, headerValueLimit(name)) ?? "" }; }).filter((h) => h.name)
     : [];
   const ms = typeof data.date === "string" ? Date.parse(data.date) : NaN;
   const attachments = Array.isArray(data.attachments)

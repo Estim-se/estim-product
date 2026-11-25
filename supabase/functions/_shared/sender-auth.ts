@@ -3,10 +3,13 @@
 //
 // Only the TOPMOST Authentication-Results header counts: it is the one the receiving provider (Gmail, Microsoft)
 // added. A sender can put any number of fake ones further down. ARC-Authentication-Results is ignored.
-// "pass":    dmarc=pass/bestguesspass for the From domain; or, without dmarc=fail/compauth=fail, an aligned dkim=pass
-//            (header.d or the domain of header.i) or an aligned spf=pass (domain of smtp.mailfrom).
-// "fail":    dmarc=fail, compauth=fail, or the header exists and nothing above passed.
-// "unknown": no header, no usable From domain, or a header cut at the parse limit that did not pass.
+// "fail":    compauth=fail or any dmarc=fail (checked first: a pass next to them never wins), or the header exists and
+//            nothing below passed (also a header cut at the parse limit: it may have lost a fail).
+// "pass":    dmarc=pass/bestguesspass for the From domain; or an aligned dkim=pass (header.d or the domain of
+//            header.i) or an aligned spf=pass (domain of smtp.mailfrom).
+// "unknown": no header, or no usable From domain.
+// Results are split on ";" outside quoted strings and comments, so a quoted value (e.g. a local part containing
+// "; dmarc=pass header.from=kund.se") can never add a result.
 
 export type SenderVerdict = "pass" | "fail" | "unknown";
 
@@ -23,30 +26,55 @@ export function withUnverifiedWarning(warnings: unknown): string[] {
   return list.includes(UNVERIFIED_WARNING) ? list : [...list, UNVERIFIED_WARNING];
 }
 
-/** Header values are cut at this length by parseMessage/parseEmail: a cut header may hide its dmarc result. */
-const HEADER_VALUE_LIMIT = 2000;
+/** Authentication-Results values are kept up to this length by parseMessage/parseEmail (other headers: 2000). */
+export const AUTH_RESULTS_VALUE_LIMIT = 16_384;
+
+/** The parse limit for one header value: Authentication-Results gets more room, a long one may list many results. */
+export function headerValueLimit(name: string): number {
+  return name.trim().toLowerCase() === "authentication-results" ? AUTH_RESULTS_VALUE_LIMIT : 2000;
+}
 
 interface AuthResult { method: string; result: string; props: Record<string, string> }
 
-/** Removes RFC 5322 comments "( ... )", including nested ones, so their text is never read as a result. */
-function stripComments(value: string): string {
-  let out = "", depth = 0;
-  for (const ch of value) {
+/**
+ * Splits a header value into its ";"-separated parts, dropping RFC 5322 comments "( ... )" (nested too). A ";" or "("
+ * inside a quoted string "..." (with \" escapes) is text, not structure.
+ */
+export function splitResults(value: string): string[] {
+  const parts: string[] = [];
+  let cur = "", depth = 0, quoted = false;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]!;
+    if (quoted) {
+      cur += ch;
+      if (ch === "\\" && i + 1 < value.length) cur += value[++i]!;
+      else if (ch === '"') quoted = false;
+      continue;
+    }
+    if (depth > 0) {
+      if (ch === "\\") i++;
+      else if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      continue;
+    }
     if (ch === "(") depth++;
-    else if (ch === ")" && depth > 0) depth--;
-    else if (depth === 0) out += ch;
+    else if (ch === '"') { quoted = true; cur += ch; }
+    else if (ch === ";") { parts.push(cur); cur = ""; }
+    else cur += ch;
   }
-  return out;
+  parts.push(cur);
+  return parts;
 }
 
 /** Parses one Authentication-Results value into its method results. The authserv-id segment has no "=" and is skipped. */
 export function parseAuthResults(value: string): AuthResult[] {
   const results: AuthResult[] = [];
-  for (const segment of stripComments(value).split(";")) {
-    const m = /^\s*([a-z0-9_.-]+)\s*=\s*([a-z0-9_-]+)(.*)$/i.exec(segment);
+  for (const segment of splitResults(value)) {
+    const m = /^\s*([a-z0-9_.-]+)\s*=\s*([a-z0-9_-]+)([\s\S]*)$/i.exec(segment);
     if (!m) continue;
     const props: Record<string, string> = {};
-    for (const p of m[3]!.matchAll(/([a-z0-9_.-]+)\s*=\s*("[^"]*"|[^\s;]+)/gi)) props[p[1]!.toLowerCase()] = p[2]!.replace(/^"|"$/g, "").trim().toLowerCase();
+    // A value is a token or a quoted string (with \" escapes), possibly joined, e.g. "a; b"@evil.se.
+    for (const p of m[3]!.matchAll(/([a-z0-9_.-]+)\s*=\s*((?:"(?:[^"\\]|\\.)*"|[^\s;"])+)/gi)) props[p[1]!.toLowerCase()] = p[2]!.replace(/^"|"$/g, "").trim().toLowerCase();
     results.push({ method: m[1]!.toLowerCase(), result: m[2]!.toLowerCase(), props });
   }
   return results;
@@ -68,10 +96,10 @@ export function senderVerdict(headers: { name: string; value: string }[], fromEm
   const results = parseAuthResults(top.value);
   const has = (method: string, ...values: string[]) => results.filter((r) => r.method === method && values.includes(r.result));
 
+  if (has("compauth", "fail").length || has("dmarc", "fail").length) return "fail";
   if (has("dmarc", "pass", "bestguesspass").some((r) => domainOf(r.props["header.from"]) === fromDomain)) return "pass";
-  if (has("dmarc", "fail").length || has("compauth", "fail").length) return "fail";
   const dkim = has("dkim", "pass").some((r) => aligned(domainOf(r.props["header.d"] ?? r.props["header.i"]), fromDomain));
   const spf = has("spf", "pass").some((r) => aligned(domainOf(r.props["smtp.mailfrom"]), fromDomain));
   if (dkim || spf) return "pass";
-  return top.value.length >= HEADER_VALUE_LIMIT ? "unknown" : "fail";
+  return "fail"; // also a header cut at AUTH_RESULTS_VALUE_LIMIT: what was cut may have been a fail
 }
