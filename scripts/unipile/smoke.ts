@@ -6,6 +6,7 @@
 //
 // Commands:
 //   link <public-url> [google|microsoft]   hosted auth link; after login the browser lands on <public-url>/done
+//   reconnect <public-url> <acc_id>        signs an existing account in again (what 'Anslut igen' does in the app)
 //   account <acc_id>                       raw account + what the app would store (provider, address)
 //   emails <acc_id>                        the 5 latest mails (id, date, sender, subject, attachments)
 //   email <acc_id> <email_id>              one mail as the app parses it, plus every attachment downloaded
@@ -43,17 +44,22 @@ async function raw(path: string, init?: RequestInit): Promise<{ status: number; 
 }
 
 switch (command) {
-  case "link": {
+  case "link":
+  case "reconnect": {
     const base = publicUrl(args[0]);
-    const provider = args[1] === "google" || args[1] === "microsoft" ? args[1] : undefined;
+    // link: a new mailbox. reconnect: signs in an existing account again, as the app does for an expired connection.
+    const provider = command === "link" && (args[1] === "google" || args[1] === "microsoft") ? args[1] as "google" | "microsoft" : undefined;
+    const reconnectAccountId = command === "reconnect" ? need(args[1], "acc_ id") : undefined;
     const state = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const linkArgs = { state, redirectUri: `${base}/done`, provider, reconnectAccountId, minutes: 30 };
     try {
-      const link = await unipile.createAuthLink({ state, redirectUri: `${base}/done`, provider, minutes: 30 });
+      const link = await unipile.createAuthLink(linkArgs);
       show("Open the link and sign in", link);
-      show("Our state (must come back in account.add and in the address after sign-in)", state);
+      show(`Our state (must come back in ${command === "link" ? "account.add" : "account.reconnect"} and in the address after sign-in)`, state);
+      show("Permissions asked for (mail only)", unipile.MAIL_SCOPES);
     } catch (e) {
       // The app hides Unipile's error text; here we repeat the same request to see why it was refused.
-      const body = { providers: provider === "google" ? "google" : provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: `${base}/done`, expires_on: new Date(Date.now() + 30 * 60_000).toISOString(), state };
+      const body = unipile.authLinkBody(linkArgs);
       show(`Unipile refused (${(e as Error).message}). Sent`, body);
       show("Unipile's answer", (await raw("/auth/link", { method: "POST", body: JSON.stringify(body) })).body);
     }

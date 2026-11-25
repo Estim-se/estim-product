@@ -8,7 +8,7 @@ function assertThrows(fn: () => unknown, includes: string) {
   throw new Error("expected an error");
 }
 import {
-  accountEventOf, bounceEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
+  accountEventOf, authLinkBody, bounceEventOf, emailEventOf, isNonInboxFolder, isUnipileAccount, mapProvider, normalizeMessageId, parseAccount, parseEmail,
   parseEvent, shouldHandleEmailEvent, verifyUnipileSignature,
 } from "./unipile.ts";
 import { activeProvider, providerOf } from "./mail-provider.ts";
@@ -57,6 +57,26 @@ Deno.test("account events carry only our own well-formed state", () => {
   assertEquals(accountEventOf({ account: { id: "acc_9" }, state: "short" }), { accountId: "acc_9", state: null });
   assertEquals(accountEventOf({ account: { id: "x" }, state: STATE }), null);
   assertEquals(accountEventOf({}), null);
+});
+
+Deno.test("auth links ask for mail permissions only, also when reconnecting", () => {
+  const base = { state: STATE, redirectUri: "https://app.example/epost-klar", now: 0, minutes: 30 };
+  const fresh = authLinkBody({ ...base, provider: "microsoft" });
+  assertEquals(fresh.providers, "outlook");
+  assertEquals(fresh.expires_on, "1970-01-01T00:30:00.000Z");
+  assertEquals(authLinkBody(base).providers, "*:EMAILS");
+  const again = authLinkBody({ ...base, provider: "google", reconnectAccountId: "acc_9" });
+  assertEquals(again.account_id, "acc_9");
+  assertEquals("providers" in again, false);
+  for (const body of [fresh, again]) {
+    const config = body.config as { google: { oauth_scope: string[] }; outlook: { oauth_scope: string[] } };
+    const all = [...config.google.oauth_scope, ...config.outlook.oauth_scope].join(" ");
+    assertFalse(/calendar|Calendars|gmail\.modify|contacts/i.test(all));
+    assert(config.google.oauth_scope.includes("https://www.googleapis.com/auth/gmail.readonly"));
+    assert(config.google.oauth_scope.includes("https://www.googleapis.com/auth/gmail.send"));
+    // Microsoft: "Mail.Send alone is insufficient"
+    assert(["Mail.Send", "Mail.ReadWrite", "offline_access"].every((s) => config.outlook.oauth_scope.includes(s)));
+  }
 });
 
 Deno.test("accounts: provider mapping and the mailbox address come from Unipile", () => {

@@ -119,13 +119,35 @@ export function mapProvider(value: unknown): MailProvider | null {
   return null;
 }
 
-/** Creates a short-lived hosted auth link. With `reconnectAccountId` the same account id is re-authenticated. */
+/**
+ * Mail-only permissions, the final list Unipile asks the provider for (v2 "Permissions required", 2026-11-25).
+ * Without it Unipile's shared app also asks for calendar access and Gmail's gmail.modify.
+ * Google: gmail.readonly covers email.new / email.new.bounce, fetching mails and attachments, and reading the original
+ *   for a threaded reply; gmail.send sends. Google lists granted scopes as full URLs, so they are given that way.
+ * Microsoft: sending needs Mail.Send AND Mail.ReadWrite ("Mail.Send alone is insufficient"); offline_access keeps the
+ *   connection alive after the first hour. Microsoft refuses the connection if fewer scopes are granted than requested.
+ * Sent on reconnects too, so an account linked earlier with calendar access drops it when it is reconnected.
+ */
+export const MAIL_SCOPES = {
+  google: [
+    "openid", "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send",
+  ],
+  outlook: ["openid", "offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
+} as const;
+
+/** The POST /auth/link body. With `reconnectAccountId` the same account id is re-authenticated. */
+export function authLinkBody(args: { state: string; redirectUri: string; provider?: "google" | "microsoft" | undefined; reconnectAccountId?: string | undefined; minutes?: number; now?: number }): Record<string, unknown> {
+  const expires_on = new Date((args.now ?? Date.now()) + (args.minutes ?? 30) * 60_000).toISOString();
+  const config = { google: { oauth_scope: [...MAIL_SCOPES.google] }, outlook: { oauth_scope: [...MAIL_SCOPES.outlook] } };
+  return args.reconnectAccountId
+    ? { account_id: args.reconnectAccountId, redirect_uri: args.redirectUri, expires_on, state: args.state, config }
+    : { providers: args.provider === "google" ? "google" : args.provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: args.redirectUri, expires_on, state: args.state, config };
+}
+
+/** Creates a short-lived hosted auth link. */
 export async function createAuthLink(args: { state: string; redirectUri: string; provider?: "google" | "microsoft" | undefined; reconnectAccountId?: string | undefined; minutes?: number }): Promise<string> {
-  const expires_on = new Date(Date.now() + (args.minutes ?? 30) * 60_000).toISOString();
-  const body = args.reconnectAccountId
-    ? { account_id: args.reconnectAccountId, redirect_uri: args.redirectUri, expires_on, state: args.state }
-    : { providers: args.provider === "google" ? "google" : args.provider === "microsoft" ? "outlook" : "*:EMAILS", redirect_uri: args.redirectUri, expires_on, state: args.state };
-  const res = await unipileFetch("/auth/link", { method: "POST", body: JSON.stringify(body) });
+  const res = await unipileFetch("/auth/link", { method: "POST", body: JSON.stringify(authLinkBody(args)) });
   if (!res.ok) throw new Error(`unipile_link_${res.status}`); // never log the body
   const json = await res.json() as { link?: unknown };
   if (typeof json.link !== "string" || !/^https:\/\//.test(json.link)) throw new Error("unipile_link_missing");

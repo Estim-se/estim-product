@@ -61,7 +61,9 @@ Run everything from the repository root, with three terminals open.
    Terminal 1 should show `account.add` with **signature OK** and the same state as printed by `link`.
    Linking a mailbox that is already linked returns `api/already_exists` instead.
 
-5. **Check the account** (what the app stores as provider and address):
+5. **Check the account** (what the app stores as provider and address). `oauth_scope` in the raw answer must list only
+   mail permissions (`gmail.readonly`, `gmail.send` for Google; `Mail.ReadWrite`, `Mail.Send` for Microsoft): no
+   calendar and no `gmail.modify`. Run steps 6 and 7 with such an account: they prove those permissions are enough.
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts account acc_...
@@ -93,7 +95,14 @@ Run everything from the repository root, with three terminals open.
 
    Terminal 1 shows `email.new.bounce` with the Message-ID of the mail from this step.
 
-9. **Clean up:** delete the test accounts and the webhook endpoint, and stop the receiver and the tunnel.
+9. **Reconnect** (what "Anslut igen" does for an expired mailbox). Terminal 1 should show `account.reconnect` with the
+   new state and the same `acc_` id. An account linked before the mail-only change loses its calendar permission here.
+
+   ```powershell
+   deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts reconnect https://<tunnel>.trycloudflare.com acc_...
+   ```
+
+10. **Clean up:** delete the test accounts and the webhook endpoint, and stop the receiver and the tunnel.
 
    ```powershell
    deno run --allow-net --allow-env --env-file=scripts/unipile/.env scripts/unipile/smoke.ts delete acc_...
