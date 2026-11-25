@@ -227,12 +227,12 @@ describe('requirement identity and deduplication', () => {
     expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toContain('Intyg från specialist: 1');
     expect(otherTradeWork({ post: 'Pålist', source: null })).toBe(false);
   });
-  it('el and every el-compound is electrical work; eller, element, elev, elva and elastisk are not', () => {
+  it('el and every el-compound is electrical work; eller, element, elev, elva, elastisk, elegant and elit are not', () => {
     const q = build([req('El till garderob', 'lägenhet', 1, { section: 4, source: src('Ny el dras fram till garderob i sovrum.') }),
       req('Elåtgärder vid fönster', 'lägenhet', 1, { section: 4, source: src('Elåtgärder vid fönster i vardagsrum.') }),
       req('Kanalisation i golvlist', 'lägenhet', 1, { section: 4, source: src('Kanalisation i golvlist i vardagsrum.') }),
       req('Elanslutning av VVS-utrustning', 'fastighet', null, { fixed_quantity: 3, section: 7, source: src('Elanslutning av VVS-utrustning enligt VVS-handling.') }),
-      req('Målning av elevskåp', 'fastighet', null, { fixed_quantity: 2, section: 7, source: src('Elevskåp och element målas, elastisk fog vid elva fönster.') })]);
+      req('Målning av elevskåp', 'fastighet', null, { fixed_quantity: 2, section: 7, source: src('Elegant elevskåp och element från Elit målas, elastisk fog vid elva fönster.') })]);
     expect(rowsOf(q).map(i => `${i.post}: ${i.quantity}`)).toEqual(expect.arrayContaining(['El till garderob: 6', 'Elåtgärder vid fönster: 6', 'Kanalisation i golvlist: 6', 'Elanslutning av VVS-utrustning: 3']));
     expect(['El till garderob', 'Elåtgärder vid fönster', 'Kanalisation i golvlist', 'Elanslutning av VVS-utrustning'].map(p => status(q, p)?.status)).toEqual(['Saknar pris', 'Saknar pris', 'Saknar pris', 'Saknar pris']);
     expect(status(q, 'Målning av elevskåp')).toMatchObject({ status: 'Ej relevant' });
