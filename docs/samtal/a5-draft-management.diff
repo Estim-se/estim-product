@@ -1,0 +1,590 @@
+diff -ruN ra/src/components/estim/samtal-page.tsx rb/src/components/estim/samtal-page.tsx
+--- ra/src/components/estim/samtal-page.tsx	2026-11-26 14:22:26.963363797 +0000
++++ rb/src/components/estim/samtal-page.tsx	2026-11-26 14:26:22.838372233 +0000
+@@ -3,7 +3,7 @@
+ import { useServerFn } from '@tanstack/react-start';
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { Button } from '@/components/ui/button';
+-import { addSamtalNumberFn, assignRingNoteFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
++import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraftFn, enrollRingEmployeeFn, revokeRingEnrollmentFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
+ import { CALL_KIND } from '@/lib/samtal/ring/labels';
+ import { SamtalRingSection } from './samtal-ring';
+ import { CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
+@@ -24,6 +24,7 @@
+   const load = useServerFn(getSamtal), save = useServerFn(saveSamtalSettingsFn), addNumber = useServerFn(addSamtalNumberFn), changeNumber = useServerFn(changeSamtalNumberFn);
+   const decide = useServerFn(decideSamtalTaskFn), audioLink = useServerFn(samtalAudioLinkFn), start = useServerFn(startSamtalCallFn);
+   const confirmReview = useServerFn(confirmSamtalReviewFn), ringContext = useServerFn(setRingContextFn), ringAssign = useServerFn(assignRingNoteFn);
++  const ringDecide = useServerFn(decideRingDraftFn), ringDelete = useServerFn(deleteRingDraftFn), ringEnroll = useServerFn(enrollRingEmployeeFn), ringRevoke = useServerFn(revokeRingEnrollmentFn);
+   const [kind, setKind] = useState<'alla' | 'telefonsamtal' | 'rostanteckning'>('alla');
+   // One request id per call and decision, kept until it succeeds, so a retry after a timeout repeats the same request.
+   const reviewIds = useRef(new Map<string, string>());
+@@ -118,7 +119,12 @@
+ 
+     <SamtalRingSection data={d.ring} busy={busy}
+       onChooseContext={company_id => void run(() => ringContext({ data: { company_id } }), 'Företaget är valt för din nästa röstanteckning.')}
+-      onAssign={(pending_id, company_id) => void run(() => ringAssign({ data: { pending_id, company_id } }), 'Anteckningen är kopplad och bearbetas.')} />
++      onAssign={(pending_id, company_id) => void run(() => ringAssign({ data: { pending_id, company_id } }), 'Anteckningen är kopplad och bearbetas.')}
++      members={d.members}
++      onDecide={decision => void run(() => ringDecide({ data: decision }), 'Utkastet är sparat. Inget har skickats.')}
++      onDelete={id => void run(() => ringDelete({ data: { id } }), 'Utkastet är raderat.')}
++      onEnroll={input => void run(() => ringEnroll({ data: input }), 'Medarbetaren väntar på verifiering.')}
++      onRevoke={id => void run(() => ringRevoke({ data: { id } }), 'Anslutningen är återkallad.')} />
+ 
+     <div className="card mt16"><h3>Samtal</h3>
+       <div className="row mt4" role="group" aria-label="Visa">
+diff -ruN ra/src/components/estim/samtal-ring.tsx rb/src/components/estim/samtal-ring.tsx
+--- ra/src/components/estim/samtal-ring.tsx	2026-11-26 14:22:26.963363797 +0000
++++ rb/src/components/estim/samtal-ring.tsx	2026-11-26 14:30:41.851381496 +0000
+@@ -1,26 +1,74 @@
++import { useState } from 'react';
+ import { Button } from '@/components/ui/button';
+ import { RING_DRAFT_KIND, RING_GREETING, RING_NUMBER_DISPLAY, RING_TEXT } from '../../lib/samtal/ring/labels';
++import { allowedActions, CERTAINTY, DRAFT_ACTION, DRAFT_STATE, deadlineLabel, draftState, editedRows, rowsOf, type DraftAction, type DraftKind, type MaterialRow } from '../../lib/samtal/ring/draft-actions';
++import { ENROLLMENT_STATE, ENROLLMENT_TEXT, RING_PROVIDERS } from '../../lib/samtal/ring/enrollment';
+ 
+-// estim Samtal A3/A4 (unapplied): the Ring estim section of the Samtal page. Shows the signed-in user's own
+-// voice-note drafts (owners: the company's), lets an employee with several companies choose the company before or
+-// after calling, and never offers a send, order or price action.
+-
+-export type RingDraftView = { id: string; kind: string; title: string; due_at: string | null; customer_id: string | null; state: string; needs_review: boolean; body: unknown };
+-export type RingSectionView = { drafts: RingDraftView[]; companies: { id: string; name: string }[]; pending: { id: string; started_at: string; companies: { id: string; name: string }[] }[] };
++// estim Samtal A3/A4/A5 (unapplied): the Ring estim section of the Samtal page. Shows the signed-in user's own
++// voice-note drafts (owners: the company's) with Godkänn / Redigera / Avvisa / Koppla till kund / Koppla till projekt /
++// Radera, and lets owners connect employees. Approval only marks an internal draft; nothing is sent, ordered or priced.
++
++export type RingDraftView = { id: string; kind: string; title: string; due_at: string | null; due_date?: string | null; due_time_source?: string | null;
++  customer_id: string | null; project_ref?: string | null; state: string; version?: number; needs_review: boolean; body: unknown };
++export type RingSectionView = {
++  drafts: RingDraftView[]; companies: { id: string; name: string }[]; pending: { id: string; started_at: string; companies: { id: string; name: string }[] }[];
++  customers?: { id: string; name: string; address: string | null }[]; owner?: boolean;
++  enrollments?: { id: string; user_id: string; provider: string; phone_e164: string; state: 'vantar' | 'verifierad' | 'aterkallad' }[];
++};
++export type RingDecision = { id: string; version: number; action: Exclude<DraftAction, 'radera'>; value?: Record<string, unknown> };
+ 
+ const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm', dateStyle: 'short', timeStyle: 'short' }) : '';
+ const ORDER = ['offertutkast', 'materialunderlag', 'uppgift', 'paminnelse', 'kundanteckning'];
+-const items = (body: unknown) => {
+-  const list = (body as { items?: { item: string; quantity: number | null; unit: string | null }[]; rows?: { item: string; quantity: number | null; unit: string | null }[] } | null);
+-  return list?.items ?? list?.rows ?? [];
+-};
+ 
+-export function SamtalRingSection({ data, busy, onChooseContext, onAssign }: {
++function DraftEditor({ d, busy, onSave, onCancel }: { d: RingDraftView; busy: boolean; onSave: (value: Record<string, unknown>) => void; onCancel: () => void }) {
++  const kind = d.kind as DraftKind, before = rowsOf(kind, d.body);
++  const [title, setTitle] = useState(d.title), [date, setDate] = useState(d.due_date ?? ''), [rows, setRows] = useState<MaterialRow[]>(before);
++  const set = (i: number, patch: Partial<MaterialRow>) => setRows(r => r.map((x, j) => j === i ? { ...x, ...patch } : x));
++  const hasRows = kind === 'materialunderlag' || kind === 'offertutkast';
++  return <form className="mt8" onSubmit={e => { e.preventDefault();
++    const value: Record<string, unknown> = { title };
++    if (date !== (d.due_date ?? '')) value['due_date'] = date || null;
++    if (hasRows) value['items'] = editedRows(before, rows);
++    onSave(value); }}>
++    <label className="xs muted">Rubrik<input className="input" value={title} maxLength={200} onChange={e => setTitle(e.target.value)} /></label>
++    <label className="xs muted ml8">Senast<input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
++    {hasRows && <table className="mt8 xs"><thead><tr><th>Material</th><th>Antal</th><th>Enhet</th><th>Leverantör</th><th>Artikelnr</th><th>Pris</th><th></th></tr></thead><tbody>
++      {rows.map((m, i) => <tr key={i}>
++        <td><input className="input" aria-label="Material" value={m.item} maxLength={200} onChange={e => set(i, { item: e.target.value })} /></td>
++        <td><input className="input" aria-label="Antal" inputMode="decimal" value={m.quantity ?? ''} onChange={e => { const n = Number(e.target.value.replace(',', '.')); set(i, { quantity: e.target.value && n > 0 ? n : null }); }} /></td>
++        <td><input className="input" aria-label="Enhet" value={m.unit ?? ''} maxLength={20} onChange={e => set(i, { unit: e.target.value || null })} /></td>
++        <td><input className="input" aria-label="Leverantör" value={m.supplier ?? ''} maxLength={120} onChange={e => set(i, { supplier: e.target.value || null })} /></td>
++        <td><input className="input" aria-label="Artikelnummer" value={m.product_id ?? ''} maxLength={80} onChange={e => set(i, { product_id: e.target.value || null })} /></td>
++        <td><input className="input" aria-label="Pris" inputMode="decimal" value={m.price ?? ''} onChange={e => { const n = Number(e.target.value.replace(',', '.')); set(i, { price: e.target.value && n >= 0 ? n : null }); }} /></td>
++        <td><Button type="button" variant="prototype" className="btn btn-ghost btn-sm" onClick={() => setRows(r => r.filter((_, j) => j !== i))}>Ta bort</Button></td>
++      </tr>)}
++    </tbody></table>}
++    {hasRows && <Button type="button" variant="prototype" className="btn btn-ghost btn-sm mt4" onClick={() => setRows(r => [...r, { item: '', quantity: null, unit: null, certainty: 'osaker', evidence: null, supplier: null, product_id: null, price: null }])}>Lägg till rad</Button>}
++    <div className="row mt8"><Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy || !title.trim() || rows.some(r => !r.item.trim())}>Spara</Button>
++      <Button type="button" variant="prototype" className="btn btn-ghost btn-sm" onClick={onCancel}>Avbryt</Button></div>
++  </form>;
++}
++
++export function SamtalRingSection({ data, busy, onChooseContext, onAssign, onDecide, onDelete, onEnroll, onRevoke, members = [] }: {
+   data: RingSectionView; busy: boolean;
+   onChooseContext: (companyId: string) => void; onAssign: (pendingId: string, companyId: string) => void;
++  onDecide?: (d: RingDecision) => void; onDelete?: (id: string) => void;
++  onEnroll?: (input: { user_id: string; provider: string; phone: string }) => void; onRevoke?: (id: string) => void;
++  members?: { user_id: string; name: string }[];
+ }) {
+-  const open = data.drafts.filter(d => d.state === 'utkast' || d.state === 'bekraftad');
++  const [editing, setEditing] = useState<string | null>(null), [linking, setLinking] = useState<{ id: string; to: 'kund' | 'projekt' } | null>(null);
++  const [linkValue, setLinkValue] = useState(''), [showDone, setShowDone] = useState(false);
++  const [person, setPerson] = useState(''), [phone, setPhone] = useState(''), [provider, setProvider] = useState(Object.keys(RING_PROVIDERS)[0] ?? '');
++  const drafts = data.drafts.map(d => ({ ...d, s: draftState(d.state, d.kind as DraftKind, d.customer_id) }));
++  const open = drafts.filter(d => showDone || d.s === 'behover_granskas' || d.s === 'kund_saknas' || d.s === 'godkand');
+   const groups = ORDER.map(kind => ({ kind, list: open.filter(d => d.kind === kind) })).filter(g => g.list.length);
++  const customerName = (id: string | null) => data.customers?.find(c => c.id === id)?.name;
++  const act = (d: RingDraftView & { s: string }, a: DraftAction) => {
++    if (a === 'radera') { if (window.confirm('Radera utkastet? Det går inte att ångra.')) onDelete?.(d.id); return; }
++    if (a === 'redigera') { setEditing(d.id); return; }
++    if (a === 'koppla_kund' || a === 'koppla_projekt') { setLinking({ id: d.id, to: a === 'koppla_kund' ? 'kund' : 'projekt' }); setLinkValue(a === 'koppla_projekt' ? d.project_ref ?? '' : ''); return; }
++    onDecide?.({ id: d.id, version: d.version ?? 1, action: a });
++  };
+   return <div className="card mt16" aria-labelledby="ring-heading">
+     <h3 id="ring-heading">{RING_TEXT.heading}</h3>
+     <div className="sub">Ring {RING_NUMBER_DISPLAY} efter ett besök och berätta vad du vill komma ihåg. Hälsningen: ”{RING_GREETING}”</div>
+@@ -39,15 +87,42 @@
+       </div>)}
+     </div>}
+ 
++    <label className="row xs muted mt8"><input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} /> Visa avvisade och klara</label>
+     {groups.length === 0 && data.pending.length === 0 && <p className="muted mt8">{RING_TEXT.empty}</p>}
+     {groups.map(g => <div key={g.kind} className="mt12"><b>{RING_DRAFT_KIND[g.kind] ?? g.kind}</b>
+-      {g.list.map(d => <div key={d.id} className="mt4">
++      {g.list.map(d => <div key={d.id} className="mt8">
+         <div className="row between">
+-          <span>{d.title}{d.due_at ? ` · ${when(d.due_at)}` : ''}</span>
+-          <span className="xs muted">{d.needs_review ? RING_TEXT.needsReview : 'Klar'}{(g.kind === 'offertutkast' || g.kind === 'kundanteckning') && !d.customer_id ? ` · ${RING_TEXT.customerMissing}` : ''}</span>
++          <span>{d.title}{deadlineLabel(d.due_date ?? null, d.due_at, d.due_time_source === 'standard' ? 'standard' : d.due_time_source === 'angiven' ? 'angiven' : null) ? ` · ${deadlineLabel(d.due_date ?? null, d.due_at, d.due_time_source === 'standard' ? 'standard' : d.due_time_source === 'angiven' ? 'angiven' : null)}` : ''}</span>
++          <span className="xs muted">{DRAFT_STATE[d.s]}{customerName(d.customer_id) ? ` · ${customerName(d.customer_id)}` : ''}{d.project_ref ? ` · ${d.project_ref}` : ''}</span>
+         </div>
+-        {items(d.body).length > 0 && <ul className="xs muted">{items(d.body).map((m, i) => <li key={i}>{m.quantity !== null ? `${m.quantity}${m.unit ? ` ${m.unit}` : ' st'} ` : ''}{m.item}</li>)}</ul>}
++        {editing !== d.id && rowsOf(d.kind as DraftKind, d.body).length > 0 && <ul className="xs muted">{rowsOf(d.kind as DraftKind, d.body).map((m, i) =>
++          <li key={i}>{m.quantity !== null ? `${m.quantity}${m.unit ? ` ${m.unit}` : ''} ` : ''}{m.item} · {CERTAINTY[m.certainty]}{m.price === null ? ' · pris saknas' : ''}{m.evidence ? <span title={m.evidence}> · källa</span> : null}</li>)}</ul>}
++        {editing === d.id ? <DraftEditor d={d} busy={busy} onCancel={() => setEditing(null)} onSave={value => { onDecide?.({ id: d.id, version: d.version ?? 1, action: 'redigera', value }); setEditing(null); }} />
++        : linking?.id === d.id ? <form className="row mt4" onSubmit={e => { e.preventDefault(); onDecide?.({ id: d.id, version: d.version ?? 1, action: linking.to === 'kund' ? 'koppla_kund' : 'koppla_projekt', value: linking.to === 'kund' ? { customer_id: linkValue } : { project: linkValue } }); setLinking(null); }}>
++            {linking.to === 'kund'
++              ? <select className="input" aria-label="Kund" value={linkValue} onChange={e => setLinkValue(e.target.value)}><option value="">Välj kund</option>{(data.customers ?? []).map(c => <option key={c.id} value={c.id}>{c.name}{c.address ? `, ${c.address}` : ''}</option>)}</select>
++              : <input className="input" aria-label="Projekt" value={linkValue} maxLength={120} onChange={e => setLinkValue(e.target.value)} placeholder="Projektnamn" />}
++            <Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy || !linkValue.trim()}>Spara</Button>
++            <Button type="button" variant="prototype" className="btn btn-ghost btn-sm" onClick={() => setLinking(null)}>Avbryt</Button>
++          </form>
++        : <div className="row mt4">{allowedActions(d.s).map(a => <Button key={a} variant="prototype" className={a === 'godkann' ? 'btn btn-sm' : 'btn btn-ghost btn-sm'} disabled={busy || !onDecide} onClick={() => act(d, a)}>{DRAFT_ACTION[a]}</Button>)}</div>}
+       </div>)}
+     </div>)}
++
++    {data.owner && onEnroll && <div className="mt16" aria-labelledby="ring-enroll">
++      <b id="ring-enroll">{ENROLLMENT_TEXT.heading}</b>
++      <div className="xs muted">{ENROLLMENT_TEXT.help} {ENROLLMENT_TEXT.multiCompany}</div>
++      {(data.enrollments ?? []).map(e => <div key={e.id} className="row between mt4">
++        <span>{members.find(m => m.user_id === e.user_id)?.name ?? '–'} · {e.phone_e164} · {RING_PROVIDERS[e.provider] ?? e.provider}</span>
++        <span className="row"><span className="xs muted">{ENROLLMENT_STATE[e.state]}</span>
++          {e.state !== 'aterkallad' && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onRevoke?.(e.id)}>{ENROLLMENT_TEXT.revoke}</Button>}</span>
++      </div>)}
++      <form className="row mt8" onSubmit={e => { e.preventDefault(); onEnroll({ user_id: person, provider, phone }); setPhone(''); }}>
++        <select className="input" aria-label="Medarbetare" value={person} onChange={e => setPerson(e.target.value)}><option value="">Välj medarbetare</option>{members.map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}</select>
++        <input className="input" aria-label={ENROLLMENT_TEXT.phone} placeholder={ENROLLMENT_TEXT.phone} value={phone} onChange={e => setPhone(e.target.value)} />
++        <select className="input" aria-label={ENROLLMENT_TEXT.provider} value={provider} onChange={e => setProvider(e.target.value)}>{Object.entries(RING_PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
++        <Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy || !person || !phone.trim()}>{ENROLLMENT_TEXT.connect}</Button>
++      </form>
++    </div>}
+   </div>;
+ }
+diff -ruN ra/src/lib/samtal/ring/deadline.ts rb/src/lib/samtal/ring/deadline.ts
+--- ra/src/lib/samtal/ring/deadline.ts	2026-11-26 14:22:26.964363797 +0000
++++ rb/src/lib/samtal/ring/deadline.ts	2026-11-26 14:28:26.533376656 +0000
+@@ -1,17 +1,21 @@
+-// estim Samtal A3/A4 (Ring estim): Swedish relative deadlines resolved in code from the words of the note and the
++// estim Samtal A3/A4/A5 (Ring estim): Swedish relative deadlines resolved in code from the words of the note and the
+ // call time in Swedish time. The AI only quotes the phrase; it never supplies a date. Browser-safe and pure.
+ const WEEKDAYS = ['söndag', 'måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag'] as const;
+ const MONTHS = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'] as const;
+ const NUMBERS: Record<string, number> = { en: 1, ett: 1, två: 2, tre: 3, fyra: 4, fem: 5, sex: 6, sju: 7, åtta: 8, nio: 9, tio: 10, fjorton: 14 };
+ 
+-export type Deadline = { date: string; due_at: string; uncertain: string | null };
++// A5: a deadline is a calendar date. due_at (an instant) exists only when a time was actually spoken ("klockan 14");
++// "senast på fredag" stays date-only. A configured default time is applied separately (withDefaultTime) and marked
++// time_source 'standard' so it can never be mistaken for a customer-stated time.
++export type Deadline = { date: string; time: string | null; due_at: string | null; time_source: 'angiven' | null; uncertain: string | null };
++export type TimedDeadline = Omit<Deadline, 'time_source'> & { time_source: 'angiven' | 'standard' | null };
+ 
+ // The calendar date of an instant in Europe/Stockholm, as YYYY-MM-DD.
+ export function stockholmDate(instant: string | Date) {
+   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(instant));
+ }
+ // A Swedish wall-clock time on a date, as an instant (handles summer and winter time).
+-export function stockholmInstant(date: string, time = '16:00') {
++export function stockholmInstant(date: string, time: string) {
+   const guess = new Date(`${date}T${time}:00Z`);
+   const local = new Date(guess.toLocaleString('en-US', { timeZone: 'Europe/Stockholm' })), utc = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' }));
+   return new Date(guess.getTime() - (local.getTime() - utc.getTime())).toISOString();
+@@ -19,12 +23,28 @@
+ const addDays = (date: string, days: number) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+ const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
+ 
++// A spoken clock time: "klockan 14", "kl. 9", "kl 14:30", "klockan 7.15". Hours 0-23 only; anything else is no time.
++export function spokenTime(p: string): string | null {
++  const m = p.toLocaleLowerCase('sv').match(/\b(?:klockan|kl)\.?\s*(\d{1,2})(?:[:.](\d{2}))?\b/);
++  if (!m) return null;
++  const h = Number(m[1]), min = m[2] === undefined ? 0 : Number(m[2]);
++  if (h > 23 || min > 59) return null;
++  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
++}
++
++// Applies a company's configured default time to a date-only deadline. The result is marked 'standard'.
++export function withDefaultTime(d: Deadline, defaultTime: string | null): TimedDeadline {
++  if (d.due_at || !defaultTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(defaultTime)) return d;
++  return { ...d, time: defaultTime, due_at: stockholmInstant(d.date, defaultTime), time_source: 'standard' };
++}
++
+ // Resolves a phrase such as "senast på fredag", "i morgon", "nästa vecka", "om tre dagar" or "den 5 december".
+ // Returns null when the phrase holds no date we can resolve without guessing.
+ export function resolveSwedishDeadline(phrase: string | null | undefined, callInstant: string): Deadline | null {
+   if (!phrase) return null;
+   const p = phrase.toLocaleLowerCase('sv').replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim(), today = stockholmDate(callInstant);
+-  const done = (date: string, uncertain: string | null = null): Deadline => ({ date, due_at: stockholmInstant(date), uncertain });
++  const time = spokenTime(phrase);
++  const done = (date: string, uncertain: string | null = null): Deadline => ({ date, time, due_at: time ? stockholmInstant(date, time) : null, time_source: time ? 'angiven' : null, uncertain });
+   if (/\bi övermorgon\b|\bövermorgon\b/.test(p)) return done(addDays(today, 2));
+   if (/\bi morgon\b|\bimorgon\b/.test(p)) return done(addDays(today, 1));
+   if (/\bi dag\b|\bidag\b/.test(p)) return done(today);
+diff -ruN ra/src/lib/samtal/ring/draft-actions.ts rb/src/lib/samtal/ring/draft-actions.ts
+--- ra/src/lib/samtal/ring/draft-actions.ts	1970-01-01 00:00:00.000000000 +0000
++++ rb/src/lib/samtal/ring/draft-actions.ts	2026-11-26 14:24:55.629369114 +0000
+@@ -0,0 +1,102 @@
++// estim Samtal A5 (Ring estim): draft management rules shared by the page and the server. Browser-safe and pure.
++// The database (samtal_ring_decide) is the authority: it locks the draft, checks the actor and the expected version
++// and makes every decision idempotent. These helpers only decide which buttons to show, validate edits before they
++// are sent and translate results to Swedish. Nothing here sends, orders, prices or contacts anyone.
++import { z } from 'zod';
++
++export type DraftState = 'behover_granskas' | 'kund_saknas' | 'godkand' | 'avvisad' | 'klar';
++export type DraftKind = 'uppgift' | 'paminnelse' | 'materialunderlag' | 'offertutkast' | 'kundanteckning';
++export type DraftAction = 'godkann' | 'redigera' | 'avvisa' | 'koppla_kund' | 'koppla_projekt' | 'klar' | 'radera';
++
++export const DRAFT_STATE: Record<DraftState, string> = {
++  behover_granskas: 'Behöver granskas', kund_saknas: 'Kund saknas', godkand: 'Godkänd', avvisad: 'Avvisad', klar: 'Klar',
++};
++export const DRAFT_ACTION: Record<DraftAction, string> = {
++  godkann: 'Godkänn', redigera: 'Redigera', avvisa: 'Avvisa', koppla_kund: 'Koppla till kund', koppla_projekt: 'Koppla till projekt', klar: 'Klar', radera: 'Radera',
++};
++// Kinds that cannot be approved before they belong to a customer.
++export const NEEDS_CUSTOMER: ReadonlySet<DraftKind> = new Set(['offertutkast', 'materialunderlag', 'kundanteckning']);
++
++// Old A3/A4 state names, read before the A5 SQL runs, map onto the A5 states.
++export function draftState(raw: string, kind: DraftKind, customerId: string | null): DraftState {
++  if (raw === 'utkast') return NEEDS_CUSTOMER.has(kind) && !customerId ? 'kund_saknas' : 'behover_granskas';
++  if (raw === 'bekraftad') return 'godkand';
++  return (raw in DRAFT_STATE ? raw : 'behover_granskas') as DraftState;
++}
++
++// The actions offered for a state (mirrors samtal_ring_decide).
++export function allowedActions(state: DraftState): DraftAction[] {
++  switch (state) {
++    case 'behover_granskas': return ['godkann', 'redigera', 'avvisa', 'koppla_kund', 'koppla_projekt', 'radera'];
++    case 'kund_saknas': return ['koppla_kund', 'redigera', 'avvisa', 'koppla_projekt', 'radera'];
++    case 'godkand': return ['klar', 'koppla_projekt', 'radera'];
++    case 'avvisad': case 'klar': return ['radera'];
++  }
++}
++
++export const MATERIAL_UNITS = ['st', 'm', 'm²', 'm³', 'kg', 'l', 'förp', 'rulle', 'par', 'set', 'tim'] as const;
++const optionalText = (n: number) => z.string().trim().max(n).nullable().transform(v => v ? v : null);
++// One editable material row. Price, supplier and product id stay empty unless a person fills them in.
++export const materialRow = z.object({
++  item: z.string().trim().min(1).max(200),
++  quantity: z.number().positive().max(100000).nullable(),
++  unit: z.string().trim().max(20).nullable().transform(v => v ? v : null),
++  certainty: z.enum(['angiven', 'uppskattad', 'osaker', 'bekraftad']),
++  evidence: z.string().max(200).nullable().default(null),
++  supplier: optionalText(120).default(null),
++  product_id: optionalText(80).default(null),
++  price: z.number().min(0).max(10000000).nullable().default(null),
++}).strict();
++export type MaterialRow = z.infer<typeof materialRow>;
++
++export const draftPatch = z.object({
++  title: z.string().trim().min(1).max(200).optional(),
++  text: z.string().max(4000).optional(),
++  items: z.array(materialRow).max(60).optional(),
++  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
++  due_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
++}).strict();
++export type DraftPatch = z.infer<typeof draftPatch>;
++
++// A row a person edited keeps its evidence only when the item text is unchanged; a changed row is marked
++// 'bekraftad' when it has a quantity (the person typed it), otherwise 'osaker'. A quantity is never invented.
++export function editedRows(before: MaterialRow[], after: MaterialRow[]): MaterialRow[] {
++  return after.map((row, i) => {
++    const old = before[i];
++    if (old && old.item === row.item && old.quantity === row.quantity && old.unit === row.unit) return { ...row, evidence: old.evidence, certainty: old.certainty };
++    return { ...row, evidence: old && old.item === row.item ? old.evidence : null, certainty: row.quantity === null ? 'osaker' : 'bekraftad' };
++  });
++}
++
++// Reads material rows from a draft body (materialunderlag: items; offertutkast: rows).
++export function rowsOf(kind: DraftKind, body: unknown): MaterialRow[] {
++  const b = (body ?? {}) as { items?: unknown[]; rows?: unknown[] };
++  const list = kind === 'offertutkast' ? b.rows : kind === 'materialunderlag' ? b.items : undefined;
++  return (list ?? []).flatMap(r => {
++    const x = r as Record<string, unknown>;
++    const parsed = materialRow.safeParse({ item: x['item'], quantity: typeof x['quantity'] === 'number' && x['quantity'] > 0 ? x['quantity'] : null, unit: x['unit'] ?? null,
++      certainty: x['certainty'] ?? (typeof x['quantity'] === 'number' ? 'angiven' : 'osaker'), evidence: x['evidence'] ?? null,
++      supplier: x['supplier'] ?? null, product_id: x['product_id'] ?? null, price: typeof x['price'] === 'number' ? x['price'] : null });
++    return parsed.success ? [parsed.data] : [];
++  });
++}
++
++export const CERTAINTY: Record<MaterialRow['certainty'], string> = { angiven: 'Sagt i samtalet', uppskattad: 'Uppskattat', osaker: 'Osäkert antal', bekraftad: 'Bekräftat' };
++
++export type DecideResult = { status: 'ok' | 'conflict' | 'denied' | 'not_found' | 'invalid'; reason?: string; state?: string; version?: number; repeat?: boolean };
++export function decisionMessage(r: DecideResult): string {
++  if (r.status === 'ok') return r.repeat ? 'Redan sparat.' : 'Sparat.';
++  if (r.status === 'conflict') return r.state ? `Utkastet har ändrats av någon annan (nu: ${DRAFT_STATE[r.state as DraftState] ?? r.state}). Ladda om och försök igen.` : 'Utkastet har ändrats av någon annan. Ladda om och försök igen.';
++  if (r.status === 'denied') return r.reason === 'customer_required' ? 'Koppla utkastet till en kund innan du godkänner.' : r.reason === 'content_deleted' ? 'Samtalets innehåll är raderat. Utkastet kan bara avvisas eller raderas.' : 'Du får inte göra detta.';
++  if (r.status === 'invalid') return 'Uppgifterna är inte giltiga.';
++  return 'Utkastet finns inte.';
++}
++
++// Shows a deadline: date only unless a time was spoken or a default time was applied (marked).
++export function deadlineLabel(dueDate: string | null, dueAt: string | null, source: 'angiven' | 'standard' | null): string {
++  if (!dueDate && !dueAt) return '';
++  const date = dueDate ?? new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dueAt!));
++  if (!dueAt) return `senast ${date}`;
++  const time = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', hour: '2-digit', minute: '2-digit' }).format(new Date(dueAt));
++  return `senast ${date} kl. ${time}${source === 'standard' ? ' (standardtid)' : ''}`;
++}
+diff -ruN ra/src/lib/samtal/ring/drafts.ts rb/src/lib/samtal/ring/drafts.ts
+--- ra/src/lib/samtal/ring/drafts.ts	2026-11-26 14:22:26.965363797 +0000
++++ rb/src/lib/samtal/ring/drafts.ts	2026-11-26 14:22:50.500364639 +0000
+@@ -27,17 +27,19 @@
+   const customer = [note.customer.name, [note.customer.address, note.customer.place].filter(Boolean).join(', ')].filter(Boolean).join(', ') || null;
+   const drafts: RingDraft[] = [];
+   const seen = new Set<string>();
++  // A5: the date travels in the body (due_date); due_at is set only for a spoken time.
++  const dated = (b: Record<string, unknown>, due: VoiceNote['quote']['due']) => due ? { ...b, due_date: due.date, due_time_source: due.time_source } : b;
+   const add = (d: RingDraft) => { const key = `${d.kind}:${d.title}`; if (!seen.has(key)) { seen.add(key); drafts.push(d); } };
+   if (note.quote.needed) {
+-    add({ kind: 'uppgift', title: cut(`Ta fram offert${note.customer.name ? ` till ${note.customer.name}` : ''}`), body: { source: 'offert' }, due_at: note.quote.due?.due_at ?? null, needs_review: true });
++    add({ kind: 'uppgift', title: cut(`Ta fram offert${note.customer.name ? ` till ${note.customer.name}` : ''}`), body: dated({ source: 'offert' }, note.quote.due), due_at: note.quote.due?.due_at ?? null, needs_review: true });
+     add({ kind: 'offertutkast', title: cut(`Offertutkast${note.customer.name ? `: ${note.customer.name}` : ''}`), due_at: note.quote.due?.due_at ?? null, needs_review: true,
+-      body: { customer, work: note.work, rows: note.materials.map(m => ({ item: m.item, quantity: m.quantity, unit: m.unit, price: null })), agreements: note.agreements,
+-        status: 'Väntar på granskning', note: 'Priser och villkor sätts av en person i offertverktyget. Inget skickas automatiskt.' } });
++      body: dated({ customer, work: note.work, rows: note.materials.map(m => ({ item: m.item, quantity: m.quantity, unit: m.unit, price: null, certainty: m.certainty })), agreements: note.agreements,
++        status: 'Väntar på granskning', note: 'Priser och villkor sätts av en person i offertverktyget. Inget skickas automatiskt.' }, note.quote.due) });
+   }
+-  for (const t of note.tasks) add({ kind: 'uppgift', title: cut(t.title), body: {}, due_at: t.due?.due_at ?? null, needs_review: true });
+-  for (const r of note.reminders) add({ kind: 'paminnelse', title: cut(r.title), body: {}, due_at: r.due?.due_at ?? null, needs_review: true });
++  for (const t of note.tasks) add({ kind: 'uppgift', title: cut(t.title), body: dated({}, t.due), due_at: t.due?.due_at ?? null, needs_review: true });
++  for (const r of note.reminders) add({ kind: 'paminnelse', title: cut(r.title), body: dated({}, r.due), due_at: r.due?.due_at ?? null, needs_review: true });
+   if (note.materials.length) add({ kind: 'materialunderlag', title: cut(`Materialunderlag${note.customer.name ? `: ${note.customer.name}` : ''}`), due_at: null, needs_review: true,
+-    body: { customer, items: note.materials, ordered: false, note: 'Underlag för beställning. Ingen beställning görs utan godkännande.' } });
++    body: { customer, project: note.project, items: note.materials.map(m => ({ ...m, supplier: null, product_id: null, price: null })), ordered: false, note: 'Underlag för beställning. Ingen beställning görs utan godkännande.' } });
+   const noteBody = { customer, project: note.project, work: note.work, agreements: note.agreements, measurements: note.measurements, notes: note.customer_notes, follow_ups: note.follow_ups, uncertain: note.uncertain };
+   if (customer || note.work.length || note.agreements.length || note.customer_notes.length || note.follow_ups.length || note.measurements.length)
+     add({ kind: 'kundanteckning', title: cut(`Anteckning${note.customer.name ? `: ${note.customer.name}` : ''}`), body: noteBody, due_at: null, needs_review: note.uncertain.length > 0 });
+diff -ruN ra/src/lib/samtal/ring/enrollment.ts rb/src/lib/samtal/ring/enrollment.ts
+--- ra/src/lib/samtal/ring/enrollment.ts	1970-01-01 00:00:00.000000000 +0000
++++ rb/src/lib/samtal/ring/enrollment.ts	2026-11-26 14:25:04.098369417 +0000
+@@ -0,0 +1,38 @@
++// estim Samtal A5 (Ring estim): employee enrollment labels and input rules. Browser-safe and pure.
++// A phone number typed by an owner is only a request ("Väntar på verifiering"). An identity that can attribute a
++// voice note exists only after the telephony provider has proven the account with its own signed evidence
++// (samtal_ring_verify_enrollment, server only). Caller ID and the shared Ring estim number never identify anyone.
++import { z } from 'zod';
++import { normalisePhone } from '../call';
++
++export type EnrollmentState = 'vantar' | 'verifierad' | 'aterkallad';
++export const ENROLLMENT_STATE: Record<EnrollmentState, string> = { vantar: 'Väntar på verifiering', verifierad: 'Verifierad', aterkallad: 'Återkallad' };
++export const ENROLLMENT_TEXT = {
++  heading: 'Anslut medarbetare',
++  phone: 'Telefonnummer',
++  provider: 'Telefonileverantör',
++  status: 'Verifieringsstatus',
++  revoke: 'Återkalla anslutning',
++  connect: 'Anslut',
++  help: 'Numret verifieras av telefonileverantören innan röstanteckningar kopplas till medarbetaren. Ett inskrivet nummer räcker inte.',
++  multiCompany: 'En medarbetare kan just nu bara höra till ett företag i estim.',
++} as const;
++// Providers the app knows by name. No account identifiers or verification capabilities are assumed here.
++export const RING_PROVIDERS: Record<string, string> = { lynes: 'Lynes' };
++
++export const enrollmentInput = z.object({
++  user_id: z.string().uuid(),
++  provider: z.string().regex(/^[a-z0-9_]{1,40}$/),
++  phone: z.string().trim().min(5).max(30),
++}).strict();
++
++// Normalises the typed number (Swedish numbers without +46 are accepted). Null when it is not a plausible number.
++export function enrollmentPhone(raw: string) { return normalisePhone(raw); }
++
++export type EnrollResult = { status: 'ok' | 'conflict' | 'denied' | 'invalid' | 'not_found'; reason?: string; repeat?: boolean };
++export function enrollmentMessage(r: EnrollResult, action: 'enroll' | 'revoke'): string {
++  if (r.status === 'ok') return action === 'revoke' ? 'Anslutningen är återkallad.' : 'Medarbetaren väntar på verifiering.';
++  if (r.status === 'conflict') return 'Medarbetaren har redan en anslutning hos leverantören. Återkalla den först.';
++  if (r.status === 'invalid') return r.reason === 'member' ? 'Personen hör inte till företaget.' : 'Kontrollera telefonnumret.';
++  return 'Du får inte göra detta.';
++}
+diff -ruN ra/src/lib/samtal/ring/manage.server.ts rb/src/lib/samtal/ring/manage.server.ts
+--- ra/src/lib/samtal/ring/manage.server.ts	1970-01-01 00:00:00.000000000 +0000
++++ rb/src/lib/samtal/ring/manage.server.ts	2026-11-26 14:30:41.851381496 +0000
+@@ -0,0 +1,55 @@
++// estim Samtal A5 (Ring estim): server side of draft management and employee enrollment.
++// Every call passes the verified actor id from the auth middleware (never a browser value) to a service-only SQL
++// function that repeats the company, role, ownership and version checks under a row lock (a5-draft-management.sql).
++// Nothing here sends a quotation, places an order or contacts a customer.
++import type { SupabaseClient } from '@supabase/supabase-js';
++import type { Database } from '@/integrations/supabase/types';
++import { SamtalPageError } from '../page.server';
++import { decisionMessage, draftPatch, type DecideResult, type DraftAction } from './draft-actions';
++import { enrollmentMessage, enrollmentPhone, type EnrollResult } from './enrollment';
++
++type Db = SupabaseClient<Database>;
++const ok = <T extends { status: string }>(r: { data: unknown; error: unknown }): T | null => r.error ? null : (r.data as T | null);
++
++export async function decideRingDraft(admin: Db, actorId: string, input: { id: string; version: number; action: Exclude<DraftAction, 'radera'>; value?: Record<string, unknown> | undefined }) {
++  let value: Record<string, unknown> = {};
++  if (input.action === 'redigera') {
++    const parsed = draftPatch.safeParse(input.value ?? {});
++    if (!parsed.success) throw new SamtalPageError('Uppgifterna är inte giltiga.');
++    value = parsed.data;
++  } else if (input.action === 'koppla_kund') value = { customer_id: String(input.value?.['customer_id'] ?? '') };
++  else if (input.action === 'koppla_projekt') value = { project: String(input.value?.['project'] ?? '') };
++  const r = ok<DecideResult>(await admin.rpc('samtal_ring_decide', { p_actor: actorId, p_draft: input.id, p_expected_version: input.version, p_action: input.action, p_value: value } as never));
++  if (!r) throw new SamtalPageError('Utkastet kunde inte sparas.');
++  if (r.status !== 'ok') throw new SamtalPageError(decisionMessage(r));
++  return { state: r.state ?? null, version: r.version ?? null, message: decisionMessage(r) };
++}
++
++export async function deleteRingDraft(admin: Db, actorId: string, id: string) {
++  const r = ok<DecideResult>(await admin.rpc('samtal_ring_delete_draft', { p_actor: actorId, p_draft: id } as never));
++  if (!r) throw new SamtalPageError('Utkastet kunde inte raderas.');
++  if (r.status !== 'ok') throw new SamtalPageError(decisionMessage(r));
++  return { deleted: true };
++}
++
++export async function enrollRingEmployee(admin: Db, actorId: string, companyId: string, input: { user_id: string; provider: string; phone: string }) {
++  const phone = enrollmentPhone(input.phone);
++  if (!phone) throw new SamtalPageError('Kontrollera telefonnumret.');
++  const r = ok<EnrollResult>(await admin.rpc('samtal_ring_enroll', { p_actor: actorId, p_company: companyId, p_user: input.user_id, p_provider: input.provider, p_phone: phone } as never));
++  if (!r) throw new SamtalPageError('Medarbetaren kunde inte anslutas.');
++  if (r.status !== 'ok') throw new SamtalPageError(enrollmentMessage(r, 'enroll'));
++  return { message: enrollmentMessage(r, 'enroll') };
++}
++
++export async function revokeRingEnrollment(admin: Db, actorId: string, id: string) {
++  const r = ok<EnrollResult>(await admin.rpc('samtal_ring_revoke_enrollment', { p_actor: actorId, p_enrollment: id } as never));
++  if (!r) throw new SamtalPageError('Anslutningen kunde inte återkallas.');
++  if (r.status !== 'ok') throw new SamtalPageError(enrollmentMessage(r, 'revoke'));
++  return { message: enrollmentMessage(r, 'revoke') };
++}
++
++export async function loadRingEnrollments(admin: Db, actorId: string, companyId: string) {
++  const r = await admin.rpc('samtal_ring_enrollments_for', { p_actor: actorId, p_company: companyId } as never);
++  if (r.error) throw new SamtalPageError('Anslutningar kunde inte läsas.');
++  return (r.data ?? []) as { id: string; user_id: string; provider: string; phone_e164: string; state: 'vantar' | 'verifierad' | 'aterkallad'; created_at: string }[];
++}
+diff -ruN ra/src/lib/samtal/ring/page.server.ts rb/src/lib/samtal/ring/page.server.ts
+--- ra/src/lib/samtal/ring/page.server.ts	2026-11-26 14:22:26.965363797 +0000
++++ rb/src/lib/samtal/ring/page.server.ts	2026-11-26 14:25:29.662370331 +0000
+@@ -8,12 +8,13 @@
+ import type { SupabaseClient } from '@supabase/supabase-js';
+ import type { Database } from '@/integrations/supabase/types';
+ import { SamtalPageError } from '../page.server';
++import { loadRingEnrollments } from './manage.server';
+ 
+ type Db = SupabaseClient<Database>;
+ 
+ export async function loadRingSection(user: Db, admin: Db, actorId: string) {
+   const [drafts, pending, enrolled] = await Promise.all([
+-    user.from('samtal_ring_drafts').select('id, call_id, user_id, kind, title, body, due_at, customer_id, state, needs_review, created_at').order('created_at', { ascending: false }).limit(200),
++    user.from('samtal_ring_drafts').select('id, call_id, user_id, kind, title, body, due_at, due_date, due_time_source, customer_id, project_ref, state, version, needs_review, decided_at, created_at').order('created_at', { ascending: false }).limit(200),
+     admin.rpc('samtal_ring_pending_for', { p_actor: actorId }),
+     admin.from('samtal_ring_identities').select('company_id').eq('user_id', actorId).is('revoked_at', null),
+   ]);
+@@ -23,8 +24,18 @@
+   if (companies.error) throw new SamtalPageError('Röstanteckningar kunde inte läsas.');
+   const names = new Map((companies.data ?? []).map(c => [c.id, c.name]));
+   const own = [...new Set((enrolled.data ?? []).map(e => e.company_id))].filter(id => names.has(id));
++  // A5: customers for "Koppla till kund" (the user's own RLS view) and, for owners, the company's enrollments.
++  const [customers, company, owner] = await Promise.all([
++    user.from('customers').select('id, name, address').order('name', { ascending: true }).limit(500),
++    user.rpc('my_company'), user.rpc('samtal_is_owner'),
++  ]);
++  if (customers.error || company.error || owner.error) throw new SamtalPageError('Röstanteckningar kunde inte läsas.');
++  const enrollments = owner.data === true && company.data ? await loadRingEnrollments(admin, actorId, company.data as string) : [];
+   return {
+     drafts: drafts.data ?? [],
++    customers: customers.data ?? [],
++    owner: owner.data === true,
++    enrollments,
+     // Only offered when the employee belongs to several companies; one company is attributed automatically.
+     companies: own.length > 1 ? own.map(id => ({ id, name: names.get(id)! })) : [],
+     pending: (pending.data ?? []).map(p => ({ id: p.id, started_at: p.started_at, companies: (p.companies ?? []).filter(id => names.has(id)).map(id => ({ id, name: names.get(id)! })) })),
+diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note.ts
+--- ra/src/lib/samtal/ring/voice-note.ts	2026-11-26 14:22:26.966363797 +0000
++++ rb/src/lib/samtal/ring/voice-note.ts	2026-11-26 14:22:50.500364639 +0000
+@@ -29,7 +29,8 @@
+ });
+ export type RawVoiceNote = z.infer<typeof rawSchema>;
+ type Span = { start: number; end: number };
+-export type Due = { date: string; due_at: string } | null;
++// A5: date-only unless a time was spoken.
++export type Due = { date: string; due_at: string | null; time_source: 'angiven' | null } | null;
+ export type VoiceNote = {
+   classification: 'jobb' | 'privat' | 'osaker';
+   mixed: boolean;
+@@ -37,7 +38,8 @@
+   project: string | null;
+   work: string[]; agreements: string[]; customer_notes: string[]; follow_ups: string[];
+   measurements: { text: string; quantity: number | null; unit: string | null }[];
+-  materials: { item: string; quantity: number | null; unit: string | null }[];
++  // A5: evidence is the cited business passage (never a private one); certainty says whether the quantity was spoken.
++  materials: { item: string; quantity: number | null; unit: string | null; certainty: 'angiven' | 'osaker'; evidence: string }[];
+   tasks: { title: string; due: Due }[];
+   reminders: { title: string; due: Due }[];
+   quote: { needed: boolean; due: Due };
+@@ -111,7 +113,7 @@
+     const d = resolveSwedishDeadline(phraseText, callInstant);
+     if (!d) { uncertain.push(`Tid "${phraseText}" kunde inte tolkas till ett datum`); return null; }
+     if (d.uncertain) uncertain.push(d.uncertain);
+-    return { date: d.date, due_at: d.due_at };
++    return { date: d.date, due_at: d.due_at, time_source: d.time_source };
+   };
+   const quantity = (q: number | null, p: string, label: string) => {
+     if (q === null) return null;
+@@ -133,7 +135,8 @@
+     materials: r.materials.flatMap(m => {
+       const p = passage(m.source);
+       if (!p || !wordsSaid(p, m.item)) { uncertain.push('Ett material sägs inte i anteckningen'); return []; }
+-      return [{ item: m.item, quantity: quantity(m.quantity, p, m.item), unit: m.unit }];
++      const q = quantity(m.quantity, p, m.item);
++      return [{ item: m.item, quantity: q, unit: m.unit, certainty: q === null ? 'osaker' as const : 'angiven' as const, evidence: p.length > 200 ? `${p.slice(0, 199)}…` : p }];
+     }),
+     tasks: r.tasks.flatMap(t => { const p = passage(t.source); if (!p) return []; return [{ title: t.title, due: due(t.deadline, p) }]; }),
+     reminders: r.reminders.flatMap(t => { const p = passage(t.source); if (!p) return []; return [{ title: t.title, due: due(t.when, p) }]; }),
+diff -ruN ra/src/lib/samtal/samtal.functions.ts rb/src/lib/samtal/samtal.functions.ts
+--- ra/src/lib/samtal/samtal.functions.ts	2026-11-26 14:22:26.966363797 +0000
++++ rb/src/lib/samtal/samtal.functions.ts	2026-11-26 14:25:29.662370331 +0000
+@@ -83,3 +83,42 @@
+     const { assignRingNote } = await import('./ring/page.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
+     return safe(() => assignRingNote(supabaseAdmin, context.userId, data.pending_id, data.company_id));
+   });
++
++// A5 (unapplied): Ring estim draft management and employee enrollment. The actor is the verified user; the SQL
++// functions repeat every company, role and version check. No action sends, orders or contacts a customer.
++const draftAction = z.enum(['godkann', 'redigera', 'avvisa', 'koppla_kund', 'koppla_projekt', 'klar']);
++export const decideRingDraftFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
++  .inputValidator(parse(z.object({ id: uuid, version: z.number().int().min(1).max(1000000), action: draftAction, value: z.record(z.string(), z.unknown()).optional() }).strict()))
++  .handler(async ({ context, data }) => {
++    ready();
++    const { decideRingDraft } = await import('./ring/manage.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
++    return safe(() => decideRingDraft(supabaseAdmin, context.userId, data));
++  });
++
++export const deleteRingDraftFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
++  .inputValidator(parse(z.object({ id: uuid }).strict()))
++  .handler(async ({ context, data }) => {
++    ready();
++    const { deleteRingDraft } = await import('./ring/manage.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
++    return safe(() => deleteRingDraft(supabaseAdmin, context.userId, data.id));
++  });
++
++export const enrollRingEmployeeFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
++  .inputValidator(parse(z.object({ user_id: uuid, provider: z.string().regex(/^[a-z0-9_]{1,40}$/), phone: z.string().trim().min(5).max(30) }).strict()))
++  .handler(async ({ context, data }) => {
++    ready();
++    const { enrollRingEmployee } = await import('./ring/manage.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
++    return safe(async () => {
++      const company = await context.supabase.rpc('my_company');
++      if (company.error || !company.data) throw new Error('no_company');
++      return enrollRingEmployee(supabaseAdmin, context.userId, company.data as string, data);
++    });
++  });
++
++export const revokeRingEnrollmentFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
++  .inputValidator(parse(z.object({ id: uuid }).strict()))
++  .handler(async ({ context, data }) => {
++    ready();
++    const { revokeRingEnrollment } = await import('./ring/manage.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
++    return safe(() => revokeRingEnrollment(supabaseAdmin, context.userId, data.id));
++  });
