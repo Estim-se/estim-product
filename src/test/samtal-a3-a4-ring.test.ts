@@ -9,7 +9,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
 const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
@@ -161,7 +161,7 @@ const SCENARIOS: Scenario[] = [
 ];
 const LENA = 'cccccccc-0000-4000-8000-000000000001', ANNA_1 = 'cccccccc-0000-4000-8000-000000000002', ANNA_2 = 'cccccccc-0000-4000-8000-000000000003';
 
-describe('Samtal A3 + A4 Ring estim (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A3 + A4 Ring estim (unapplied patch + SQL candidate)', () => {
   type M = Record<string, (...a: never[]) => never>;
   let dir = '', ring: M, proc: M, dl: M, vn: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;

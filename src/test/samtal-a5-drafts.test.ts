@@ -7,7 +7,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
 const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
@@ -26,7 +26,7 @@ const none = { value: null, source: null };
 const raw = (o: Record<string, unknown> = {}) => ({ classification: 'jobb', private_spans: [], customer: { name: none, address: none, place: none }, project: none, work: [], agreements: [],
   measurements: [], materials: [], tasks: [], reminders: [], quote: { needed: false, deadline: null, source: null }, customer_notes: [], follow_ups: [], uncertain: [], ...o });
 
-describe('Samtal A5 draft management (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A5 draft management (unapplied patch + SQL candidate)', () => {
   let dir = '', dl: M, da: M, vn: M, dr: M, en: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
   const q = <T,>(s: string, p: unknown[] = []) => pg.admin.query<T>(s, p);
