@@ -3,10 +3,10 @@
 // - Claude Approvals or classifier files (.claude/approvals.yml or .yaml, anything under .claude/classifiers/), at any
 //   depth: hosted Approvals can bill the organisation;
 // - an .mcp.json at any depth: it adds tool servers to every Claude Code session opened in the repository;
-// - a .claude/settings*.json at any depth that sets a credential or endpoint: apiKeyHelper, awsAuthRefresh,
-//   awsCredentialExport or otelHeadersHelper (each runs a command), or an env variable for an endpoint, proxy,
-//   certificate, token or telemetry exporter (ANTHROPIC_*, CLAUDE_CODE_USE_*, *_BASE_URL, *_PROXY, OTEL_* and the like).
-//   These redirect a developer's token, billing or prompts. A file that isn't strict JSON (duplicate keys) fails;
+// - a .claude/settings*.json at any depth that sets anything but $schema, fastMode, includeCoAuthoredBy, permissions
+//   deny, ask and disableBypassPermissionsMode, and env variables named DISABLE_* or CLAUDE_CODE_DISABLE_*. Hooks,
+//   statusLine, plugins, credential helpers, allow rules and other variables can run commands or redirect a
+//   developer's token, billing or prompts. A file that isn't strict JSON (duplicate keys) fails;
 // - a workflow job whose runs-on isn't ubuntu-24.04 or ubuntu-latest written out: self-hosted and larger runners run
 //   jobs elsewhere or cost money, and lists, expressions and aliases can hide either. A job that calls another
 //   repository's workflow, a bare carriage return and an escaped quoted key fail too;
@@ -21,14 +21,17 @@ import { type Finding, git, isMain, lineAt, lineOf, report } from './lib.ts';
 import { parseLockText } from './lockfile-guard.ts';
 
 const LIFECYCLE = ['preinstall', 'install', 'postinstall', 'preprepare', 'prepare', 'postprepare', 'prepublish', 'prepublishOnly', 'prepack', 'postpack', 'dependencies'];
-const COMMAND_SETTINGS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper'];
-// Endpoints, proxies, certificates, tokens and telemetry exporters: each can send a developer's token or prompts elsewhere.
-const ENV_PATTERN = /^(?:ANTHROPIC_.*|CLAUDE_CODE_USE_.*|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_ENABLE_TELEMETRY|.*_BASE_URL|.*_PROXY|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|SSL_CERT_.*|OTEL_.*)$/i;
+// Repository settings may only turn things off or deny them. Everything else (hooks, statusLine, plugins, credential
+// helpers, allow rules, endpoints) can run commands or redirect requests in every developer's session.
+const SETTINGS_KEYS = new Set(['$schema', 'permissions', 'env', 'fastMode', 'includeCoAuthoredBy']);
+const PERMISSION_KEYS = new Set(['deny', 'ask', 'disableBypassPermissionsMode']);
+const ENV_NAME = /^(?:CLAUDE_CODE_)?DISABLE_[A-Z0-9_]+$/;
 // A symbolic link with one of these names would hand the guard the link, not the file or directory it points to.
 const NO_LINKS = /(?:^|\/)(?:\.claude|\.github|\.mcp\.json|package\.json|settings[^/]*\.json)$/;
 const RUNNERS = new Set(['ubuntu-24.04', 'ubuntu-latest']);
 
 const base = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const inClaudeDir = (path: string) => path.startsWith('.claude/') || path.includes('/.claude/');
 
 // Strict: duplicate keys fail, because bun and Claude Code may read the first where JSON.parse reads the last.
@@ -47,14 +50,15 @@ export function checkSettings(path: string, text: string): Finding[] {
   }
   const settings = parsed.value as Record<string, unknown>;
   const findings: Finding[] = [];
-  for (const key of COMMAND_SETTINGS) {
-    if (key in settings) findings.push({ file: path, line: lineOf(text, `"${key}"`), problem: `"${key}" runs a command that supplies credentials or headers for every session.`, fix: 'Remove it. Credentials belong in each developer\'s own user settings, never in the repository.' });
+  const fix = 'Keep it in your own user settings. A new repository setting needs a reviewed change to scripts/ci/config-guard.ts.';
+  for (const key of Object.keys(settings)) {
+    if (!SETTINGS_KEYS.has(key)) findings.push({ file: path, line: lineOf(text, `"${key}"`), problem: `"${key}" isn't a setting the repository may set: it can run commands, load plugins or change where requests go in every developer's session.`, fix });
   }
-  const env = settings['env'];
-  if (typeof env === 'object' && env !== null) {
-    for (const name of Object.keys(env)) {
-      if (ENV_PATTERN.test(name)) findings.push({ file: path, line: lineOf(text, `"${name}"`), problem: `env "${name}" can redirect a developer's token or billing to another endpoint or account.`, fix: 'Remove it from the repository settings.' });
-    }
+  for (const key of Object.keys(record(settings['permissions']))) {
+    if (!PERMISSION_KEYS.has(key)) findings.push({ file: path, line: lineOf(text, `"${key}"`), problem: `permissions "${key}" isn't allowed in the repository: only deny, ask and disableBypassPermissionsMode, which take rights away.`, fix });
+  }
+  for (const name of Object.keys(record(settings['env']))) {
+    if (!ENV_NAME.test(name)) findings.push({ file: path, line: lineOf(text, `"${name}"`), problem: `env "${name}" isn't a DISABLE_ variable; other variables can load code, carry credentials or redirect a developer's token, billing or prompts.`, fix });
   }
   return findings;
 }
@@ -69,7 +73,7 @@ export function checkWorkflow(path: string, text: string): Finding[] {
   }
   const lines = [...text.matchAll(/^[ \t]*(?:-[ \t]+)?["']?runs-on["']?[ \t]*:(.*)$/gm)];
   // Any other mention outside a comment line (a flow mapping such as {runs-on: x}) is a form this check can't read.
-  const mentions = text.split('\n').filter(l => !/^\s*#/.test(l) && l.includes('runs-on')).length;
+  const mentions = text.split('\n').filter(l => !/^\s*#/.test(l) && /runs-on["']?\s*:/.test(l)).length;
   if (mentions > lines.length) findings.push({ file: path, line: 1, problem: 'runs-on appears in a form this guard can\'t read (a flow mapping or similar).', fix: 'Write each job\'s runs-on as its own line: runs-on: ubuntu-24.04.' });
   for (const m of lines) {
     const raw = (m[1] ?? '').replace(/[ \t]#.*$/, '').trim();
@@ -97,10 +101,10 @@ export function checkPackageScripts(text: string): Finding[] {
 export function checkConfig(root: string): Finding[] {
   const findings: Finding[] = [];
   const read = (path: string) => git(['cat-file', 'blob', `HEAD:${path}`], root);
-  for (const record of git(['ls-tree', '-r', '-z', '--full-tree', 'HEAD'], root).split('\0').filter(Boolean)) {
+  for (const line of git(['ls-tree', '-r', '-z', '--full-tree', 'HEAD'], root).split('\0').filter(Boolean)) {
     // <mode> <type> <sha>\t<path>
-    const mode = record.slice(0, record.indexOf(' '));
-    const path = record.slice(record.indexOf('\t') + 1);
+    const mode = line.slice(0, line.indexOf(' '));
+    const path = line.slice(line.indexOf('\t') + 1);
     const name = base(path);
     if (mode === '120000' && NO_LINKS.test(path)) {
       findings.push({ file: path, line: 1, problem: `${path} is a symbolic link, so the guard would read the link, not what Claude Code, bun or GitHub read.`, fix: 'Commit it as a regular file or directory.' });

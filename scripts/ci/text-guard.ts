@@ -11,7 +11,7 @@
 // Usage: bun scripts/ci/text-guard.ts --base <sha>   (or CI_BASE_SHA; no base: only the .gitattributes check)
 import { type Finding, git, isMain, report, resolveBase } from './lib.ts';
 
-export const BINARY_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'woff2', 'pdf'];
+export const BINARY_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'pdf', 'xlsx', 'docx', 'zip', 'mp3', 'mp4', 'wav', 'webm'];
 
 export function checkText(root: string, base: string | null): Finding[] {
   const findings: Finding[] = [];

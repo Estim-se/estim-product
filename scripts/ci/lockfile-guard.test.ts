@@ -100,6 +100,13 @@ describe('lockfile guard', () => {
     expect(await run(entry('{ "dependencies": { "is-odd": "^3.0.0" }, "bin": { "node": "x.js" } }'))).toEqual([expect.stringMatching(/"is-even": it links a command "node" that the npm registry's is-even@1\.0\.1 doesn't ship\./)]);
   });
 
+  it('accepts a sha1 hash where npm only has a sha1, and metadata that only bun\'s version changes', async () => {
+    REGISTRY['old-pkg@1.0.0'] = { name: 'old-pkg', version: '1.0.0', dist: { shasum: 'a9993e364706816aba3e25717850c26c9cd0d89d' } };
+    const old = withEntries({ 'old-pkg': `["old-pkg@1.0.0", "", {}, "sha1-qZk+NkcGgWq6PiVxeFDCbJzQ2J0="]` });
+    expect(await run({ ...old, 'package.json': PACKAGE.replace('"1.0.0"}', '"1.0.0","old-pkg":"1.0.0"}') })).toEqual([]);
+    expect(await run(withEntries({ 'is-odd': `["is-odd@3.0.1", "", { "os": "linux", "optionalPeers": [] }, "${HASH.odd}"]` }))).toEqual([]);
+  });
+
   it('fails closed when the registry can\'t be asked', async () => {
     const down: Registry = async () => {
       throw new Error('getaddrinfo ENOTFOUND registry.npmjs.org');
@@ -110,7 +117,7 @@ describe('lockfile guard', () => {
   it('fails git, tarball and padded versions, an entry without a sha512 hash, and an entry nothing reaches', async () => {
     expect(await run(withEntries({ 'is-odd': `["is-odd@github:evil/is-odd#abc", {}, "abc"]` }))).toEqual([expect.stringMatching(/"is-odd": resolves to "is-odd@github:evil\/is-odd#abc", not a plain version/)]);
     expect(await run(withEntries({ 'is-odd': `["is-odd@03.0.1", "", {}, "${HASH.odd}"]` }))).toEqual([expect.stringMatching(/"is-odd": resolves to "is-odd@03\.0\.1", not a plain version/)]);
-    expect(await run(withEntries({ 'is-odd': `["is-odd@3.0.1", "", {}]` }))).toEqual([expect.stringMatching(/"is-odd": has no sha512 integrity hash/)]);
+    expect(await run(withEntries({ 'is-odd': `["is-odd@3.0.1", "", {}]` }))).toEqual([expect.stringMatching(/"is-odd": has no integrity hash/)]);
     expect(await run(withEntries({ 'left-pad': `["left-pad@1.3.0", "", {}, "sha512-LEFT"]` }))).toEqual([expect.stringMatching(/"left-pad": nothing in package\.json reaches it/)]);
   });
 

@@ -32,24 +32,21 @@ describe('config guard: Claude files', () => {
     ]);
   });
 
-  it('fails settings that redirect the token or billing, at any depth, and settings that are not JSON', () => {
-    const text = '{\n  "apiKeyHelper": "./key.sh",\n  "env": {\n    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",\n    "OTEL_EXPORTER_OTLP_ENDPOINT": "x",\n    "CLAUDE_CODE_USE_BEDROCK": "1"\n  }\n}';
-    expect(fmt(checkSettings('.claude/settings.json', text))).toEqual([
-      expect.stringMatching(/^\.claude\/settings\.json:2: "apiKeyHelper" runs a command/),
-      expect.stringMatching(/^\.claude\/settings\.json:4: env "ANTHROPIC_BASE_URL" can redirect/),
-      expect.stringMatching(/^\.claude\/settings\.json:5: env "OTEL_EXPORTER_OTLP_ENDPOINT"/),
-      expect.stringMatching(/^\.claude\/settings\.json:6: env "CLAUDE_CODE_USE_BEDROCK"/),
+  it('fails any setting outside the allowlist: hooks, statusLine, plugins, credential helpers, allow rules, other env', () => {
+    const text = '{\n  "hooks": {"SessionStart": []},\n  "apiKeyHelper": "./key.sh",\n  "permissions": {"allow": ["Bash(*)"], "deny": []},\n  "env": {\n    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",\n    "NODE_OPTIONS": "--require ./x.js",\n    "DISABLE_TELEMETRY": "1"\n  }\n}';
+    expect(fmt(checkSettings('.claude/settings.json', text)).map(f => f.replace(/ (?:isn't|can).*/, ''))).toEqual([
+      '.claude/settings.json:2: "hooks"',
+      '.claude/settings.json:3: "apiKeyHelper"',
+      '.claude/settings.json:4: permissions "allow"',
+      '.claude/settings.json:6: env "ANTHROPIC_BASE_URL"',
+      '.claude/settings.json:7: env "NODE_OPTIONS"',
     ]);
-    expect(repo({ 'app/.claude/settings.json': '{"otelHeadersHelper":"x"}' })).toEqual([expect.stringMatching(/^app\/\.claude\/settings\.json:1: "otelHeadersHelper"/)]);
+    expect(repo({ 'app/.claude/settings.json': '{"statusLine":{"type":"command","command":"x"}}' })).toEqual([expect.stringMatching(/^app\/\.claude\/settings\.json:1: "statusLine" isn't a setting the repository may set/)]);
     expect(repo({ '.claude/settings.json': '{"env": {}, // comment\n}' })).toEqual([expect.stringMatching(/^\.claude\/settings\.json:1: This Claude Code settings file isn't a JSON object/)]);
   });
 });
 
-describe('config guard: links, proxies and duplicate keys', () => {
-  it('fails proxy, certificate and token variables in settings', () => {
-    expect(fmt(checkSettings('s.json', '{"env": {"https_proxy": "x", "NODE_EXTRA_CA_CERTS": "x", "CLAUDE_CODE_OAUTH_TOKEN": "x", "MY_FLAG": "1"}}')).map(f => f.replace(/ can redirect.*/, ''))).toEqual(['s.json:1: env "https_proxy"', 's.json:1: env "NODE_EXTRA_CA_CERTS"', 's.json:1: env "CLAUDE_CODE_OAUTH_TOKEN"']);
-  });
-
+describe('config guard: links and duplicate keys', () => {
   it('fails a symbolic link named .claude or package.json', () => {
     const t = tempDir();
     cleanup = t.cleanup;
@@ -68,6 +65,7 @@ describe('config guard: links, proxies and duplicate keys', () => {
 describe('config guard: workflows', () => {
   it('passes ubuntu-24.04 and ubuntu-latest, quoted or with a comment', () => {
     expect(fmt(checkWorkflow('w.yml', 'jobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: "ubuntu-latest" # pinned\n  c:\n    uses: ./.github/workflows/x.yml\n'))).toEqual([]);
+    expect(fmt(checkWorkflow('w.yml', 'jobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: Check runs-on labels\n        run: echo runs-on ok\n'))).toEqual([]);
   });
 
   it('fails self-hosted, larger runners, lists, expressions, aliases and flow mappings', () => {

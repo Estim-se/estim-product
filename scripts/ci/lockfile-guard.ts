@@ -3,12 +3,12 @@
 // first element, or change the hash of a version main already uses. Nobody reads bun.lock in review, so this guard does.
 // For every entry in bun.lock's "packages" (the commit's own bun.lock, read through git):
 // - it resolves to a plain registry version ("name@1.2.3") with an empty URL field, which means the npm registry, and
-//   carries a sha512 integrity hash. Git, tarball, file, link and workspace sources fail;
+//   carries an integrity hash (sha512, or sha1 for old packages that npm only has a sha1 for). Git, tarball, file, link and workspace sources fail;
 // - the package in its first element is the package its key names, unless that key is an npm: alias declared in the
 //   root package.json or listed in scripts/ci/lockfile-allowlist.json (an alias a dependency declares; the lockfile's
 //   own dependency lists can't vouch for it, because they are part of the change);
 // - a name@version that the base commit's bun.lock also has keeps the base's integrity hash and its dependency and
-//   command lists exactly;
+//   command lists (other metadata may change with bun's version);
 // - any other entry says no more than the npm registry's document for that version: the same integrity hash, no
 //   dependency it doesn't declare and no command it doesn't ship. bun checks downloads against the lockfile's hash, so
 //   that hash must be npm's, whichever registry a .env or bunfig.toml points bun at. The registry is asked over the
@@ -151,6 +151,10 @@ function show(root: string, rev: string, path: string): string | null {
 
 const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
+/** The parts of an entry's metadata that decide what bun installs and links; other fields vary with bun's version. */
+const INSTALL_FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies', 'bin', 'binDir'];
+const installed = (meta: Record<string, unknown>) => Object.fromEntries(INSTALL_FIELDS.filter(f => meta[f] !== undefined).map(f => [f, meta[f]]));
+
 /** JSON with object keys sorted, so two parsed values compare by content. */
 const canonical = (v: unknown): string =>
   JSON.stringify(v, (_key, x: unknown) => (typeof x === 'object' && x !== null && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
@@ -172,7 +176,10 @@ export const npmRegistry: Registry = async (name, version) => {
 export function registryMismatch(name: string, version: string, integrity: string, meta: Record<string, unknown>, doc: unknown): string | null {
   const d = record(doc);
   if (d['name'] !== name || d['version'] !== version) return `the npm registry has no ${name}@${version}.`;
-  if (record(d['dist'])['integrity'] !== integrity) return `its integrity hash isn't the npm registry's for ${name}@${version}.`;
+  // Old packages carry only a sha1 shasum (hex), which bun writes as sha1-<base64>.
+  const dist = record(d['dist']);
+  const expected = typeof dist['integrity'] === 'string' ? dist['integrity'] : typeof dist['shasum'] === 'string' ? `sha1-${Buffer.from(dist['shasum'], 'hex').toString('base64')}` : undefined;
+  if (expected !== integrity) return `its integrity hash isn't the npm registry's for ${name}@${version}.`;
   const declared: Record<string, Record<string, unknown>> = {
     dependencies: { ...record(d['dependencies']), ...record(d['optionalDependencies']) },
     optionalDependencies: { ...record(d['dependencies']), ...record(d['optionalDependencies']) },
@@ -254,7 +261,7 @@ export async function checkLockfile(root: string, base: string | null, registry:
     for (const { value } of readLock(baseText).entries) {
       if (typeof value[0] !== 'string') continue;
       const known = pinned.get(value[0]) ?? { integrity: value[3], metas: new Set<string>() };
-      known.metas.add(canonical(record(value[2])));
+      known.metas.add(canonical(installed(record(value[2]))));
       pinned.set(value[0], known);
     }
   }
@@ -279,8 +286,8 @@ export async function checkLockfile(root: string, base: string | null, registry:
       at(`resolves to ${JSON.stringify(resolved)}${typeof url === 'string' && url !== '' ? ` from ${JSON.stringify(url)}` : ''}, not a plain version from the npm registry.`, 'Use a published registry version. Another source needs a reviewed change to scripts/ci/lockfile-guard.ts.');
       continue;
     }
-    if (typeof integrity !== 'string' || !integrity.startsWith('sha512-')) {
-      at('has no sha512 integrity hash, so bun would not check what it downloads.', 'Regenerate bun.lock with bun install and commit it unedited.');
+    if (typeof integrity !== 'string' || !/^sha(?:512|1)-/.test(integrity)) {
+      at('has no integrity hash, so bun would not check what it downloads.', 'Regenerate bun.lock with bun install and commit it unedited.');
       continue;
     }
     const expected = packageOfKey(key);
@@ -293,7 +300,7 @@ export async function checkLockfile(root: string, base: string | null, registry:
       lookups.push({ at, name, version: spec, integrity, meta: record(info) });
     } else if (integrity !== before.integrity) {
       at(`changes the integrity hash of ${resolved}, which main's bun.lock already pins.`, 'A published version never changes; restore the hash from main.');
-    } else if (!before.metas.has(canonical(record(info)))) {
+    } else if (!before.metas.has(canonical(installed(record(info))))) {
       at(`changes the dependency or command lists of ${resolved}, which main's bun.lock already pins.`, 'A published version never changes; restore the entry from main.');
     }
   }
