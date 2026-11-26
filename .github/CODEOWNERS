@@ -13,3 +13,10 @@ eslint.config.* @ibbe-futureventures
 /scripts/ci/ @ibbe-futureventures
 .gitattributes @ibbe-futureventures
 .gitmodules @ibbe-futureventures
+/AGENTS.md @ibbe-futureventures
+/supabase/migrations/ @ibbe-futureventures
+/drizzle/ @ibbe-futureventures
+/supabase/config.toml @ibbe-futureventures
+.npmrc @ibbe-futureventures
+/.mcp.json @ibbe-futureventures
+/.githooks/ @ibbe-futureventures
