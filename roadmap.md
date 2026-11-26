@@ -1,5 +1,8 @@
 # Prototype rebuild
 
+- [x] Samtal staging documentation: isolated setup permissions/costs, source branch, explicit outbound denial, safe installation, voice-note identity alternatives and transcript validation documented; accepted patches/tests unchanged.
+- [ ] Samtal staging creation: blocked on management approval, budget and enforceable outbound isolation; no environment, live changes or providers authorized.
+
 - [x] Samtal Priority 1 preparation: schema-compatible cleanup error handling; 110 existing + 13 new tests pass. SQL drafts are documentation only; no live changes or deployment.
 - [x] Samtal Priority 1 local database design: coordinated documentation SQL and rollout/rollback plan; all four former TODOs execute locally; all 123 previous + 44 new tests pass (167 total, no skips). Production code/schema unchanged.
 - [ ] Samtal Priority 1 live readiness: independent-session Postgres races, real Storage/dispatch/staging verification and separately approved live migration/integration remain required. PGlite proves local SQL invariants, not production concurrency; do not proceed to Priority 2.

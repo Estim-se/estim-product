@@ -3,6 +3,13 @@
 Baseline: `main` at `b0296e8`, clean tree. 276 Samtal tests / 13 files and the full
 TypeScript check pass. Nothing in this document has been applied.
 
+**Requirements clarification (2026-11-26):** the assessment is accepted, but setup,
+voice-note and transcription recommendations below are superseded by
+`priority-1-staging-setup-and-voice-notes.md`. Do not blindly replay historical migrations,
+rely on missing credentials to block sends, treat voice notes as automatically business,
+require PIN on every call, or expose unverified-call recordings to company owners.
+Management approval is pending; no environment creation is authorized.
+
 ## 1. Environment assessment (read-only)
 
 Checks performed: repository configuration, one read-only database query (row counts and
