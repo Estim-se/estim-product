@@ -1,5 +1,8 @@
 # Prototype rebuild
 
+- [x] Samtal Priority 1 preparation: schema-compatible cleanup error handling; 110 existing + 13 new tests pass. SQL drafts are documentation only; no live changes or deployment.
+- [ ] Samtal Priority 1 atomic guarantees: terminal deletion, stale-worker fencing and durable orphan cleanup remain blocked on separately approved/applied Samtal SQL and guarded handoff design; four synthetic failures remain reproduced. Do not proceed to Priority 2.
+
 - [x] Database-only receipt migration: restored the empty-email guard, removed fixture tests, kept cleanup unchanged and applied one migration. Read-only checks confirm three duplicates merged, no remaining duplicate pairs or orphan threads, and unchanged service-role-only execution grants; no app changes or publication.
 
 - [x] Simplified Anbud risk extraction into flat risk and Risk/Normalt/Ej nämnt checklist lists, requiring only display fields on risks. Code resolves AF citations, links checklist areas and flags missing sources; incomplete-output retries narrow to AFC/AFD. No special-case tender data added. 437 tests pass; automatic build OK.

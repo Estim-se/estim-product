@@ -143,7 +143,9 @@ function fakeDb(o: { call?: Record<string, unknown> | null; customers?: unknown[
         eq: (c: string, v: unknown) => { filters.push([c, v]); return chain; },
         maybeSingle: async () => { log.selects.push({ table, filters }); return { data: o.call === undefined ? null : o.call, error: null }; },
         update: (values: Record<string, unknown>) => { const entry = { values, filters: [] as [string, unknown][] }; log.updates.push(entry);
-          const u = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return u; }, then: (ok: (v: unknown) => void) => ok({ error: null }) }; return u; },
+          const u = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return u; }, select: () => u,
+            maybeSingle: async () => ({ data: o.call ? { id: o.call['id'] } : null, error: null }),
+            then: (ok: (v: unknown) => void) => ok({ error: null }) }; return u; },
       };
       if (table === 'customers') log.selects.push({ table, filters });
       return chain;

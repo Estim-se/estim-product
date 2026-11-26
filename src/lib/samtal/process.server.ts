@@ -41,7 +41,7 @@ export async function runSamtalJobs(db: Db, deps: SamtalDeps, options: { limit?:
 export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<string> {
   const company = job.company_id;
   const release = (state: 'queued' | 'done' | 'failed', step: string, error: string | null, retry = 0) =>
-    db.rpc('samtal_release_job', { p_job: job.id, p_token: job.lease_token!, p_state: state, p_step: step, p_error: error as string, p_retry_seconds: retry });
+    db.rpc('samtal_release_job', { p_job: job.id, p_token: job.lease_token as string, p_state: state, p_step: step, p_error: error as string, p_retry_seconds: retry });
   const updateCall = (values: Database['public']['Tables']['samtal_calls']['Update']) => db.from('samtal_calls').update(values).eq('id', job.call_id).eq('company_id', company);
   let step = job.step;
   try {
@@ -106,10 +106,25 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
 // If the file cannot be removed now, the call is made due so the hourly purge removes it.
 async function forgetPrivate(db: Db, company: string, call: Call) {
   const path = call.audio_path && call.audio_path.startsWith(`${company}/`) ? call.audio_path : null;
-  const removed = path ? await db.storage.from('samtal-audio').remove([path]) : { error: null };
+  let audioRemoved = !path;
+  if (path) {
+    try {
+      const removed = await db.storage.from('samtal-audio').remove([path]);
+      audioRemoved = !removed.error;
+    } catch {
+      // A rejected storage request must not prevent text cleanup or discard its retry reference.
+      audioRemoved = false;
+    }
+  }
   const now = new Date().toISOString();
-  await db.from('samtal_calls').update({
-    classification: 'privat', status: 'privat', transcript: null, extraction: null, caller_phone: null, error_code: null,
-    ...(removed.error ? { delete_after: now } : { audio_path: null, content_deleted_at: now }),
-  }).eq('id', call.id).eq('company_id', company);
+  try {
+    const saved = await db.from('samtal_calls').update({
+      classification: 'privat', status: 'privat', transcript: null, extraction: null, caller_phone: null, error_code: null,
+      ...(audioRemoved ? { audio_path: null, content_deleted_at: now } : { delete_after: now }),
+    }).eq('id', call.id).eq('company_id', company).select('id').maybeSingle();
+    // This detects failed/no-row persistence; terminal deletion and lease fencing still require SQL approval.
+    if (saved.error || !saved.data) throw new StepError('private_cleanup_not_saved', true);
+  } catch {
+    throw new StepError('private_cleanup_not_saved', true);
+  }
 }

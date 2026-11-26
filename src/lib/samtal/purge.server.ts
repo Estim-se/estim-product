@@ -19,14 +19,19 @@ export async function purgeDueCalls(db: Db, limit = 200) {
   if (due.error) throw new Error('due_read_failed');
   let deleted = 0, kept = 0;
   for (const call of due.data ?? []) {
-    // A path outside the call's own company folder is never touched.
-    if (call.audio_path) {
-      if (!call.audio_path.startsWith(`${call.company_id}/`)) { kept++; continue; }
-      const removed = await db.storage.from('samtal-audio').remove([call.audio_path]);
-      if (removed.error) { kept++; continue; }
+    try {
+      // A path outside the call's own company folder is never touched.
+      if (call.audio_path) {
+        if (!call.audio_path.startsWith(`${call.company_id}/`)) { kept++; continue; }
+        const removed = await db.storage.from('samtal-audio').remove([call.audio_path]);
+        if (removed.error) { kept++; continue; }
+      }
+      const marked = await db.rpc('samtal_mark_deleted', { p_call: call.call_id, p_company: call.company_id });
+      if (marked.error || marked.data !== true) kept++; else deleted++;
+    } catch {
+      // Preserve eligibility for another run and continue; exceptions may contain private content.
+      kept++;
     }
-    const marked = await db.rpc('samtal_mark_deleted', { p_call: call.call_id, p_company: call.company_id });
-    if (marked.error || marked.data !== true) kept++; else deleted++;
   }
   return { due: (due.data ?? []).length, deleted, kept };
 }
