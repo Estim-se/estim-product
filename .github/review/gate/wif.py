@@ -1,8 +1,9 @@
 """The Anthropic token through workload identity federation (plan §3), as step 2 tested it (W1, T1).
 
-Each exchange uses a fresh GitHub OIDC token, which is single-use. The Anthropic token lives 10 minutes, so it is
-replaced after 7. It is masked at once and only ever handed to the CLI as ANTHROPIC_AUTH_TOKEN. Neither token is
-printed or written anywhere else.
+Each exchange uses a fresh GitHub OIDC token, which is single-use. Every CLI call gets a token of its own, minted
+right before it starts, with the seconds it has left (10 minutes under the WIF rule), so the engine can stop the
+call before the token expires: the CLI can't refresh a token it was handed. The token is masked at once and only
+ever handed to the CLI as ANTHROPIC_AUTH_TOKEN. Neither token is printed or written anywhere else.
 """
 import json
 import os
@@ -13,7 +14,7 @@ import urllib.request
 
 from .common import GateError, mask
 
-REFRESH_AFTER = 420
+DEFAULT_LIFE = 600  # the WIF rule's token lifetime, when the answer doesn't say
 
 
 def _post_json(url, body, headers):
@@ -46,7 +47,6 @@ class Tokens:
         if not a['federation_rule_id'] or not a['service_account_id']:
             raise GateError('engine', 'config.json has no federation rule yet')
         self.cfg, self.environ, self.post, self.get, self.clock = a, environ or os.environ, post, get, clock
-        self.token, self.at = None, 0.0
 
     def _oidc(self):
         url = self.environ.get('ACTIONS_ID_TOKEN_REQUEST_URL')
@@ -61,8 +61,8 @@ class Tokens:
         return jwt
 
     def get_token(self):
-        if self.token and self.clock() - self.at < REFRESH_AFTER:
-            return self.token
+        """A new token and the seconds it has left, measured from before the exchange."""
+        start = self.clock()
         status, payload = self.post('https://api.anthropic.com/v1/oauth/token', {
             'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
             'assertion': self._oidc(),
@@ -77,5 +77,6 @@ class Tokens:
             kind = err.get('type') if isinstance(err, dict) else err
             raise GateError('engine', f'the token exchange was refused ({status}, {str(kind)[:60]})')
         mask(token)
-        self.token, self.at = token, self.clock()
-        return token
+        life = payload.get('expires_in')
+        life = int(life) if isinstance(life, (int, float)) and life > 0 else DEFAULT_LIFE
+        return token, start + life - self.clock()

@@ -68,6 +68,16 @@ def update(gh, cfg, run_id, *, external, title, summary, status='in_progress', c
     return run_id
 
 
+LIVE = ('queued', 'in_progress', 'waiting', 'requested', 'pending')
+
+
+def run_is_live(actions, cfg, run_id):
+    """Whether a workflow run has not finished yet. Needs a token with actions: read."""
+    if not run_id:
+        return False
+    return actions.get(f"/repos/{cfg['repository']}/actions/runs/{run_id}").get('status') in LIVE
+
+
 def pull(gh, cfg, number):
     return gh.get(f"/repos/{cfg['repository']}/pulls/{number}")
 

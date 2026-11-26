@@ -84,8 +84,12 @@ class Engine:
         stream = os.path.join(self.work, f'{label}.jsonl')
         argv = cli.args(self.binary, model=model, effort=effort, max_turns=max_turns, budget=budget, ctx=self.ctx,
                         schema=schema, prompt=prompt)
-        rc = cli.run(argv, cwd=self.data, home=os.path.join(self.work, 'home-' + label), token=self.token(),
-                     stream_path=stream, err_path=os.path.join(self.work, f'{label}.err'))
+        token, life = self.token()
+        timeout = min(cli.MAX_SECONDS, life - cli.TOKEN_MARGIN)
+        if timeout < cli.MIN_SECONDS:
+            raise GateError('engine', 'the Anthropic token expires too soon for a call')
+        rc = cli.run(argv, cwd=self.data, home=os.path.join(self.work, 'home-' + label), token=token,
+                     stream_path=stream, err_path=os.path.join(self.work, f'{label}.err'), timeout=timeout)
         init, result, reads = cli.parse(stream, self.data)
         return rc, init, result, reads
 

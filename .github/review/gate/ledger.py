@@ -6,8 +6,10 @@ repository (plan §4, step 2 F10, F11).
 - Only the App can create or update it. Readers filter by app_id and check the external_id in code.
 - Writes are serialized by the `estim-review-ledger` concurrency group (`queue: max`) in the workflows.
 - Spend counts settled reviews plus open reservations, so a review that never settles costs its cap, never zero (V8).
-- Stickies, accepts, green heads, per-PR history and requeue counts carry over to the next cycle. Open reservations
-  carry over too, so a review running across the cycle boundary still settles.
+- Stickies, accepts, green heads, per-PR history, requeue counts and budget waits carry over to the next cycle.
+  Open reservations carry over too, so a review running across the cycle boundary still settles.
+- It must fit one check run's text (65,535 characters). Past FOLD_AT, the oldest settlements fold into totals, then
+  the oldest state is trimmed, largest collection first. Losing an old sticky or accept only means a fresh review.
 - What the ledger holds is private: spend per numeric GitHub id. Nothing from here is printed or posted.
 """
 import datetime
@@ -16,7 +18,14 @@ from .common import GateError, canonical, strict_json
 
 TEXT_LIMIT = 65_535
 FOLD_AT = 50_000
-KEEP = {'stickies': 300, 'accepts': 300, 'green': 200, 'history': 200, 'requeues': 300}
+KEEP = {'stickies': 150, 'accepts': 100, 'green': 100, 'history': 100, 'requeues': 100, 'waits': 100}
+HISTORY_PER_PR = 5  # the summary shows the last 5; the review count is the newest entry's k
+STATE = ('stickies', 'accepts', 'green', 'history', 'requeues', 'waits')
+
+
+def state_key(pr, diffhash):
+    """The key for per-diff state (requeue counts, budget waits)."""
+    return f'{int(pr)}:{diffhash[:16]}'
 
 
 def cycle(today, budgets):
@@ -51,9 +60,9 @@ class Ledger:
     def new(cls, start, carry=None):
         doc = {'v': 1, 'cycle': start, 'seq': 0, 'folded': {'global': 0.0, 'lane': 0.0, 'payers': {}},
                'reservations': [], 'settled': [], 'stickies': [], 'accepts': [], 'green': {}, 'history': {},
-               'requeues': {}, 'recounted': None}
+               'requeues': {}, 'waits': {}, 'recounted': None}
         if carry:
-            for key in ('reservations', 'stickies', 'accepts', 'green', 'history', 'requeues'):
+            for key in ('reservations',) + STATE:
                 doc[key] = carry.get(key, doc[key])
         return cls(doc)
 
@@ -65,6 +74,8 @@ class Ledger:
             raise GateError('ledger', 'the ledger text is not valid JSON') from None
         if not isinstance(doc, dict) or doc.get('v') != 1 or doc.get('cycle') != cycle_id:
             raise GateError('ledger', 'the ledger is not for the cycle its run names')
+        for key in STATE:
+            doc.setdefault(key, [] if key in ('stickies', 'accepts') else {})
         return cls(doc)
 
     # Money.
@@ -117,12 +128,18 @@ class Ledger:
 
     # Review state.
     def record_review(self, pr, entry):
+        """entry: k, sha, outcome, important, at. Only the last few are kept; k keeps counting."""
         history = self.doc['history'].setdefault(str(pr), [])
-        history.append(entry)
-        del history[:-10]
+        history.append({key: entry[key] for key in ('k', 'sha', 'outcome', 'important', 'at')})
+        del history[:-HISTORY_PER_PR]
 
     def history(self, pr):
         return list(self.doc['history'].get(str(pr), []))
+
+    def reviews(self, pr):
+        """How many reviews this PR has had: the newest entry's number, not the length of the trimmed history."""
+        history = self.doc['history'].get(str(pr)) or []
+        return int(history[-1].get('k') or len(history)) if history else 0
 
     def record_green(self, pr, sha):
         heads = self.doc['green'].setdefault(str(pr), [])
@@ -162,10 +179,24 @@ class Ledger:
         self.doc['requeues'][key] = {'n': n, 'at': at}
         return n
 
+    def clear_requeues(self, key):
+        """A review of this diff completed, so later losses and pauses get their own retries."""
+        self.doc['requeues'].pop(key, None)
+
+    def wait(self, key, payer, lane, cap):
+        """A review paused for budget: who would pay and how much, so the sweeper resumes it when that fits."""
+        self.doc['waits'][key] = {'payer': str(payer), 'lane': bool(lane), 'cap': round(float(cap), 6)}
+
+    def waiting(self, key):
+        return self.doc['waits'].get(key)
+
+    def stop_waiting(self, key):
+        self.doc['waits'].pop(key, None)
+
     # Storage.
     def dump(self):
-        """The ledger as text that fits a check run: oldest settlements fold into totals past FOLD_AT characters,
-        then the oldest state is pruned."""
+        """The ledger as text that fits a check run: state past KEEP is pruned; past FOLD_AT characters the oldest
+        settlements fold into totals, then the oldest state is trimmed."""
         self.doc['seq'] += 1
         self._prune()
         text = canonical(self.doc)
@@ -179,18 +210,39 @@ class Ledger:
                     f['payers'][e['payer']] = round(f['payers'].get(e['payer'], 0.0) + e['usd'], 6)
             del self.doc['settled'][:50]
             text = canonical(self.doc)
+        while len(text) > FOLD_AT and self._trim():
+            text = canonical(self.doc)
         if len(text) > TEXT_LIMIT:
             raise GateError('ledger', 'the ledger no longer fits one check run')
         return text
 
+    @staticmethod
+    def _oldest_first(keys):
+        return sorted(keys, key=lambda x: int(str(x).split(':')[0]))
+
     def _prune(self):
         d = self.doc
-        del d['stickies'][:-KEEP['stickies']]
-        del d['accepts'][:-KEEP['accepts']]
-        for key in ('green', 'history', 'requeues'):
+        for key in ('stickies', 'accepts'):
+            del d[key][:-KEEP[key]]
+        for key in ('green', 'history', 'requeues', 'waits'):
             if len(d[key]) > KEEP[key]:
-                for k in sorted(d[key], key=lambda x: int(x.split(':')[0]))[:len(d[key]) - KEEP[key]]:
+                for k in self._oldest_first(d[key])[:len(d[key]) - KEEP[key]]:
                     del d[key][k]
+
+    def _trim(self):
+        """Drops the oldest tenth of the largest state collection. False when there is nothing left to drop."""
+        d = self.doc
+        sizes = {key: len(canonical(d[key])) for key in STATE if d[key]}
+        if not sizes:
+            return False
+        key = max(sizes, key=sizes.get)
+        n = max(1, len(d[key]) // 10)
+        if isinstance(d[key], list):
+            del d[key][:n]
+        else:
+            for k in self._oldest_first(d[key])[:n]:
+                del d[key][k]
+        return True
 
 
 class Store:

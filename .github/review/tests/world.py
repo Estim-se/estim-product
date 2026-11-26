@@ -9,7 +9,8 @@ from gate.github import GitHub
 
 BASE = load('config.json')
 CFG = dict(BASE, app=dict(BASE['app'], id=77), ledger=dict(BASE['ledger'], repository_id=5, root_sha='f' * 40),
-           anthropic=dict(BASE['anthropic'], federation_rule_id='fdrl_x', service_account_id='svac_x'))
+           anthropic=dict(BASE['anthropic'], federation_rule_id='fdrl_x', service_account_id='svac_x'),
+           drift={'rulesets': {}, 'environments': {}, 'codeowners_errors': 0})
 REPO, LEDGER = CFG['repository'], CFG['ledger']['repository']
 
 
@@ -22,6 +23,7 @@ class World:
         self.calls = []
         self.next_id = 1000
         self.extra = {}
+        self.run_status = {}  # workflow run id -> status; unknown runs are completed
 
     def pr(self, number, sha, *, author='dev', author_id=101, ref='feature', draft=False, state='open'):
         self.prs[number] = {'number': number, 'state': state, 'draft': draft, 'title': f'PR {number}', 'body': 'Body',
@@ -62,6 +64,8 @@ class World:
             run = next(r for r in self.runs if r['id'] == int(m.group(2)))
             run.update(data)
             return 200, {'id': run['id']}, {}
+        if m := re.fullmatch(rf'/repos/{REPO}/actions/runs/(\d+)', path):
+            return 200, {'status': self.run_status.get(int(m.group(1)), 'completed')}, {}
         if m := re.fullmatch(rf'/repos/{REPO}/pulls/(\d+)', path):
             pr = self.prs.get(int(m.group(1)))
             return (200, pr, {}) if pr else (404, {}, {})

@@ -57,7 +57,12 @@ def environment(home, token):
             'CLAUDE_CODE_DISABLE_FAST_MODE': '1', 'DISABLE_AUTOUPDATER': '1'}
 
 
-def run(argv, *, cwd, home, token, stream_path, err_path, timeout=900):
+MAX_SECONDS = 900  # one call, at most; less when its token expires sooner
+TOKEN_MARGIN = 45  # stop a call this long before its token expires
+MIN_SECONDS = 120
+
+
+def run(argv, *, cwd, home, token, stream_path, err_path, timeout=MAX_SECONDS):
     os.makedirs(home, exist_ok=True)
     with open(stream_path, 'wb') as so, open(err_path, 'wb') as se:
         try:

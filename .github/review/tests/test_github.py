@@ -99,7 +99,7 @@ class GitHubTest(TempDirCase):
 
 
 class WifTest(TempDirCase):
-    def test_exchanges_a_fresh_oidc_token_masks_and_refreshes_after_seven_minutes(self):
+    def test_every_call_gets_a_fresh_token_with_the_seconds_it_has_left(self):
         now = [1000.0]
         oidc, posts = [], []
 
@@ -109,14 +109,13 @@ class WifTest(TempDirCase):
 
         def post(url, body, headers):
             posts.append(body)
-            return 200, {'access_token': f'sk-ant-oat-{len(posts)}'}
+            now[0] += 2  # the exchange itself takes time, and that time is the token's too
+            return 200, {'access_token': f'sk-ant-oat-{len(posts)}', 'expires_in': 598}
 
         environ = {'ACTIONS_ID_TOKEN_REQUEST_URL': 'https://gh/oidc?x=1', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'b'}
         t = Tokens(CFG, environ, post, get, clock=lambda: now[0])
-        self.assertEqual(t.get_token(), 'sk-ant-oat-1')
-        self.assertEqual(t.get_token(), 'sk-ant-oat-1')
-        now[0] += 421
-        self.assertEqual(t.get_token(), 'sk-ant-oat-2')
+        self.assertEqual(t.get_token(), ('sk-ant-oat-1', 596))
+        self.assertEqual(t.get_token(), ('sk-ant-oat-2', 596))  # every call gets a token of its own
         self.assertEqual(len(oidc), 2)  # a fresh, single-use GitHub token for each exchange
         self.assertTrue(oidc[0].endswith('&audience=https%3A%2F%2Fapi.anthropic.com'))
         self.assertEqual(posts[0]['federation_rule_id'], 'fdrl_x')

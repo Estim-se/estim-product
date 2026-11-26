@@ -61,7 +61,27 @@ class EngineTest(TempDirCase):
     def engine(self, fake, tier='NORMAL', cap=2.0, share=('src/a.ts', 'src/b.ts')):
         return Engine(data_dir=self.data, work_dir=self.work, ctx_path='ctx.md', binary='claude', cfg=CFG, tiers=TIERS,
                       tier=tier, cap=cap, share=list(share), clause_map=CLAUSES, head_ok=lambda: self.head_ok(),
-                      token=lambda: 'tok', runner=fake)
+                      token=lambda: ('tok', 600), runner=fake)
+
+    def test_each_call_stops_before_its_token_expires(self):
+        from unittest import mock
+        from gate import cli
+        seen = []
+
+        def run(argv, **kw):
+            seen.append((kw['token'], kw['timeout']))
+            return 0
+
+        lives = iter([598, 2000, 150])
+        eng = Engine(data_dir=self.data, work_dir=self.work, ctx_path='ctx.md', binary='claude', cfg=CFG, tiers=TIERS,
+                     tier='NORMAL', cap=2.0, share=['src/a.ts'], clause_map=CLAUSES, head_ok=lambda: True,
+                     token=lambda: ('tok-%d' % len(seen), next(lives)))
+        with mock.patch.object(cli, 'run', run), mock.patch.object(cli, 'parse', lambda s, d: (None, None, set())):
+            eng._run_cli('finder-1', 'm', 'medium', 10, 0.5, {}, 'p')
+            eng._run_cli('finder-2', 'm', 'medium', 10, 0.5, {}, 'p')
+            with self.assertRaises(GateError):
+                eng._run_cli('finder-3', 'm', 'medium', 10, 0.5, {}, 'p')
+        self.assertEqual(seen, [('tok-0', 598 - cli.TOKEN_MARGIN), ('tok-1', cli.MAX_SECONDS)])
 
     def test_review_md_clauses(self):
         self.assertEqual(sorted({k[:3] for k in CLAUSES}), ['BUG', 'SEC', 'UNP'])

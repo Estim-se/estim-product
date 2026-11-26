@@ -7,7 +7,8 @@ It:
   "needs Ibbe" (V9);
 - resumes paused checks in small batches once their reason clears, and only when the latest App run on the current
   head is the paused one;
-- queues an open, ready PR into main that has had no App run for 10 minutes (V9);
+- queues an open, ready PR into main that has had no App run for 10 minutes, or for the Lovable lane's debounce plus
+  15 minutes (V9);
 - refreshes paused checks before GitHub marks them stale at 14 days;
 - opens a terse issue on drift, when `lovable` has differed from main for over a day, or when a `lovable-sync*`
   branch exists (C16);
@@ -16,13 +17,15 @@ It:
 
 Only a scheduled run re-queues: a dispatched sweeper can't mint a token (W3a), so it does the API work only.
 """
+import re
 import time
 
 from . import checks, drift, render
+from .checks import run_is_live
 from .common import iso, log, parse_iso
-from .github import GitHub
-from .ledger import Store
-from .stages import PAUSE_LINES, Poster, app_session, configs, emit, run_url, today_utc
+from .github import GitHub, GitHubError
+from .ledger import Store, state_key
+from .stages import PAUSE_LINES, Poster, app_session, configs, emit, in_lane, missing_setup, run_url, today_utc
 
 BATCH = 5
 MAX_REQUEUES = 2
@@ -38,18 +41,12 @@ def open_prs(gh, cfg):
     return [p for p in prs if not p.get('draft') and (p['head'].get('repo') or {}).get('id') == cfg['repository_id']]
 
 
-def run_is_live(actions, cfg, run_id):
-    if not run_id:
-        return False
-    run = actions.get(f"/repos/{cfg['repository']}/actions/runs/{run_id}")
-    return run.get('status') in ('queued', 'in_progress', 'waiting', 'requested', 'pending')
-
-
-def review_started(actions, cfg, run_id):
-    """Whether any review job in the run started its engine step; a run that never got that far costs nothing."""
+def review_started(actions, cfg, run_id, pr):
+    """Whether this PR's review job in the run started its engine step; one that never got that far costs nothing.
+    review.yml's own run has one `review` job; a sweeper run has one `requeue (<pr>) / review` per PR."""
     jobs = actions.get(f"/repos/{cfg['repository']}/actions/runs/{run_id}/jobs?per_page=100").get('jobs', [])
     for job in jobs:
-        if job['name'] == 'review' or job['name'].endswith('/ review'):
+        if job['name'] == 'review' or re.fullmatch(rf'requeue \({int(pr)}\) / review', job['name']):
             for step in job.get('steps') or []:
                 if step['name'] == 'Run the review' and step.get('started_at'):
                     return True
@@ -58,6 +55,10 @@ def review_started(actions, cfg, run_id):
 
 def sweep(environ, session=None, actions=None, clock=time.time):
     cfg, _, budgets, _ = configs()
+    missing = missing_setup(cfg)
+    if missing:
+        log(f"sweep: the review gate is not set up yet ({', '.join(missing)} missing in config.json); nothing to do")
+        return emit({'prs': []})
     app, gh, ledger_gh = session or app_session(cfg, environ)
     actions = actions or GitHub(environ['GITHUB_TOKEN'])
     scheduled = environ.get('EVENT_NAME') == 'schedule'
@@ -70,19 +71,22 @@ def sweep(environ, session=None, actions=None, clock=time.time):
     issues = []
     if problems:
         issues.append(('drift', problems))
-    requeue, resumed = [], 0
+    # (PR, requeue key or None). Counted only for the PRs a scheduled run really re-queues.
+    candidates = []
     for pr in open_prs(gh, cfg):
         number, sha = pr['number'], pr['head']['sha']
         run = checks.latest(gh, cfg, sha)
         if run is None:
-            if now - parse_iso(pr['updated_at']) > 600:
-                requeue.append(number)
+            # The lane's plan waits out its debounce before it posts anything, so give it that long first.
+            quiet = (cfg['lovable']['debounce_minutes'] + 15) * 60 if in_lane(pr, cfg) else 600
+            if now - parse_iso(pr['updated_at']) > quiet:
+                candidates.append((number, None))
             continue
         state = checks.parse_external(run.get('external_id'))
         if run.get('status') == 'completed' or state is None:
             continue
         poster = Poster(gh, cfg, number, sha, state['diffhash'], run_id, run_url(cfg, environ))
-        key = f"{number}:{state['diffhash'][:16]}"
+        key = state_key(number, state['diffhash'])
         if state['state'] == 'reviewing':
             if run_is_live(actions, cfg, state['run']):
                 continue
@@ -90,8 +94,7 @@ def sweep(environ, session=None, actions=None, clock=time.time):
             if count['n'] >= MAX_REQUEUES:
                 poster.pause('needs-ibbe', PAUSE_LINES['needs-ibbe'], check_id=run['id'])
             elif count['at'] is None or now - parse_iso(count['at']) > WAIT_AFTER * count['n']:
-                requeue.append(number)
-                ledger.count_requeue(key, iso(now))
+                candidates.append((number, key))
         elif state['state'] == 'paused':
             if now - parse_iso(run['started_at']) > STALE_AFTER:
                 output = run.get('output') or {}
@@ -99,15 +102,20 @@ def sweep(environ, session=None, actions=None, clock=time.time):
                             reason=state['reason'])
             cleared = state['reason'] in checks.RESUMABLE and (state['reason'] != 'drift' or not problems)
             if state['reason'] == 'budget':
-                cleared = ledger.budget_problem(budgets, pr['user']['id'], False,
-                                                max(t['cap_usd'] for t in _tiers().values())) is None
-            if cleared and resumed < BATCH and ledger.requeues(key)['n'] < MAX_REQUEUES:
-                requeue.append(number)
-                ledger.count_requeue(key, iso(now))
-                resumed += 1
+                # What queue would charge, as it recorded at the pause; without a record, the largest cap.
+                wait = ledger.waiting(key) or {'payer': pr['user']['id'], 'lane': in_lane(pr, cfg),
+                                               'cap': max(t['cap_usd'] for t in _tiers().values())}
+                cleared = ledger.budget_problem(budgets, wait['payer'], wait['lane'], wait['cap']) is None
+            if cleared and ledger.requeues(key)['n'] < MAX_REQUEUES:
+                candidates.append((number, key))
 
     lovable = cfg['lovable']['head_ref']
-    compare = gh.get(f"/repos/{cfg['repository']}/compare/{cfg['main']}...{lovable}")
+    try:
+        compare = gh.get(f"/repos/{cfg['repository']}/compare/{cfg['main']}...{lovable}")
+    except GitHubError as e:
+        if e.status != 404:
+            raise
+        compare = {}  # no lovable branch (yet): nothing to compare
     if compare.get('ahead_by', 0) > 0:
         commits = compare.get('commits') or []
         oldest = min((parse_iso(c['commit']['committer']['date']) for c in commits), default=now)
@@ -127,11 +135,21 @@ def sweep(environ, session=None, actions=None, clock=time.time):
             run = int(str(r['run']).split('-')[0])
             if run_is_live(actions, cfg, run):
                 continue
-            ledger.settle(r['run'], r['usd'] if review_started(actions, cfg, run) else 0.0, iso(now))
+            ledger.settle(r['run'], r['usd'] if review_started(actions, cfg, run, r['pr']) else 0.0, iso(now))
         ledger.doc['recounted'] = today_utc(clock).isoformat()
+    requeue = []
+    if scheduled:
+        for number, key in candidates:
+            if len(requeue) == BATCH:
+                break
+            if number in requeue:
+                continue
+            requeue.append(number)
+            if key:
+                ledger.count_requeue(key, iso(now))
     store.write(ledger)
-    requeue = sorted(set(requeue))[:BATCH] if scheduled else []
-    log(f'sweep: {len(problems)} drift problems, {len(issues)} issues, {len(requeue)} re-queued')
+    log(f'sweep: {len(problems)} drift problems, {len(issues)} issues, {len(requeue)} re-queued, '
+        f'{len(candidates) - len(requeue)} left for a later run')
     return emit({'prs': requeue})
 
 

@@ -18,7 +18,7 @@ from .common import (GateError, env, iso, load, log, need_int, need_sha, parse_i
 from .diffspec import Repo
 from .engine import Engine, Superseded, clauses, window_hashes
 from .github import App, GitHub, RateLimited, ledger_is_private, quote
-from .ledger import Store, cycle
+from .ledger import Store, cycle, state_key
 from .tiers import classify, estimate, matches
 from .wif import Tokens
 
@@ -27,6 +27,15 @@ WRITE_ROLES = ('admin', 'write')
 
 def configs():
     return load('config.json'), load('tiers.json'), load('budgets.json'), load('accept.json')
+
+
+def missing_setup(cfg):
+    """The IDs the admin step fills in. Until they are all there, the gate does nothing at all."""
+    wanted = {'app.id': cfg['app']['id'], 'ledger.repository_id': cfg['ledger']['repository_id'],
+              'ledger.root_sha': cfg['ledger']['root_sha'],
+              'anthropic.federation_rule_id': cfg['anthropic']['federation_rule_id'],
+              'anthropic.service_account_id': cfg['anthropic']['service_account_id'], 'drift': cfg['drift']}
+    return [name for name, value in wanted.items() if not value]
 
 
 def repo_url(cfg):
@@ -85,6 +94,10 @@ def plan(environ=os.environ, gh=None, clock=time.time, sleep=time.sleep):
     gh = gh or GitHub(environ['GITHUB_TOKEN'])
     event = environ['EVENT_NAME']
     out = {'act': 'none', 'pr': '', 'plan': {}}
+    missing = missing_setup(cfg)
+    if missing:
+        log(f"plan: the review gate is not set up yet ({', '.join(missing)} missing in config.json); nothing to do")
+        return emit(out)
     if event == 'workflow_run':
         if (environ.get('WR_EVENT') != 'pull_request' or environ.get('WR_HEAD_REPO_ID') != str(cfg['repository_id'])
                 or environ.get('WR_CONCLUSION') != 'success'):
@@ -316,7 +329,7 @@ def sticky_hits(repo, stickies, base, sha, changes):
     return hits
 
 
-def queue(environ=os.environ, session=None, clock=time.time):
+def queue(environ=os.environ, session=None, clock=time.time, actions=None):
     cfg, spec, budgets, _ = configs()
     plan_out = loads(environ, 'PLAN')
     act = environ.get('ACT')
@@ -338,7 +351,8 @@ def queue(environ=os.environ, session=None, clock=time.time):
         log(f'queue: paused (ledger): {e}')
         return emit({'go': 'false'})
     history = ledger.history(number)
-    k = len(history) + 1
+    k = ledger.reviews(number) + 1
+    key = state_key(number, diffhash)
     dirty = supersede(gh, cfg, ledger, number, sha)
 
     def finish(go, extra=None):
@@ -358,14 +372,20 @@ def queue(environ=os.environ, session=None, clock=time.time):
         dirty = True
         return finish(False)
 
+    # Before any pause: a pause must never cover a result this commit already has, or a review still running.
+    existing = checks.latest(gh, cfg, sha)
+    state = checks.parse_external((existing or {}).get('external_id'))
+    same = state is not None and (state['diffhash'] == diffhash or not diffhash)
+    if same and state['state'] in ('done', 'accepted', 'action'):
+        log(f'queue: #{number} at this commit already has a result')
+        return finish(False)
+    if same and state['state'] == 'reviewing' and state['run'] != run_id:
+        if checks.run_is_live(actions or GitHub(environ['GITHUB_TOKEN']), cfg, state['run']):
+            log(f'queue: a review of #{number} at this commit is already running')
+            return finish(False)
     if act == 'pause':
         reason = plan_out.get('reason') or 'engine'
         poster.pause(reason, PAUSE_LINES.get(reason, PAUSE_LINES['engine']))
-        return finish(False)
-    existing = checks.latest(gh, cfg, sha)
-    state = checks.parse_external((existing or {}).get('external_id'))
-    if state and state['diffhash'] == diffhash and state['state'] in ('done', 'accepted', 'action'):
-        log(f'queue: #{number} at this commit already has a result')
         return finish(False)
     if plan_out.get('drift'):
         poster.pause('drift', PAUSE_LINES['drift'], notes=['Differences: ' + '; '.join(plan_out['drift'][:10])])
@@ -405,7 +425,7 @@ def queue(environ=os.environ, session=None, clock=time.time):
         role = gh.get(f"/repos/{cfg['repository']}/collaborators/{quote(plan_out['pusher'])}/permission").get('permission')
         if role in WRITE_ROLES:
             payer = plan_out['pusher_id']
-    if len(history) >= budgets['max_reviews_per_pr']:
+    if k > budgets['max_reviews_per_pr']:
         poster.pause('limit', PAUSE_LINES['limit'])
         return finish(False)
     cap = spec['tiers'][tier]['cap_usd']
@@ -414,16 +434,20 @@ def queue(environ=os.environ, session=None, clock=time.time):
         return finish(False)
     lane = plan_out.get('lane') is True
     problem = ledger.budget_problem(budgets, payer, lane, cap)
-    if problem and budgets['when_low'] == 'light' and tier != 'LITE':
+    # Only NORMAL may drop to LIGHT: a RISK change keeps its security lens or waits.
+    if problem and budgets['when_low'] == 'light' and tier == 'NORMAL':
         light_cap = spec['tiers']['LIGHT']['cap_usd']
         if not ledger.budget_problem(budgets, payer, lane, light_cap):
             tier, cap, problem = 'LIGHT', light_cap, None
     if problem:
         _, nxt = cycle(today_utc(clock), budgets)
         poster.pause('budget', f'{PAUSE_LINES["budget"]}. Resumes when the next cycle starts on {nxt.isoformat()}')
+        ledger.wait(key, payer, lane, cap)
+        dirty = True
         return finish(False)
-    key = f'{run_id}-{number}'
-    ledger.reserve(key, number, payer, lane, cap, iso(clock()))
+    ledger.stop_waiting(key)
+    reservation = f'{run_id}-{number}'
+    ledger.reserve(reservation, number, payer, lane, cap, iso(clock()))
     store.write(ledger)
     dirty = False
     check_id = poster.post('reviewing', f'Reviewing (tier {tier})',
@@ -431,7 +455,7 @@ def queue(environ=os.environ, session=None, clock=time.time):
     prev = next((h['sha'] for h in reversed(history) if h['sha'] != sha and h['outcome'] in ('success', 'failure')), '')
     log(f'queue: #{number} review #{k} started, tier {tier}')
     return emit({'go': 'true', 'queue': {'k': k, 'tier': tier, 'cap': cap, 'check_id': check_id, 'prev': prev,
-                                         'history': history[-5:], 'key': key}})
+                                         'history': history[-5:], 'key': reservation}})
 
 
 def supersede(gh, cfg, ledger, number, sha):
@@ -597,6 +621,8 @@ def settle(environ=os.environ, session=None, clock=time.time):
         ledger.record_review(number, {'k': queue_out.get('k'), 'sha': sha, 'diffhash': plan_out.get('diffhash', ''),
                                       'outcome': outcome, 'important': int(environ.get('IMPORTANT') or 0),
                                       'at': iso(clock())})
+    if outcome in ('success', 'failure'):
+        ledger.clear_requeues(state_key(number, plan_out.get('diffhash', '')))
     if outcome == 'success':
         ledger.record_green(number, sha)
     if outcome == 'failure':
@@ -652,7 +678,9 @@ def accept(environ=os.environ, session=None, clock=time.time):
         ledger.add_accept({'diffhash': diffhash, 'pr': number, 'sha': sha, 'by': actor, 'reason': reason,
                            'at': iso(clock())})
         ledger.record_green(number, sha)
-        ledger.record_review(number, {'k': len(ledger.history(number)) + 1, 'sha': sha, 'diffhash': diffhash,
+        ledger.clear_requeues(state_key(number, diffhash))
+        ledger.stop_waiting(state_key(number, diffhash))
+        ledger.record_review(number, {'k': ledger.reviews(number) + 1, 'sha': sha, 'diffhash': diffhash,
                                       'outcome': 'accepted', 'important': 0, 'at': iso(clock())})
         done.append(number)
     store.write(ledger)

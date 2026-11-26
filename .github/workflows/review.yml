@@ -70,8 +70,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: post
+    # actions: read tells a review still running for this commit from a lost one, so it never runs twice.
     permissions:
       contents: read
+      actions: read
     # Every ledger write in every workflow waits its turn in this group; queue: max keeps all of them (L3).
     concurrency:
       group: estim-review-ledger
@@ -90,6 +92,7 @@ jobs:
         id: queue
         env:
           APP_KEY: ${{ secrets.REVIEW_APP_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
           ACT: ${{ needs.plan.outputs.act }}
           PLAN: ${{ needs.plan.outputs.plan }}
         run: python3 -I main/.github/review/review.py queue

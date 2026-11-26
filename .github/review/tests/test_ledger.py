@@ -1,8 +1,9 @@
 import datetime
+import json
 import unittest
 
 from gate.common import GateError, load
-from gate.ledger import Ledger, Store, cycle
+from gate.ledger import FOLD_AT, KEEP, TEXT_LIMIT, Ledger, Store, cycle, state_key
 from tests.helpers import FakeGitHub
 
 BUDGETS = load('budgets.json')
@@ -61,6 +62,59 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual(set(after['payers']), set(before['payers']))
         for k in before['payers']:
             self.assertAlmostEqual(after['payers'][k], before['payers'][k], places=4)
+
+    def test_the_review_count_keeps_going_past_the_kept_history(self):
+        led = Ledger.new('2026-11-18')
+        self.assertEqual(led.reviews(7), 0)
+        for k in range(1, 15):
+            led.record_review(7, {'k': k, 'sha': 'a' * 40, 'diffhash': 'd' * 64, 'outcome': 'failure', 'important': 1,
+                                  'at': '2026-11-20T00:00:00Z'})
+        self.assertEqual(len(led.history(7)), 5)
+        self.assertEqual(led.reviews(7), 14)
+        self.assertNotIn('diffhash', led.history(7)[0])
+
+    def test_a_full_ledger_still_fits_one_check_run_keeping_the_newest_state(self):
+        led = Ledger.new('2026-11-18')
+        at = '2026-11-20T00:00:00Z'
+        long = '＠' * 300  # cleaned text is at most 300 characters, and a fullwidth at sign is 6 in JSON
+        for i in range(400):
+            led.add_stickies([{'file': f'src/{"x" * 80}/{i}.ts', 'n': 5, 'hash': f'{i:064d}', 'offset': 2,
+                               'clause': 'SEC1', 'summary': long, 'pr': i, 'at': at}])
+            led.add_accept({'diffhash': f'{i:064d}', 'pr': i, 'sha': 'a' * 40, 'by': 1, 'reason': long, 'at': at})
+            for k in range(1, 12):
+                led.record_review(i, {'k': k, 'sha': 'b' * 40, 'outcome': 'success', 'important': 0, 'at': at})
+                led.record_green(i, f'{k:040d}')
+            led.count_requeue(state_key(i, f'{i:064d}'), at)
+            led.wait(state_key(i, f'{i:064d}'), 100 + i, False, 2.0)
+        for i in range(20):
+            led.reserve(f'{i}-1', 1, 100, False, 2.0, at)
+        before = led.totals()
+        text = led.dump()
+        self.assertLessEqual(len(text), FOLD_AT)
+        back = Ledger.parse(text, '2026-11-18')
+        self.assertEqual(back.totals(), before)  # money is never trimmed
+        self.assertEqual(len(back.doc['reservations']), 20)
+        self.assertEqual(back.stickies()[-1]['pr'], 399)  # the newest survive
+        self.assertEqual(back.accepted(f'{399:064d}')['pr'], 399)
+        self.assertEqual(back.reviews(399), 11)
+        self.assertLessEqual(len(back.doc['history']), KEEP['history'])
+        self.assertLess(len(text), TEXT_LIMIT)
+
+    def test_requeue_counts_reset_when_a_review_completes_and_budget_waits_are_kept(self):
+        led = Ledger.new('2026-11-18')
+        key = state_key(7, 'd' * 64)
+        self.assertEqual(key, '7:' + 'd' * 16)
+        led.count_requeue(key, 't')
+        led.count_requeue(key, 't')
+        led.clear_requeues(key)
+        self.assertEqual(led.requeues(key), {'n': 0, 'at': None})
+        led.wait(key, 101, True, 0.6)
+        self.assertEqual(Ledger.new('2026-12-18', carry=led.doc).waiting(key), {'payer': '101', 'lane': True, 'cap': 0.6})
+        led.stop_waiting(key)
+        self.assertIsNone(led.waiting(key))
+        old = dict(led.doc)
+        del old['waits']  # a ledger written before waits existed
+        self.assertEqual(Ledger.parse(json.dumps(old), '2026-11-18').doc['waits'], {})
 
     def test_state_carries_into_the_next_cycle_but_money_does_not(self):
         led = Ledger.new('2026-10-18')

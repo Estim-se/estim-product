@@ -6,7 +6,7 @@ from gate import stages
 from gate.common import load
 from gate.diffspec import Repo
 from gate.engine import snippet
-from gate.ledger import Ledger
+from gate.ledger import Ledger, state_key
 from tests.helpers import Origin, TempDirCase
 from tests.world import CFG, LEDGER, FakeApp, World
 
@@ -52,7 +52,7 @@ class StageCase(TempDirCase):
         self.environ['GITHUB_RUN_ID'] = str(self.run_seq)
         environ = dict(self.environ, ACT=act, PLAN=json.dumps(self.plan_out(**extra)))
         with mock.patch.object(stages, 'set_output'):
-            return stages.queue(environ, session=self.session(), clock=lambda: NOW)
+            return stages.queue(environ, session=self.session(), clock=lambda: NOW, actions=self.world.gh())
 
     def seed_ledger(self, ledger):
         self.world.runs.append({'id': 1, 'repo': LEDGER, 'head_sha': CFG['ledger']['root_sha'], 'name': 'estim-ledger',
@@ -168,6 +168,61 @@ class QueueTest(StageCase):
         self.assertEqual(len(self.world.app_runs(self.sha)), 1)
 
 
+    def review_check(self, state, run=4242, diffhash=None, status='in_progress', conclusion=None):
+        self.world.runs.append({'id': len(self.world.runs) + 5, 'repo': CFG['repository'], 'head_sha': self.sha,
+                                'name': 'estim-review', 'app_id': 77, 'status': status, 'conclusion': conclusion,
+                                'external_id': f'v1|{state}|7|{self.diffhash if diffhash is None else diffhash}|{run}|'})
+
+    def test_a_review_already_running_for_this_commit_is_not_started_twice(self):
+        self.review_check('reviewing')
+        self.world.run_status[4242] = 'in_progress'
+        self.assertEqual(self.queue()['go'], 'false')
+        self.assertEqual(self.queue(act='pause', reason='ratelimit')['go'], 'false')  # nor covered by a pause
+        self.assertEqual(len(self.world.app_runs(self.sha)), 1)
+        self.assertIsNone(self.world.ledger_text())  # nothing reserved
+        self.world.run_status[4242] = 'completed'  # that run is gone: review again
+        self.assertEqual(self.queue()['go'], 'true')
+
+    def test_a_planned_pause_never_covers_a_result(self):
+        self.review_check('done', status='completed', conclusion='success')
+        self.assertEqual(self.queue(act='pause', reason='ratelimit')['go'], 'false')
+        self.assertEqual(self.queue(act='pause', reason='ratelimit', diffhash='')['go'], 'false')  # paused before the diff
+        self.assertEqual(len(self.world.app_runs(self.sha)), 1)
+        self.assertEqual(self.world.latest(self.sha)['conclusion'], 'success')
+
+    def test_the_review_limit_counts_every_review_not_the_kept_history(self):
+        led = Ledger.new('2026-11-18')
+        for k in range(1, 12):
+            led.record_review(7, {'k': k, 'sha': 'a' * 40, 'outcome': 'failure', 'important': 1,
+                                  'at': '2026-11-20T00:00:00Z'})
+        self.seed_ledger(led)
+        out = self.queue()
+        self.assertEqual((out['go'], out['queue']['k']), ('true', 12))
+        self.world.runs = [r for r in self.world.runs if r['repo'] != CFG['repository']]
+        doc = self.world.ledger_text()
+        led = Ledger.parse(json.dumps(doc), doc['cycle'])
+        led.record_review(7, {'k': 12, 'sha': 'a' * 40, 'outcome': 'failure', 'important': 1, 'at': '2026-11-20T00:00:00Z'})
+        self.world.runs = [r for r in self.world.runs if r['repo'] != LEDGER]
+        self.seed_ledger(led)
+        self.assertEqual(self.queue()['go'], 'false')
+        self.assertIn('reached its number of reviews', self.world.latest(self.sha)['output']['title'])
+
+    def test_light_mode_never_moves_a_risk_change_down(self):
+        self.budgets.update(default_author_usd=1.0, when_low='light')
+        self.assertEqual(self.queue(tier='RISK')['go'], 'false')
+        self.assertIn('review budget', self.world.latest(self.sha)['output']['title'])
+
+    def test_a_budget_pause_records_what_the_review_would_charge(self):
+        self.budgets['default_author_usd'] = 0.5
+        self.assertEqual(self.queue(tier='LITE')['go'], 'false')
+        key = state_key(7, self.diffhash)
+        self.assertEqual(self.world.ledger_text()['waits'][key], {'payer': '101', 'lane': False, 'cap': 0.6})
+        self.budgets['default_author_usd'] = 40
+        self.world.runs = [r for r in self.world.runs if r['repo'] != CFG['repository']]
+        self.assertEqual(self.queue(tier='LITE')['go'], 'true')
+        self.assertEqual(self.world.ledger_text()['waits'], {})
+
+
 class PostAndSettleTest(StageCase):
     def run_post(self, review, review_result='success', problems=()):
         queue_out = self.queue()['queue']
@@ -231,6 +286,14 @@ class PostAndSettleTest(StageCase):
         self.assertEqual([(s['file'], s['offset']) for s in led.stickies()], [('src/a.ts', 2)])
         self.assertEqual(led.history(7)[-1]['outcome'], 'failure')
 
+    def test_a_completed_review_resets_the_requeue_count_of_its_diff(self):
+        led = Ledger.new('2026-11-18')
+        led.count_requeue(state_key(7, self.diffhash), '2026-11-26T09:00:00Z')
+        self.seed_ledger(led)
+        _, _, environ = self.run_post(self.complete([]))
+        self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='paused').requeues(state_key(7, self.diffhash))['n'], 1)
+        self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='success').requeues(state_key(7, self.diffhash))['n'], 0)
+
     def test_an_unsettled_reservation_stays_charged_and_a_skipped_review_costs_nothing(self):
         _, q, environ = self.run_post(self.complete([]))
         led = self.settle(environ, COST='', REVIEW_RESULT='cancelled', OUTCOME='paused')
@@ -293,6 +356,15 @@ class PlanTest(StageCase):
         with mock.patch.object(stages, 'parse_iso', lambda text: NOW - 30):
             out, slept = self.plan()
         self.assertEqual(slept, [90.0])
+
+    def test_does_nothing_until_the_gate_is_set_up(self):
+        for missing in ({'app': dict(CFG['app'], id=None)}, {'drift': None},
+                        {'anthropic': dict(CFG['anthropic'], federation_rule_id=None)}):
+            cfg = dict(CFG, **missing)
+            with mock.patch.object(stages, 'configs', lambda: (cfg, TIERS, self.budgets, ACCEPT)):
+                self.world.calls.clear()
+                self.assertEqual(self.plan()[0]['act'], 'none')
+                self.assertEqual(self.world.calls, [])
 
     def test_ignores_forks_other_events_drafts_and_unknown_commits(self):
         self.assertEqual(self.plan(WR_HEAD_REPO_ID='999')[0]['act'], 'none')
