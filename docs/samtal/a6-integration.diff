@@ -1,0 +1,55 @@
+--- a/src/lib/samtal/page.server.ts
++++ b/src/lib/samtal/page.server.ts
+@@ -12,6 +12,7 @@
+ import { normalisePhone } from './call';
+ import { requestTitle } from './inbox.server';
+ import type { Interpretation } from './interpretation';
++import type { Alert, Snapshot } from './monitor/status';
+ 
+ type Db = SupabaseClient<Database>;
+ export const SAMTAL_LINK_SECONDS = 60;
+@@ -45,8 +46,9 @@
+     : { data: [], error: null };
+   if (reviews.error) throw new SamtalPageError('Samtal kunde inte läsas.');
+   const pending = new Set((reviews.data ?? []).map(r => r.call_id));
++  const monitor = owner ? await loadSamtalMonitor(admin, userId, companyId) : null;
+   return {
+-    owner, userId,
++    owner, userId, monitor,
+     settings: settings.data ?? { auto_process: false, retention_days: 30, provider: null, provider_status: 'ej_ansluten', provider_error: null },
+     keys, waiting: waiting.count ?? 0,
+     members: (members.data ?? []).map(m => ({ user_id: m.user_id, role: m.role, name: name.get(m.user_id) ?? 'Namnlös' })),
+@@ -149,3 +151,14 @@
+   if (r.data !== true) throw new SamtalPageError('Samtalet kan inte bedömas. Det kan redan vara bedömt, raderat eller så saknar du behörighet.');
+   return { decision: input.decision, deletion_pending: input.decision === 'private' };
+ }
++
++// A6: owner-only Systemstatus. samtal_monitor_company re-checks ownership in the database with the verified actor id.
++// Counts and alert rule names only. A monitoring failure never blocks the Samtal page: the panel is just omitted.
++export async function loadSamtalMonitor(admin: Db, actorId: string, companyId: string) {
++  try {
++    const { data, error } = await admin.rpc('samtal_monitor_company', { p_actor: actorId, p_company: companyId });
++    const r = data as { status?: string; snapshot?: Snapshot; larm?: Alert[] } | null;
++    if (error || r?.status !== 'ok' || !r.snapshot) return null;
++    return { snapshot: r.snapshot, alerts: Array.isArray(r.larm) ? r.larm.slice(0, 50) : [] };
++  } catch { return null; }
++}
+--- a/src/components/estim/samtal-page.tsx
++++ b/src/components/estim/samtal-page.tsx
+@@ -3,6 +3,7 @@
+ import { useServerFn } from '@tanstack/react-start';
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { Button } from '@/components/ui/button';
++import { SamtalMonitor } from './samtal-monitor';
+ import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraftFn, enrollRingEmployeeFn, revokeRingEnrollmentFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
+ import { CALL_KIND } from '@/lib/samtal/ring/labels';
+ import { SamtalRingSection } from './samtal-ring';
+@@ -70,6 +71,8 @@
+     {failed.slice(0, 3).map(c => <div key={c.id} className="xs muted mt8">{when(c.started_at)} · {name(c.user_id)}: {errorLabel(c.error_code)}</div>)}
+     </div>
+ 
++    {d.owner && d.monitor && <div className="card mt16"><SamtalMonitor snapshot={d.monitor.snapshot} alerts={d.monitor.alerts} connected={d.settings.provider_status === 'ansluten'} /></div>}
++
+     {d.owner && <div className="card mt16"><h3>Inställningar</h3>
+       <label className="row between mt8"><span>Bearbeta samtal automatiskt</span><input type="checkbox" checked={settings.auto_process} onChange={e => setDraft({ ...settings, auto_process: e.target.checked })} /></label>
+       <label className="row between mt8"><span>Radera inspelning och utskrift efter</span>
