@@ -1,0 +1,193 @@
+# The review gate (plan §2, §5): the estim-review check, posted only by the estim-review App.
+#
+# Runs when review-intake completes, and when the scheduled sweeper calls it for a PR. Both run main's workflow and
+# check out main's code (github.sha is main's head for workflow_run and schedule). No workflow_dispatch (V1).
+# Shared rules: ubuntu-24.04; only GitHub's own actions, pinned by SHA; permissions per job; a timeout on every job;
+# contexts reach scripts only through env, never interpolated into run.
+#
+#   plan   read-only token, no secrets: resolves the PR, diffs it, runs main's guards, the drift check and the tier.
+#   queue  env post: stored accepts and stickies, eligibility, budget and reservation; posts in_progress.
+#   review env review, id-token: the engine, with a 10-minute Anthropic token through WIF. Reads no vars or secrets.
+#   post   env post: success or failure only for a complete review of a head that is still current.
+#   ledger env post: settles the reservation in the private ledger, one write at a time.
+#
+# The review and post jobs run only on a first attempt: a re-run keeps the old commit and never gets a token or the
+# App key (V4). Jobs that hold the App key check that it belongs to the App id in .github/review/config.json first.
+name: review
+
+on:
+  workflow_run:
+    workflows: [review-intake]
+    types: [completed]
+  workflow_call:
+    inputs:
+      pr:
+        type: number
+        required: true
+
+permissions: {}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    # The Lovable lane waits 30 minutes for further pushes before it plans.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: read
+    outputs:
+      act: ${{ steps.plan.outputs.act }}
+      pr: ${{ steps.plan.outputs.pr }}
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Plan
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WR_EVENT: ${{ github.event.workflow_run.event }}
+          WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WR_HEAD_REPO_ID: ${{ github.event.workflow_run.head_repository.id }}
+          WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WR_ACTOR_ID: ${{ github.event.workflow_run.actor.id }}
+          WR_ACTOR_LOGIN: ${{ github.event.workflow_run.actor.login }}
+          WR_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          INPUT_PR: ${{ inputs.pr }}
+          MAIN_DIR: ${{ github.workspace }}/main
+        run: python3 -I main/.github/review/review.py plan
+
+  queue:
+    needs: plan
+    if: github.run_attempt == 1 && (needs.plan.outputs.act == 'review' || needs.plan.outputs.act == 'pause')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: post
+    permissions:
+      contents: read
+    # Every ledger write in every workflow waits its turn in this group; queue: max keeps all of them (L3).
+    concurrency:
+      group: estim-review-ledger
+      queue: max
+    outputs:
+      go: ${{ steps.queue.outputs.go }}
+      queue: ${{ steps.queue.outputs.queue }}
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Queue
+        id: queue
+        env:
+          APP_KEY: ${{ secrets.REVIEW_APP_KEY }}
+          ACT: ${{ needs.plan.outputs.act }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: python3 -I main/.github/review/review.py queue
+
+  review:
+    needs: [plan, queue]
+    # Never for a fork, never on a re-run (V4, V10). The sweeper's call runs on schedule.
+    if: >-
+      github.run_attempt == 1 && needs.queue.outputs.go == 'true' && (
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
+       && github.event.workflow_run.head_repository.id == 1462711895)
+      || github.event_name == 'schedule')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: review
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    # One review per PR at a time; a newer one waits instead of cancelling the running one (C12).
+    concurrency:
+      group: review-pr-${{ needs.plan.outputs.pr }}
+    outputs:
+      result: ${{ steps.review.outputs.result }}
+      cost: ${{ steps.review.outputs.cost }}
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Run the review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          QUEUE: ${{ needs.queue.outputs.queue }}
+          MAIN_DIR: ${{ github.workspace }}/main
+        run: python3 -I main/.github/review/review.py review
+
+  post:
+    needs: [plan, queue, review]
+    # always(): a review that failed or was cancelled still ends as a pause, never as a missing verdict. No
+    # concurrency group: a post never waits behind another PR's.
+    if: always() && github.run_attempt == 1 && needs.queue.outputs.go == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: post
+    permissions:
+      contents: read
+    outputs:
+      outcome: ${{ steps.post.outputs.outcome }}
+      important: ${{ steps.post.outputs.important }}
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Post
+        id: post
+        env:
+          APP_KEY: ${{ secrets.REVIEW_APP_KEY }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          QUEUE: ${{ needs.queue.outputs.queue }}
+          REVIEW: ${{ needs.review.outputs.result }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+        run: python3 -I main/.github/review/review.py post
+
+  ledger:
+    needs: [plan, queue, review, post]
+    # A force-cancel skips this job (L4): the reservation then stays charged until the daily recount (V8).
+    if: always() && github.run_attempt == 1 && needs.queue.outputs.go == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: post
+    permissions:
+      contents: read
+    concurrency:
+      group: estim-review-ledger
+      queue: max
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Settle
+        env:
+          APP_KEY: ${{ secrets.REVIEW_APP_KEY }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          QUEUE: ${{ needs.queue.outputs.queue }}
+          REVIEW: ${{ needs.review.outputs.result }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          COST: ${{ needs.review.outputs.cost }}
+          OUTCOME: ${{ needs.post.outputs.outcome }}
+          IMPORTANT: ${{ needs.post.outputs.important }}
+        run: python3 -I main/.github/review/review.py ledger
