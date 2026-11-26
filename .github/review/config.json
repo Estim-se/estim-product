@@ -8,22 +8,22 @@
   "accept_workflow_ref": "Estim-se/estim-product/.github/workflows/review-accept.yml@refs/heads/main",
   "sweeper_workflow": "review-sweeper.yml",
   "app": {
-    "id": null,
+    "id": 5940817,
     "permissions": { "checks": "write", "contents": "read", "metadata": "read", "pull_requests": "read" },
     "repositories": ["estim-product", "review-ledger"]
   },
   "ledger": {
     "repository": "Estim-se/review-ledger",
-    "repository_id": null,
-    "root_sha": null,
+    "repository_id": 1473464014,
+    "root_sha": "746e0f5261976070724dff99b81edba0c5ee28e5",
     "check_name": "estim-ledger"
   },
   "anthropic": {
     "audience": "https://api.anthropic.com",
     "organization_id": "049f5edf-0454-49b1-843a-53d438ed0aa2",
     "workspace_id": "wrkspc_01YW4fxr8ujLtHKBVUUMDtZG",
-    "federation_rule_id": null,
-    "service_account_id": null
+    "federation_rule_id": "fdrl_01R8Lte5WFQQmJU2PbgLkaQX",
+    "service_account_id": "svac_01HFELazvT1YaSfhgPnoajwZ"
   },
   "cli": {
     "version": "2.1.332",
