@@ -16,11 +16,16 @@ import { normalizeMessageId } from "./unipile.ts";
 
 export type InboundLevel = 0 | 1 | 2 | 3;
 
-export interface MailHeader { name: string; value: string }
+export interface MailHeader {
+  name: string;
+  value: string;
+}
 
 export const MAX_REFERENCE_IDS = 20;
-export const FORM_MAIL_WARNING = "Formulärmejl: kontrollera och godkänn avsändarens uppgifter innan du svarar.";
-export const NO_REPLY_LEAD_WARNING = "Mejlet kom från en no-reply-adress utan tydlig kundadress. Kontrollera och lägg till kunduppgifter innan du svarar.";
+export const FORM_MAIL_WARNING =
+  "Formulärmejl: kontrollera och godkänn avsändarens uppgifter innan du svarar.";
+export const NO_REPLY_LEAD_WARNING =
+  "Mejlet kom från en no-reply-adress utan tydlig kundadress. Kontrollera och lägg till kunduppgifter innan du svarar.";
 
 /** Cumulative level flag EMAIL_INBOUND_LEVEL (0–3). Invalid or unset values safely fall back to 0 (off). */
 export function inboundLevel(): InboundLevel {
@@ -33,7 +38,9 @@ export function inboundLevel(): InboundLevel {
 
 /** Appends a warning string to a draft's warnings array once, keeping existing string warnings intact. */
 export function withDraftWarning(warnings: unknown, warning: string): string[] {
-  const list = Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : [];
+  const list = Array.isArray(warnings)
+    ? warnings.filter((w): w is string => typeof w === "string")
+    : [];
   return list.includes(warning) ? list : [...list, warning];
 }
 
@@ -41,7 +48,9 @@ export function withDraftWarning(warnings: unknown, warning: string): string[] {
 
 /** Removes RFC 5322 comments "( ... )" (nested) outside angle-bracketed Message-IDs so commented text is ignored. */
 function stripHeaderComments(value: string): string {
-  let out = "", depth = 0, inAngle = false;
+  let out = "",
+    depth = 0,
+    inAngle = false;
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
     if (inAngle) {
@@ -55,9 +64,13 @@ function stripHeaderComments(value: string): string {
       else if (ch === ")") depth--;
       continue;
     }
-    if (ch === "(") { depth++; out += " "; }
-    else if (ch === "<") { inAngle = true; out += ch; }
-    else out += ch;
+    if (ch === "(") {
+      depth++;
+      out += " ";
+    } else if (ch === "<") {
+      inAngle = true;
+      out += ch;
+    } else out += ch;
   }
   return out;
 }
@@ -66,7 +79,10 @@ function stripHeaderComments(value: string): string {
  * Extracts normalized RFC 5322 Message-IDs (without angle brackets) from a header value, deduplicated in order,
  * capped at `max`. Prefers `<id@domain>` tokens; falls back to a bare `id@domain` if no brackets are present.
  */
-export function extractMessageIds(value: string | null | undefined, max = MAX_REFERENCE_IDS): string[] {
+export function extractMessageIds(
+  value: string | null | undefined,
+  max = MAX_REFERENCE_IDS,
+): string[] {
   if (typeof value !== "string" || !value.trim() || max <= 0) return [];
   const clean = stripHeaderComments(value);
   const seen = new Set<string>();
@@ -74,7 +90,10 @@ export function extractMessageIds(value: string | null | undefined, max = MAX_RE
   const push = (raw: string) => {
     if (ids.length >= max) return;
     const id = normalizeMessageId(raw);
-    if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
   };
   for (const m of clean.matchAll(/<([^<>\s]+@[^<>\s]+)>/g)) push(m[1]!);
   if (ids.length === 0) {
@@ -103,11 +122,17 @@ export function parseThreadHeaders(headers: MailHeader[]): ThreadHeaders {
       messageId = extractMessageIds(h.value, 1)[0] ?? null;
     } else if (name === "in-reply-to") {
       for (const id of extractMessageIds(h.value, MAX_REFERENCE_IDS)) {
-        if (!seenReply.has(id) && inReplyTo.length < MAX_REFERENCE_IDS) { seenReply.add(id); inReplyTo.push(id); }
+        if (!seenReply.has(id) && inReplyTo.length < MAX_REFERENCE_IDS) {
+          seenReply.add(id);
+          inReplyTo.push(id);
+        }
       }
     } else if (name === "references") {
       for (const id of extractMessageIds(h.value, MAX_REFERENCE_IDS)) {
-        if (!seenRef.has(id) && references.length < MAX_REFERENCE_IDS) { seenRef.add(id); references.push(id); }
+        if (!seenRef.has(id) && references.length < MAX_REFERENCE_IDS) {
+          seenRef.add(id);
+          references.push(id);
+        }
       }
     }
   }
@@ -265,22 +290,24 @@ export function decideThreadMatch(args: {
     if (!target) continue;
 
     // Priority 1: Message-ID that WE sent (only the customer received it).
-    const ours = open.find((c) =>
-      c.from === "vv" && (
-        normalizeMessageId(c.rfcMessageId) === target ||
-        normalizeMessageId(c.providerMessageId) === target
-      )
+    const ours = open.find(
+      (c) =>
+        c.from === "vv" &&
+        (normalizeMessageId(c.rfcMessageId) === target ||
+          normalizeMessageId(c.providerMessageId) === target),
     );
     if (ours) return { kind: "join", threadId: ours.threadId, matchedBy: "our_message_id" };
 
     // Priority 2: Customer's own Message-ID — requires matching From: AND senderCheck !== "fail".
     if (args.senderCheck !== "fail" && from) {
-      const theirs = open.find((c) =>
-        c.from === "kund" &&
-        normalizeMessageId(c.rfcMessageId) === target &&
-        (c.customerEmail ?? "").trim().toLowerCase() === from
+      const theirs = open.find(
+        (c) =>
+          c.from === "kund" &&
+          normalizeMessageId(c.rfcMessageId) === target &&
+          (c.customerEmail ?? "").trim().toLowerCase() === from,
       );
-      if (theirs) return { kind: "join", threadId: theirs.threadId, matchedBy: "customer_message_id" };
+      if (theirs)
+        return { kind: "join", threadId: theirs.threadId, matchedBy: "customer_message_id" };
     }
   }
 

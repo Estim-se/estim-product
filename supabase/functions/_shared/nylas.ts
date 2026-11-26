@@ -18,39 +18,72 @@ export function optNumber(name: string, fallback: number): number {
   const n = raw ? Number(raw) : NaN;
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
-const apiBase = () => (Deno.env.get("NYLAS_API_URI")?.trim() || "https://api.eu.nylas.com").replace(/\/$/, "");
+const apiBase = () =>
+  (Deno.env.get("NYLAS_API_URI")?.trim() || "https://api.eu.nylas.com").replace(/\/$/, "");
 
 /** One place for every Nylas call: bearer API key, JSON, hard timeout. */
-export async function nylasFetch(path: string, init: RequestInit & { timeoutMs?: number; auth?: boolean } = {}): Promise<Response> {
+export async function nylasFetch(
+  path: string,
+  init: RequestInit & { timeoutMs?: number; auth?: boolean } = {},
+): Promise<Response> {
   const { timeoutMs = 15_000, auth = true, headers, ...rest } = init;
   return await fetch(`${apiBase()}${path}`, {
     ...rest,
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...(auth ? { Authorization: `Bearer ${env("NYLAS_API_KEY")}` } : {}), ...(headers as Record<string, string> | undefined) },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(auth ? { Authorization: `Bearer ${env("NYLAS_API_KEY")}` } : {}),
+      ...(headers as Record<string, string> | undefined),
+    },
     signal: AbortSignal.timeout(timeoutMs),
   });
 }
 
 /* ---------- Small validators (no zod dependency) ---------- */
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const str = (v: unknown, max: number): string | null => (typeof v === "string" ? v.slice(0, max) : null);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const str = (v: unknown, max: number): string | null =>
+  typeof v === "string" ? v.slice(0, max) : null;
 const needStr = (v: unknown, max: number, what: string): string => {
   if (typeof v !== "string" || !v || v.length > max) throw new Error(`invalid_${what}`);
   return v;
 };
-export interface Addr { name: string | null; email: string }
+export interface Addr {
+  name: string | null;
+  email: string;
+}
 const addrs = (v: unknown, max: number): Addr[] =>
-  Array.isArray(v) ? v.slice(0, max).filter(isObj).map((a) => ({ name: str(a.name, 200), email: str(a.email, 320) ?? "" })).filter((a) => a.email) : [];
+  Array.isArray(v)
+    ? v
+        .slice(0, max)
+        .filter(isObj)
+        .map((a) => ({ name: str(a.name, 200), email: str(a.email, 320) ?? "" }))
+        .filter((a) => a.email)
+    : [];
 
 /* ---------- Webhook security ---------- */
 
 /** Nylas signs the RAW bytes it sent (the gzip bytes if compressed): hex HMAC-SHA256 with the per-webhook secret. */
-export async function verifyNylasSignature(raw: Uint8Array, header: string | null, secret: string): Promise<boolean> {
+export async function verifyNylasSignature(
+  raw: Uint8Array,
+  header: string | null,
+  secret: string,
+): Promise<boolean> {
   if (!header) return false;
-  const hex = header.trim().toLowerCase().replace(/^sha256=/, "");
+  const hex = header
+    .trim()
+    .toLowerCase()
+    .replace(/^sha256=/, "");
   if (!/^[0-9a-f]{64}$/.test(hex)) return false;
   const signature = new Uint8Array(hex.match(/../g)!.map((h) => parseInt(h, 16)));
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
   return await crypto.subtle.verify("HMAC", key, signature, raw as BufferSource); // constant-time
 }
 
@@ -59,7 +92,10 @@ export async function verifyNylasSignature(raw: Uint8Array, header: string | nul
  * refused before reading anything (and the body cancelled); otherwise the stream is read and cancelled as soon as the
  * limit is passed, so a missing or lying content-length cannot make us buffer more than `maxBytes`.
  */
-export async function readBounded(source: Request | Response, maxBytes: number): Promise<Uint8Array | null> {
+export async function readBounded(
+  source: Request | Response,
+  maxBytes: number,
+): Promise<Uint8Array | null> {
   const declared = source.headers.get("content-length");
   if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared.trim()) > maxBytes) {
     await source.body?.cancel().catch(() => undefined);
@@ -73,42 +109,70 @@ export async function readBounded(source: Request | Response, maxBytes: number):
     const { done, value } = await reader.read();
     if (done) break;
     total += value.length;
-    if (total > maxBytes) { await reader.cancel().catch(() => undefined); return null; }
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
     chunks.push(value);
   }
   const out = new Uint8Array(total);
   let offset = 0;
-  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
   return out;
 }
 
 /** Decompress ONLY after the signature has been verified. Capped to stop decompression bombs. */
 export async function gunzip(raw: Uint8Array, maxBytes = 2_000_000): Promise<Uint8Array> {
-  const source = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(raw); c.close(); } });
-  const reader = source.pipeThrough(new DecompressionStream("gzip") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>).getReader();
+  const source = new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(raw);
+      c.close();
+    },
+  });
+  const reader = source
+    .pipeThrough(
+      new DecompressionStream("gzip") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>,
+    )
+    .getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.length;
-    if (total > maxBytes) { await reader.cancel(); throw new Error("payload_too_large"); }
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error("payload_too_large");
+    }
     chunks.push(value);
   }
   const out = new Uint8Array(total);
   let offset = 0;
-  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
   return out;
 }
 
 export async function sha256Hex(value: string): Promise<string> {
-  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(value)))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(value))))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 export function newState(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export interface Notification { type: string; object: Record<string, unknown> }
+export interface Notification {
+  type: string;
+  object: Record<string, unknown>;
+}
 /** Validates the shape of a (verified) Nylas notification. Throws on anything unexpected. */
 export function parseNotification(json: unknown): Notification {
   if (!isObj(json)) throw new Error("invalid_notification");
@@ -117,8 +181,16 @@ export function parseNotification(json: unknown): Notification {
   return { type, object: isObj(data.object) ? data.object : {} };
 }
 export function pointer(object: Record<string, unknown>): { grantId: string; id: string } | null {
-  const g = object.grant_id, i = object.id;
-  return typeof g === "string" && typeof i === "string" && g && i && g.length <= 300 && i.length <= 300 ? { grantId: g, id: i } : null;
+  const g = object.grant_id,
+    i = object.id;
+  return typeof g === "string" &&
+    typeof i === "string" &&
+    g &&
+    i &&
+    g.length <= 300 &&
+    i.length <= 300
+    ? { grantId: g, id: i }
+    : null;
 }
 export function grantOf(object: Record<string, unknown>): string | null {
   const g = object.grant_id;
@@ -140,54 +212,101 @@ export function buildAuthUrl(state: string, provider?: "google" | "microsoft"): 
 /** The one-time code is single use: if this fails the user must start over. */
 export async function exchangeCode(code: string): Promise<string> {
   const res = await nylasFetch("/v3/connect/token", {
-    method: "POST", auth: false,
-    body: JSON.stringify({ client_id: env("NYLAS_CLIENT_ID"), client_secret: env("NYLAS_API_KEY"), grant_type: "authorization_code", code, redirect_uri: env("NYLAS_REDIRECT_URI") }),
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      client_id: env("NYLAS_CLIENT_ID"),
+      client_secret: env("NYLAS_API_KEY"),
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: env("NYLAS_REDIRECT_URI"),
+    }),
   });
   if (!res.ok) throw new Error(`nylas_exchange_${res.status}`); // never log the body
-  const json = await res.json() as { grant_id?: unknown };
-  if (typeof json.grant_id !== "string" || !json.grant_id) throw new Error("nylas_exchange_no_grant");
+  const json = (await res.json()) as { grant_id?: unknown };
+  if (typeof json.grant_id !== "string" || !json.grant_id)
+    throw new Error("nylas_exchange_no_grant");
   return json.grant_id;
 }
 
-export async function getGrant(grantId: string): Promise<{ email: string; provider: "google" | "microsoft" | "imap" }> {
+export async function getGrant(
+  grantId: string,
+): Promise<{ email: string; provider: "google" | "microsoft" | "imap" }> {
   const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`);
   if (!res.ok) throw new Error(`nylas_get_grant_${res.status}`);
-  const json = await res.json() as { data?: { email?: unknown; provider?: unknown } };
+  const json = (await res.json()) as { data?: { email?: unknown; provider?: unknown } };
   const email = typeof json.data?.email === "string" ? json.data.email.trim().toLowerCase() : "";
   const provider = json.data?.provider;
-  if (!email || (provider !== "google" && provider !== "microsoft" && provider !== "imap")) throw new Error("nylas_unsupported_grant");
+  if (!email || (provider !== "google" && provider !== "microsoft" && provider !== "imap"))
+    throw new Error("nylas_unsupported_grant");
   return { email, provider };
 }
 
 /** Revokes the grant at Nylas. true on 2xx or 404 (already gone); false when Nylas could not be reached or refused. */
 export async function revokeGrant(grantId: string): Promise<boolean> {
-  const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }).catch(() => null);
+  const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}`, {
+    method: "DELETE",
+  }).catch(() => null);
   return Boolean(res && (res.ok || res.status === 404));
 }
 
 /* ---------- Reading mail ---------- */
 
 export interface NylasMessage {
-  id: string; thread_id: string | null; subject: string | null;
-  from: Addr[]; to: Addr[]; cc: Addr[]; date: number | null;
-  snippet: string | null; body: string | null; headers: { name: string; value: string }[];
-  attachments: { id: string; filename: string; content_type: string; size: number; is_inline: boolean }[];
+  id: string;
+  thread_id: string | null;
+  subject: string | null;
+  from: Addr[];
+  to: Addr[];
+  cc: Addr[];
+  date: number | null;
+  snippet: string | null;
+  body: string | null;
+  headers: { name: string; value: string }[];
+  attachments: {
+    id: string;
+    filename: string;
+    content_type: string;
+    size: number;
+    is_inline: boolean;
+  }[];
 }
 
 export function parseMessage(data: unknown): NylasMessage {
   if (!isObj(data)) throw new Error("invalid_message");
   const headers = Array.isArray(data.headers)
-    ? data.headers.slice(0, 300).filter(isObj).map((h) => { const name = str(h.name, 200) ?? ""; return { name, value: str(h.value, headerValueLimit(name)) ?? "" }; }).filter((h) => h.name)
+    ? data.headers
+        .slice(0, 300)
+        .filter(isObj)
+        .map((h) => {
+          const name = str(h.name, 200) ?? "";
+          return { name, value: str(h.value, headerValueLimit(name)) ?? "" };
+        })
+        .filter((h) => h.name)
     : [];
   return {
-    id: needStr(data.id, 300, "id"), thread_id: str(data.thread_id, 300), subject: str(data.subject, 1000),
-    from: addrs(data.from, 5), to: addrs(data.to, 100), cc: addrs(data.cc, 100),
+    id: needStr(data.id, 300, "id"),
+    thread_id: str(data.thread_id, 300),
+    subject: str(data.subject, 1000),
+    from: addrs(data.from, 5),
+    to: addrs(data.to, 100),
+    cc: addrs(data.cc, 100),
     date: typeof data.date === "number" ? data.date : null,
-    snippet: str(data.snippet, 2000), body: str(data.body, 2_000_000), headers,
+    snippet: str(data.snippet, 2000),
+    body: str(data.body, 2_000_000),
+    headers,
     attachments: Array.isArray(data.attachments)
-      ? data.attachments.slice(0, 50).filter(isObj).map((a) => ({
-        id: str(a.id, 300) ?? "", filename: str(a.filename, 200) ?? "fil", content_type: str(a.content_type, 100) ?? "", size: typeof a.size === "number" ? a.size : 0, is_inline: a.is_inline === true,
-      })).filter((a) => a.id)
+      ? data.attachments
+          .slice(0, 50)
+          .filter(isObj)
+          .map((a) => ({
+            id: str(a.id, 300) ?? "",
+            filename: str(a.filename, 200) ?? "fil",
+            content_type: str(a.content_type, 100) ?? "",
+            size: typeof a.size === "number" ? a.size : 0,
+            is_inline: a.is_inline === true,
+          }))
+          .filter((a) => a.id)
       : [],
   };
 }
@@ -198,13 +317,17 @@ export async function getMessage(grantId: string, messageId: string): Promise<Ny
   let res = await nylasFetch(`${path}?fields=include_headers`);
   if (res.status === 400) res = await nylasFetch(path); // headers option unsupported -> retry plain
   if (!res.ok) throw new Error(`nylas_get_message_${res.status}`);
-  const json = await res.json() as { data?: unknown };
+  const json = (await res.json()) as { data?: unknown };
   return parseMessage(json.data);
 }
 
 /** Returns a reason to ignore the message, or null to process it. Runs BEFORE anything reaches the AI. */
 export type MailLike = Pick<NylasMessage, "from" | "to" | "cc" | "headers">;
-export function shouldSkip(msg: MailLike, ownEmail: string, watchAddress?: string | null): string | null {
+export function shouldSkip(
+  msg: MailLike,
+  ownEmail: string,
+  watchAddress?: string | null,
+): string | null {
   const from = msg.from[0]?.email.trim().toLowerCase();
   if (!from) return "no_sender";
   if (from === ownEmail.trim().toLowerCase()) return "own_message";
@@ -220,7 +343,8 @@ export function shouldSkip(msg: MailLike, ownEmail: string, watchAddress?: strin
   }
   if (watchAddress) {
     const recipients = [...msg.to, ...msg.cc].map((a) => a.email.trim().toLowerCase());
-    if (!recipients.includes(watchAddress.trim().toLowerCase())) return "not_addressed_to_watch_address";
+    if (!recipients.includes(watchAddress.trim().toLowerCase()))
+      return "not_addressed_to_watch_address";
   }
   return null;
 }
@@ -243,8 +367,15 @@ export function htmlToText(input: string): string {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&")
-    .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /**
@@ -261,7 +392,12 @@ export function stripQuoted(text: string): string {
   const out: string[] = [];
   for (const line of text.split("\n")) {
     if (/^\s*>/.test(line)) break;
-    if (/^\s*(På .{5,120} skrev|On .{5,120} wrote:|-{2,}\s*(Original Message|Ursprungligt meddelande)|Från:|From:)/i.test(line)) break;
+    if (
+      /^\s*(På .{5,120} skrev|On .{5,120} wrote:|-{2,}\s*(Original Message|Ursprungligt meddelande)|Från:|From:)/i.test(
+        line,
+      )
+    )
+      break;
     out.push(line);
   }
   return out.join("\n").trim();
@@ -273,9 +409,19 @@ export function stripQuoted(text: string): string {
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /** Downloads one attachment, at most MAX_ATTACHMENT_BYTES (otherwise throws attachment_too_large; the mail is kept). */
-export async function downloadAttachment(grantId: string, messageId: string, attachmentId: string): Promise<Uint8Array> {
-  const res = await nylasFetch(`/v3/grants/${encodeURIComponent(grantId)}/attachments/${encodeURIComponent(attachmentId)}/download?message_id=${encodeURIComponent(messageId)}`, { timeoutMs: 30_000, headers: { Accept: "*/*" } });
-  if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`nylas_attachment_${res.status}`); } // never log the body
+export async function downloadAttachment(
+  grantId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Uint8Array> {
+  const res = await nylasFetch(
+    `/v3/grants/${encodeURIComponent(grantId)}/attachments/${encodeURIComponent(attachmentId)}/download?message_id=${encodeURIComponent(messageId)}`,
+    { timeoutMs: 30_000, headers: { Accept: "*/*" } },
+  );
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`nylas_attachment_${res.status}`);
+  } // never log the body
   const bytes = await readBounded(res, MAX_ATTACHMENT_BYTES);
   if (!bytes) throw new Error("attachment_too_large");
   return bytes;
@@ -306,7 +452,11 @@ export function extractNylasRfcMessageId(data: unknown): string | null {
 
 /** Sends a reply. `html` must already be safe (see mail-format.ts renderHtml). */
 export async function sendReply(args: {
-  grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;
+  grantId: string;
+  to: { email: string; name?: string | undefined };
+  subject: string;
+  html: string;
+  replyToMessageId?: string | null | undefined;
 }): Promise<string> {
   return (await sendReplyWithMeta(args, false)).id;
 }
@@ -315,20 +465,33 @@ export async function sendReply(args: {
  * Sends a reply via Nylas and optionally resolves its RFC Message-ID (best-effort, never fails the send) so
  * In-Reply-To / References threading (#71) can match customer replies even on Nylas connections.
  */
-export async function sendReplyWithMeta(args: {
-  grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;
-}, resolveRfcId = true): Promise<{ id: string; rfcMessageId: string | null }> {
+export async function sendReplyWithMeta(
+  args: {
+    grantId: string;
+    to: { email: string; name?: string | undefined };
+    subject: string;
+    html: string;
+    replyToMessageId?: string | null | undefined;
+  },
+  resolveRfcId = true,
+): Promise<{ id: string; rfcMessageId: string | null }> {
   const res = await nylasFetch(`/v3/grants/${encodeURIComponent(args.grantId)}/messages/send`, {
-    method: "POST", timeoutMs: 25_000,
+    method: "POST",
+    timeoutMs: 25_000,
     body: JSON.stringify({
-      to: [{ email: args.to.email, ...(args.to.name ? { name: args.to.name.replace(/[\r\n]/g, " ").slice(0, 100) } : {}) }],
+      to: [
+        {
+          email: args.to.email,
+          ...(args.to.name ? { name: args.to.name.replace(/[\r\n]/g, " ").slice(0, 100) } : {}),
+        },
+      ],
       subject: args.subject.replace(/[\r\n]/g, " ").slice(0, 300),
       body: args.html,
       ...(args.replyToMessageId ? { reply_to_message_id: args.replyToMessageId } : {}),
     }),
   });
   if (!res.ok) throw new Error(`nylas_send_${res.status}`); // never log the body
-  const json = await res.json() as { data?: { id?: unknown } };
+  const json = (await res.json()) as { data?: { id?: unknown } };
   const id = json.data?.id;
   if (typeof id !== "string" || !id) throw new Error("nylas_send_no_id");
   let rfcMessageId = extractNylasRfcMessageId(json.data);
@@ -336,7 +499,9 @@ export async function sendReplyWithMeta(args: {
     try {
       const sent = await getMessage(args.grantId, id);
       rfcMessageId = extractNylasRfcMessageId({ headers: sent.headers });
-    } catch { /* best-effort: sending already succeeded */ }
+    } catch {
+      /* best-effort: sending already succeeded */
+    }
   }
   return { id, rfcMessageId };
 }
@@ -347,7 +512,10 @@ export async function sendReplyWithMeta(args: {
 export async function dispatchAiJob(jobId: string): Promise<void> {
   const res = await fetch(`${env("SUPABASE_URL")}/functions/v1/interpret-request`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-estim-job-secret": env("ESTIM_AI_JOB_SECRET") },
+    headers: {
+      "content-type": "application/json",
+      "x-estim-job-secret": env("ESTIM_AI_JOB_SECRET"),
+    },
     body: JSON.stringify({ start_job: jobId }),
     signal: AbortSignal.timeout(15_000),
   });
@@ -355,13 +523,22 @@ export async function dispatchAiJob(jobId: string): Promise<void> {
 }
 
 /** Calls triage-email with the internal key (system mode, see system-auth.ts). The company id comes from our database. */
-export async function callAiFunction<T = unknown>(name: string, companyId: string, body: Record<string, unknown>, timeoutMs = 120_000): Promise<T> {
+export async function callAiFunction<T = unknown>(
+  name: string,
+  companyId: string,
+  body: Record<string, unknown>,
+  timeoutMs = 120_000,
+): Promise<T> {
   const res = await fetch(`${env("SUPABASE_URL")}/functions/v1/${name}`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-internal-key": env("INTERNAL_FUNCTION_KEY"), "x-company-id": companyId },
+    headers: {
+      "content-type": "application/json",
+      "x-internal-key": env("INTERNAL_FUNCTION_KEY"),
+      "x-company-id": companyId,
+    },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`${name}_${res.status}`); // never log the body
-  return await res.json() as T;
+  return (await res.json()) as T;
 }
