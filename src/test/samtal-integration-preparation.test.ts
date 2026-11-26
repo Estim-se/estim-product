@@ -1,7 +1,7 @@
 // Synthetic application flow against actual proposed SQL on disposable PostgreSQL; no production code activation.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 import { proposedIntegration } from './helpers/samtal-integration-proposal';
 import type { Transcript } from '@/lib/samtal/transcript';
 import { readFileSync } from 'node:fs';
@@ -13,7 +13,7 @@ const raw = (classification='jobb') => {
   return { classification, fields:{ customer_name:field('Syntetisk kund'),customer_phone:field('+46709999999'),address:field('Testgatan 1'),place:field('Testort'),
     job_type:field('uttag'),description:field('Ett uttag'),desired_time:field(null),urgent:field(null) },uncertain:[],next_steps:[] };
 };
-describe('Samtal guarded application proposal, synthetic PostgreSQL workflow', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal guarded application proposal, synthetic PostgreSQL workflow', () => {
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, db: LocalSession;
   const files = new Set<string>(); let failedRemoval=false;
   const storage = { async upload(p:string){ files.add(p); },async download(p:string){ if (!files.has(p)) throw new Error('missing_synthetic_audio'); return new Uint8Array([1,2,3]); },

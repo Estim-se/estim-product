@@ -1,7 +1,7 @@
 // Corrected guarantees use V2. All 201 accepted tests still exercise the unchanged V1 candidates separately.
 import { afterAll,beforeAll,beforeEach,describe,expect,it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { disposableSamtalPostgres,scalar,LOCAL_A as A,LOCAL_B as B,LOCAL_OWNER as owner,LOCAL_STAFF as staff,LOCAL_OTHER as other,type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres,LOCAL_POSTGRES_AVAILABLE,scalar,LOCAL_A as A,LOCAL_B as B,LOCAL_OWNER as owner,LOCAL_STAFF as staff,LOCAL_OTHER as other,type LocalSession } from './helpers/samtal-postgres-local';
 import { v2Integration,copyAudioBounded,memorySafeParallelism } from './helpers/samtal-v2-integration';
 import type { ProposedJob } from './helpers/samtal-integration-proposal';
 import { proposedIntegration } from './helpers/samtal-integration-proposal';
@@ -11,7 +11,7 @@ import { readFileSync,writeFileSync } from 'node:fs';import { resolve } from 'no
 const transcript:Transcript={service:'synthetic',model:'synthetic',language:'sv',segments:[{start:0,end:30,speaker:null,text:'Syntetiskt elarbete'}]};
 const raw=(classification='jobb')=>{const field=(value:unknown)=>({value,source:value===null?null:{start:0,end:30}});return {classification,
   fields:{customer_name:field('Synthetic'),customer_phone:field('+46709999999'),address:field('Testgatan'),place:field('Testort'),job_type:field('uttag'),description:field('Ett uttag'),desired_time:field(null),urgent:field(null)},uncertain:[],next_steps:[]};};
-describe('Samtal coordinated V2 corrected guarantees, isolated PostgreSQL',()=>{
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal coordinated V2 corrected guarantees, isolated PostgreSQL',()=>{
   let pg:Awaited<ReturnType<typeof disposableSamtalPostgres>>,x:LocalSession,y:LocalSession;
   let failUpload=false,failRemove=false;const files=new Set<string>();
   const storage={async upload(p:string){if(failUpload)throw new Error('synthetic_upload_failed');files.add(p);},async download(p:string){if(!files.has(p))throw new Error('synthetic_missing');return new Uint8Array([1]);},

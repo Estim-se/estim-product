@@ -10,7 +10,7 @@ import { createHmac } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
 const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff'];
@@ -81,7 +81,7 @@ function signed(body: string, o: { secret?: string; t?: number; sig?: string | n
   return new Request('https://local.invalid/synthetic-webhook', { method: 'POST', headers, body });
 }
 
-describe('Samtal A7 provider framework (unapplied patch)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unapplied patch)', () => {
   let dir = '', fw: M, sec: M, idm: M, rf: M, evm: M, ref: M, ingestMod: M, proc: M, inbox: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession;
   const files = new Map<string, Uint8Array>();
