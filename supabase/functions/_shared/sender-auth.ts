@@ -13,7 +13,8 @@
 
 export type SenderVerdict = "pass" | "fail" | "unknown";
 
-export const UNVERIFIED_WARNING = "Avsändaren kunde inte verifieras. Kontrollera att mejlet verkligen kommer från kunden innan du svarar.";
+export const UNVERIFIED_WARNING =
+  "Avsändaren kunde inte verifieras. Kontrollera att mejlet verkligen kommer från kunden innan du svarar.";
 
 /** EMAIL_SENDER_CHECK=true turns the check on (default off). */
 export function senderCheckEnabled(): boolean {
@@ -22,19 +23,28 @@ export function senderCheckEnabled(): boolean {
 
 /** The draft warnings with the unverified-sender warning appended once (existing warnings are kept). */
 export function withUnverifiedWarning(warnings: unknown): string[] {
-  const list = Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : [];
+  const list = Array.isArray(warnings)
+    ? warnings.filter((w): w is string => typeof w === "string")
+    : [];
   return list.includes(UNVERIFIED_WARNING) ? list : [...list, UNVERIFIED_WARNING];
 }
 
 /** Authentication-Results values are kept up to this length by parseMessage/parseEmail (other headers: 2000). */
 export const AUTH_RESULTS_VALUE_LIMIT = 16_384;
 
-/** The parse limit for one header value: Authentication-Results gets more room, a long one may list many results. */
+/** The parse limit for one header value: Authentication-Results (16 KB) and References (8 KB) get more room. */
 export function headerValueLimit(name: string): number {
-  return name.trim().toLowerCase() === "authentication-results" ? AUTH_RESULTS_VALUE_LIMIT : 2000;
+  const lower = name.trim().toLowerCase();
+  if (lower === "authentication-results") return AUTH_RESULTS_VALUE_LIMIT;
+  if (lower === "references") return 8192;
+  return 2000;
 }
 
-interface AuthResult { method: string; result: string; props: Record<string, string> }
+interface AuthResult {
+  method: string;
+  result: string;
+  props: Record<string, string>;
+}
 
 /**
  * Splits a header value into its ";"-separated parts, dropping RFC 5322 comments "( ... )" (nested too). A ";" or "("
@@ -42,7 +52,9 @@ interface AuthResult { method: string; result: string; props: Record<string, str
  */
 export function splitResults(value: string): string[] {
   const parts: string[] = [];
-  let cur = "", depth = 0, quoted = false;
+  let cur = "",
+    depth = 0,
+    quoted = false;
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
     if (quoted) {
@@ -58,9 +70,13 @@ export function splitResults(value: string): string[] {
       continue;
     }
     if (ch === "(") depth++;
-    else if (ch === '"') { quoted = true; cur += ch; }
-    else if (ch === ";") { parts.push(cur); cur = ""; }
-    else cur += ch;
+    else if (ch === '"') {
+      quoted = true;
+      cur += ch;
+    } else if (ch === ";") {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
   }
   parts.push(cur);
   return parts;
@@ -74,13 +90,15 @@ export function parseAuthResults(value: string): AuthResult[] {
     if (!m) continue;
     const props: Record<string, string> = {};
     // A value is a token or a quoted string (with \" escapes), possibly joined, e.g. "a; b"@evil.se.
-    for (const p of m[3]!.matchAll(/([a-z0-9_.-]+)\s*=\s*((?:"(?:[^"\\]|\\.)*"|[^\s;"])+)/gi)) props[p[1]!.toLowerCase()] = p[2]!.replace(/^"|"$/g, "").trim().toLowerCase();
+    for (const p of m[3]!.matchAll(/([a-z0-9_.-]+)\s*=\s*((?:"(?:[^"\\]|\\.)*"|[^\s;"])+)/gi))
+      props[p[1]!.toLowerCase()] = p[2]!.replace(/^"|"$/g, "").trim().toLowerCase();
     results.push({ method: m[1]!.toLowerCase(), result: m[2]!.toLowerCase(), props });
   }
   return results;
 }
 
-const domainOf = (value: string | undefined): string => (value ?? "").trim().toLowerCase().replace(/^.*@/, "").replace(/\.$/, "");
+const domainOf = (value: string | undefined): string =>
+  (value ?? "").trim().toLowerCase().replace(/^.*@/, "").replace(/\.$/, "");
 
 /** Equal, or one is a subdomain of the other. Both need a dot, so a bare suffix like "com" never aligns. */
 function aligned(a: string, b: string): boolean {
@@ -88,18 +106,31 @@ function aligned(a: string, b: string): boolean {
   return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
 }
 
-export function senderVerdict(headers: { name: string; value: string }[], fromEmail: string): SenderVerdict {
+export function senderVerdict(
+  headers: { name: string; value: string }[],
+  fromEmail: string,
+): SenderVerdict {
   const top = headers.find((h) => h.name.trim().toLowerCase() === "authentication-results");
   if (!top) return "unknown";
   const fromDomain = domainOf(fromEmail);
   if (!fromDomain || !fromEmail.includes("@")) return "unknown";
   const results = parseAuthResults(top.value);
-  const has = (method: string, ...values: string[]) => results.filter((r) => r.method === method && values.includes(r.result));
+  const has = (method: string, ...values: string[]) =>
+    results.filter((r) => r.method === method && values.includes(r.result));
 
   if (has("compauth", "fail").length || has("dmarc", "fail").length) return "fail";
-  if (has("dmarc", "pass", "bestguesspass").some((r) => domainOf(r.props["header.from"]) === fromDomain)) return "pass";
-  const dkim = has("dkim", "pass").some((r) => aligned(domainOf(r.props["header.d"] ?? r.props["header.i"]), fromDomain));
-  const spf = has("spf", "pass").some((r) => aligned(domainOf(r.props["smtp.mailfrom"]), fromDomain));
+  if (
+    has("dmarc", "pass", "bestguesspass").some(
+      (r) => domainOf(r.props["header.from"]) === fromDomain,
+    )
+  )
+    return "pass";
+  const dkim = has("dkim", "pass").some((r) =>
+    aligned(domainOf(r.props["header.d"] ?? r.props["header.i"]), fromDomain),
+  );
+  const spf = has("spf", "pass").some((r) =>
+    aligned(domainOf(r.props["smtp.mailfrom"]), fromDomain),
+  );
   if (dkim || spf) return "pass";
   return "fail"; // also a header cut at AUTH_RESULTS_VALUE_LIMIT: what was cut may have been a fail
 }

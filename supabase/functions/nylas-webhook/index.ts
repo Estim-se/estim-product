@@ -23,13 +23,24 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
-  downloadAttachment, env, errCode, getMessage, grantOf, gunzip, mailText, parseNotification, pointer, readBounded,
-  shouldSkip, verifyNylasSignature,
+  downloadAttachment,
+  env,
+  errCode,
+  getMessage,
+  grantOf,
+  gunzip,
+  mailText,
+  parseNotification,
+  pointer,
+  readBounded,
+  shouldSkip,
+  verifyNylasSignature,
 } from "../_shared/nylas.ts";
 import * as unipile from "../_shared/unipile.ts";
 import { bindUnipileAccount } from "../_shared/connection-binding.ts";
 import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
 import { senderCheckEnabled, senderVerdict } from "../_shared/sender-auth.ts";
+import { inboundLevel, parseThreadHeaders } from "../_shared/mail-identity.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
@@ -37,20 +48,28 @@ const MAX_BODY_CHARS = 8000;
 const MAX_WEBHOOK_BYTES = 1_000_000;
 const UNIPILE_RETRY_DELAYS_MS = [0, 5_000, 20_000];
 
-const text = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain" } });
-const background = (job: Promise<unknown>) => { if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(job); else return job; };
+const text = (body: string, status = 200) =>
+  new Response(body, { status, headers: { "content-type": "text/plain" } });
+const background = (job: Promise<unknown>) => {
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(job);
+  else return job;
+};
 
 function admin(): SupabaseClient {
-  return createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+  return createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "POST" && req.headers.has("unipile-signature")) return await handleUnipile(req);
+  if (req.method === "POST" && req.headers.has("unipile-signature"))
+    return await handleUnipile(req);
 
   // Nylas calls GET once when the webhook is created or reactivated: echo the challenge as plain text.
   if (req.method === "GET") {
     const challenge = new URL(req.url).searchParams.get("challenge");
-    if (!challenge || !/^[A-Za-z0-9._~-]{1,200}$/.test(challenge)) return text("Missing challenge", 400);
+    if (!challenge || !/^[A-Za-z0-9._~-]{1,200}$/.test(challenge))
+      return text("Missing challenge", 400);
     return text(challenge);
   }
   if (req.method !== "POST") return text("Method not allowed", 405);
@@ -59,21 +78,34 @@ Deno.serve(async (req) => {
   const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
   if (!raw) return text("Too large", 413);
   let secret: string;
-  try { secret = env("NYLAS_WEBHOOK_SECRET"); } catch { console.error("[nylas] webhook secret missing"); return text("Not configured", 503); }
-  if (!(await verifyNylasSignature(raw, req.headers.get("x-nylas-signature"), secret))) return text("Invalid signature", 401);
+  try {
+    secret = env("NYLAS_WEBHOOK_SECRET");
+  } catch {
+    console.error("[nylas] webhook secret missing");
+    return text("Not configured", 503);
+  }
+  if (!(await verifyNylasSignature(raw, req.headers.get("x-nylas-signature"), secret)))
+    return text("Invalid signature", 401);
 
   // 2) Only now decompress (if compressed) and validate the shape.
   let event;
   try {
-    const body = req.headers.get("content-encoding")?.toLowerCase().includes("gzip") ? await gunzip(raw) : raw;
+    const body = req.headers.get("content-encoding")?.toLowerCase().includes("gzip")
+      ? await gunzip(raw)
+      : raw;
     event = parseNotification(JSON.parse(new TextDecoder().decode(body)));
-  } catch { return text("ok"); } // signed but unexpected: acknowledge, do not retry
+  } catch {
+    return text("ok");
+  } // signed but unexpected: acknowledge, do not retry
 
   // 3) Process. 503 is one of the few codes Nylas retries; a 500 would NOT be retried.
   try {
     const outcome = await handle(admin(), event.type, event.object);
     if (outcome.retry) return text("retry later", 503);
-    if (outcome.after) await background(outcome.after().catch((e) => console.error("[nylas] ai pipeline failed:", errCode(e))));
+    if (outcome.after)
+      await background(
+        outcome.after().catch((e) => console.error("[nylas] ai pipeline failed:", errCode(e))),
+      );
     return text("ok");
   } catch (e) {
     console.error("[nylas] handler error:", errCode(e));
@@ -81,22 +113,41 @@ Deno.serve(async (req) => {
   }
 });
 
-async function handle(db: SupabaseClient, type: string, object: Record<string, unknown>): Promise<Outcome> {
-  if (type.startsWith("message.created")) { // also covers a truncated variant: we always re-fetch by id
+async function handle(
+  db: SupabaseClient,
+  type: string,
+  object: Record<string, unknown>,
+): Promise<Outcome> {
+  if (type.startsWith("message.created")) {
+    // also covers a truncated variant: we always re-fetch by id
     const ref = pointer(object);
-    return ref ? await processInbound(db, ref.grantId, ref.id, nylasSource(ref.grantId, ref.id)) : {};
+    return ref
+      ? await processInbound(db, ref.grantId, ref.id, nylasSource(ref.grantId, ref.id))
+      : {};
   }
-  if (type === "message.send_success" || type === "message.send_failed" || type === "message.bounce_detected") {
+  if (
+    type === "message.send_success" ||
+    type === "message.send_failed" ||
+    type === "message.bounce_detected"
+  ) {
     const ref = pointer(object);
     if (!ref) return {};
     const status = type === "message.send_success" ? "sent" : "not_sent";
-    const res = await db.rpc("estim_email_status", { p_grant: ref.grantId, p_msg: ref.id, new_status: status, err: status === "not_sent" ? type : null });
+    const res = await db.rpc("estim_email_status", {
+      p_grant: ref.grantId,
+      p_msg: ref.id,
+      new_status: status,
+      err: status === "not_sent" ? type : null,
+    });
     return res.error ? { retry: true } : {};
   }
   if (type === "grant.expired" || type === "grant.deleted") {
     const grantId = grantOf(object);
     if (!grantId) return {};
-    const res = await db.rpc("estim_email_grant_state", { p_grant: grantId, new_state: type === "grant.expired" ? "expired" : "revoked" });
+    const res = await db.rpc("estim_email_grant_state", {
+      p_grant: grantId,
+      new_state: type === "grant.expired" ? "expired" : "revoked",
+    });
     return res.error ? { retry: true } : {};
   }
   return {};
@@ -104,13 +155,21 @@ async function handle(db: SupabaseClient, type: string, object: Record<string, u
 
 /* ---------- Shared inbound path (both providers) ---------- */
 
-interface MailSource { tag: string; fetch(): Promise<unipile.MailMessage>; download(messageId: string, attachmentId: string): Promise<Uint8Array> }
+interface MailSource {
+  tag: string;
+  fetch(): Promise<unipile.MailMessage>;
+  download(messageId: string, attachmentId: string): Promise<Uint8Array>;
+}
 
 const nylasSource = (grantId: string, messageId: string): MailSource => ({
-  tag: "nylas", fetch: () => getMessage(grantId, messageId), download: (m, a) => downloadAttachment(grantId, m, a),
+  tag: "nylas",
+  fetch: () => getMessage(grantId, messageId),
+  download: (m, a) => downloadAttachment(grantId, m, a),
 });
 const unipileSource = (accountId: string, emailId: string): MailSource => ({
-  tag: "unipile", fetch: () => unipile.getEmail(accountId, emailId), download: (m, a) => unipile.downloadAttachment(accountId, m, a),
+  tag: "unipile",
+  fetch: () => unipile.getEmail(accountId, emailId),
+  download: (m, a) => unipile.downloadAttachment(accountId, m, a),
 });
 
 const BOUNCE_ERROR = "Mejlet kunde inte levereras (studsade).";
@@ -119,39 +178,87 @@ const BOUNCE_ERROR = "Mejlet kunde inte levereras (studsade).";
  * email.new.bounce event does this: it says whether the failure is permanent, which the bounce mail itself does not
  * reliably show (a "delayed" report looks like a failure). Bounce mails from mailer-daemon are skipped by shouldSkip.
  */
-async function markBounced(db: SupabaseClient, connectionId: string, messageId: string): Promise<Outcome> {
-  const res = await db.rpc("estim_email_status", { p_grant: connectionId, p_msg: messageId, new_status: "not_sent", err: BOUNCE_ERROR });
+async function markBounced(
+  db: SupabaseClient,
+  connectionId: string,
+  messageId: string,
+): Promise<Outcome> {
+  const res = await db.rpc("estim_email_status", {
+    p_grant: connectionId,
+    p_msg: messageId,
+    new_status: "not_sent",
+    err: BOUNCE_ERROR,
+  });
   return res.error ? { retry: true } : {};
 }
 
-async function processInbound(db: SupabaseClient, connectionId: string, messageId: string, source: MailSource): Promise<Outcome> {
+async function processInbound(
+  db: SupabaseClient,
+  connectionId: string,
+  messageId: string,
+  source: MailSource,
+): Promise<Outcome> {
   // Unknown or inactive connection: ignore without spending an API call.
-  const conn = await db.from("email_connections").select("company_id,email,watch_address,status").eq("grant_id", connectionId).maybeSingle();
+  const conn = await db
+    .from("email_connections")
+    .select("company_id,email,watch_address,status")
+    .eq("grant_id", connectionId)
+    .maybeSingle();
   if (conn.error) return { retry: true };
   if (!conn.data || conn.data.status !== "active") return {};
   const companyId: string = conn.data.company_id;
 
   // Cheap duplicate check BEFORE the provider API call (the pipeline checks again).
-  const dup = await db.from("messages").select("id").eq("company_id", companyId).eq("provider_message_id", messageId).maybeSingle();
+  const dup = await db
+    .from("messages")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("provider_message_id", messageId)
+    .maybeSingle();
   if (dup.data) return {};
 
   let msg: unipile.MailMessage;
-  try { msg = await source.fetch(); } catch { return { retry: true }; }
+  try {
+    msg = await source.fetch();
+  } catch {
+    return { retry: true };
+  }
   const reason = shouldSkip(msg, conn.data.email, conn.data.watch_address);
-  if (reason) { console.info(`[${source.tag}] skipped message:`, reason); return {}; }
+  if (reason) {
+    console.info(`[${source.tag}] skipped message:`, reason);
+    return {};
+  }
 
   const sender = msg.from[0]!;
   const cleaned = mailText(msg.body ?? msg.snippet ?? "", MAX_BODY_CHARS);
   if (!cleaned) return {};
 
-  return await ingestMail(db, {
-    companyId, messageKey: msg.id,
-    fromEmail: sender.email, fromName: sender.name, subject: msg.subject ?? "", text: cleaned, ts: msg.date,
-    attachments: msg.attachments.filter((a) => !a.is_inline).map((a) => ({
-      name: a.filename, type: a.content_type, size: a.size, load: () => source.download(msg.id, a.id),
-    })),
-    ...(senderCheckEnabled() ? { senderCheck: senderVerdict(msg.headers, sender.email) } : {}),
-  }, source.tag);
+  const level = inboundLevel();
+  return await ingestMail(
+    db,
+    {
+      companyId,
+      messageKey: msg.id,
+      fromEmail: sender.email,
+      fromName: sender.name,
+      subject: msg.subject ?? "",
+      text: cleaned,
+      ts: msg.date,
+      attachments: msg.attachments
+        .filter((a) => !a.is_inline)
+        .map((a) => ({
+          name: a.filename,
+          type: a.content_type,
+          size: a.size,
+          load: () => source.download(msg.id, a.id),
+        })),
+      ...(senderCheckEnabled() || level >= 1
+        ? { senderCheck: senderVerdict(msg.headers, sender.email) }
+        : {}),
+      ...(level >= 2 ? { threadHeaders: parseThreadHeaders(msg.headers) } : {}),
+    },
+    source.tag,
+  );
 }
 
 /* ---------- Unipile ---------- */
@@ -160,11 +267,21 @@ async function handleUnipile(req: Request): Promise<Response> {
   const raw = await readBounded(req, MAX_WEBHOOK_BYTES);
   if (!raw) return text("Too large", 413);
   let secret: string;
-  try { secret = env("UNIPILE_WEBHOOK_SECRET"); } catch { console.error("[unipile] webhook secret missing"); return text("Not configured", 503); }
-  if (!(await unipile.verifyUnipileSignature(raw, req.headers.get("unipile-signature"), secret))) return text("Invalid signature", 401);
+  try {
+    secret = env("UNIPILE_WEBHOOK_SECRET");
+  } catch {
+    console.error("[unipile] webhook secret missing");
+    return text("Not configured", 503);
+  }
+  if (!(await unipile.verifyUnipileSignature(raw, req.headers.get("unipile-signature"), secret)))
+    return text("Invalid signature", 401);
 
   let event: unipile.UnipileEvent;
-  try { event = unipile.parseEvent(JSON.parse(new TextDecoder().decode(raw))); } catch { return text("ok"); } // signed but unexpected
+  try {
+    event = unipile.parseEvent(JSON.parse(new TextDecoder().decode(raw)));
+  } catch {
+    return text("ok");
+  } // signed but unexpected
 
   // Answer within Unipile's 5 second limit; the work (and the AI steps) run afterwards with our own retries.
   await background(runWithRetries(event));
@@ -177,16 +294,31 @@ async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
   for (const [i, delay] of UNIPILE_RETRY_DELAYS_MS.entries()) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     try {
-      const outcome = await handleUnipileEvent(db, event, i === UNIPILE_RETRY_DELAYS_MS.length - 1, folderCache);
+      const outcome = await handleUnipileEvent(
+        db,
+        event,
+        i === UNIPILE_RETRY_DELAYS_MS.length - 1,
+        folderCache,
+      );
       if (outcome.retry) continue;
-      if (outcome.after) await outcome.after().catch((e) => console.error("[unipile] ai pipeline failed:", errCode(e)));
+      if (outcome.after)
+        await outcome
+          .after()
+          .catch((e) => console.error("[unipile] ai pipeline failed:", errCode(e)));
       return;
-    } catch (e) { console.error("[unipile] handler error:", errCode(e)); }
+    } catch (e) {
+      console.error("[unipile] handler error:", errCode(e));
+    }
   }
   console.error("[unipile] gave up on event:", event.type); // the event id is in Unipile's dashboard for a replay
 }
 
-async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEvent, isLastAttempt: boolean, folderCache: Map<string, string | null>): Promise<Outcome> {
+async function handleUnipileEvent(
+  db: SupabaseClient,
+  event: unipile.UnipileEvent,
+  isLastAttempt: boolean,
+  folderCache: Map<string, string | null>,
+): Promise<Outcome> {
   const { type, accountId, payload } = event; // event.provider is used for the Gmail label / Outlook folder filter below
   if (type === "email.new") {
     const ref = unipile.emailEventOf(payload);
@@ -195,22 +327,34 @@ async function handleUnipileEvent(db: SupabaseClient, event: unipile.UnipileEven
     if (event.provider === "microsoft") {
       const resolved = await unipile.resolveOutlookInbox(folderCache, accountId);
       if (resolved === "error" && !isLastAttempt) return { retry: true };
-      if (resolved === "error" || resolved === null) console.info("[unipile] outlook inbox unknown:", resolved === "error" ? "lookup_failed" : "no_inbox_role"); // handled as before
+      if (resolved === "error" || resolved === null)
+        console.info(
+          "[unipile] outlook inbox unknown:",
+          resolved === "error" ? "lookup_failed" : "no_inbox_role",
+        ); // handled as before
       else inbox = resolved;
     }
     if (!unipile.shouldHandleEmailEvent(event.provider, ref, inbox)) return {};
     return await processInbound(db, accountId, ref.emailId, unipileSource(accountId, ref.emailId));
   }
-  if (type === "account.add" || type === "account.reconnect") return await bindUnipileAccount(db, type, payload, isLastAttempt);
+  if (type === "account.add" || type === "account.reconnect")
+    return await bindUnipileAccount(db, type, payload, isLastAttempt);
   if (type === "account.status.disconnected" || type === "account.remove") {
     if (!accountId) return {};
-    const res = await db.rpc("estim_email_grant_state", { p_grant: accountId, new_state: type === "account.remove" ? "revoked" : "expired" });
+    const res = await db.rpc("estim_email_grant_state", {
+      p_grant: accountId,
+      new_state: type === "account.remove" ? "revoked" : "expired",
+    });
     return res.error ? { retry: true } : {};
   }
   if (type === "account.status.running") {
     // The provider recovered on its own (e.g. a temporary token problem): an expired connection is usable again.
     if (!accountId) return {};
-    const res = await db.from("email_connections").update({ status: "active", last_event_at: new Date().toISOString() }).eq("grant_id", accountId).eq("status", "expired");
+    const res = await db
+      .from("email_connections")
+      .update({ status: "active", last_event_at: new Date().toISOString() })
+      .eq("grant_id", accountId)
+      .eq("status", "expired");
     return res.error ? { retry: true } : {};
   }
   if (type === "email.new.bounce") {

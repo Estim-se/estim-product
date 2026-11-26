@@ -17,21 +17,22 @@ Unipile. The short rules for code changes are in the root `AGENTS.md` (Email par
 
 ## Components
 
-| File | Role |
-| --- | --- |
-| `supabase/functions/nylas-connect/index.ts` | `start` (create the auth link), `finish` (Nylas: exchange the code; Unipile: report the webhook's result), `disconnect`. Owner of an active company only |
-| `supabase/functions/nylas-webhook/index.ts` | Both providers' webhooks (the name is kept so the deployed URL does not change). Signature check, then routing of events |
-| `supabase/functions/email-send/index.ts` | Sends an approved reply. Internal key only; recipient always from the database; hourly cap `EMAIL_HOURLY_CAP` |
-| `supabase/functions/_shared/mail-provider.ts` | Chooses the provider per connection id: `sendReply`, `revokeConnection` |
-| `supabase/functions/_shared/connection-binding.ts` | The one place for binding a mailbox to a company and for revoking/deleting, used by both providers |
-| `supabase/functions/_shared/inbound-pipeline.ts` | `ingestMail`: duplicate check, flood guard, triage, attachments, `estim_receive`, then the AI job and the notification |
-| `supabase/functions/_shared/nylas.ts` / `unipile.ts` | Provider clients and pure parsers (signature check, event parsing, mail parsing, `readBounded`) |
-| `supabase/functions/_shared/mail-flood.ts` | Pure flood-guard and AI-budget decisions |
-| `supabase/functions/_shared/sender-auth.ts` | Pure sender verdict from the topmost `Authentication-Results` header |
-| `supabase/functions/_shared/notify.ts` | "Draft ready" mail to the company's members (link only, no customer text) |
-| `supabase/functions/_shared/mail-format.ts` | Escaped HTML for outgoing mail, attachment selection |
-| `src/routes/epost-klar.tsx` | Page the browser returns to after sign-in; polls `finish` |
-| `scripts/unipile/` | Local smoke test and webhook receiver against a real Unipile trial account (never deployed) |
+| File                                                 | Role                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/functions/nylas-connect/index.ts`          | `start` (create the auth link), `finish` (Nylas: exchange the code; Unipile: report the webhook's result), `disconnect`. Owner of an active company only      |
+| `supabase/functions/nylas-webhook/index.ts`          | Both providers' webhooks (the name is kept so the deployed URL does not change). Signature check, then routing of events                                      |
+| `supabase/functions/email-send/index.ts`             | Sends an approved reply. Internal key only; recipient always from the database; hourly cap `EMAIL_HOURLY_CAP`                                                 |
+| `supabase/functions/_shared/mail-provider.ts`        | Chooses the provider per connection id: `sendReply`, `revokeConnection`                                                                                       |
+| `supabase/functions/_shared/connection-binding.ts`   | The one place for binding a mailbox to a company and for revoking/deleting, used by both providers                                                            |
+| `supabase/functions/_shared/inbound-pipeline.ts`     | `ingestMail`: duplicate check, flood guard, triage, attachments, `estim_receive`, then the AI job and the notification                                        |
+| `supabase/functions/_shared/nylas.ts` / `unipile.ts` | Provider clients and pure parsers (signature check, event parsing, mail parsing, `readBounded`)                                                               |
+| `supabase/functions/_shared/mail-flood.ts`           | Pure flood-guard and AI-budget decisions                                                                                                                      |
+| `supabase/functions/_shared/sender-auth.ts`          | Pure sender verdict from the topmost `Authentication-Results` header                                                                                          |
+| `supabase/functions/_shared/mail-identity.ts`        | Pure email identity & threading decisions (`EMAIL_INBOUND_LEVEL` 0–3): form/unverified quarantine, RFC 5322 `Message-ID`/`In-Reply-To`/`References` threading |
+| `supabase/functions/_shared/notify.ts`               | "Draft ready" mail to the company's members (link only, no customer text)                                                                                     |
+| `supabase/functions/_shared/mail-format.ts`          | Escaped HTML for outgoing mail, attachment selection                                                                                                          |
+| `src/routes/epost-klar.tsx`                          | Page the browser returns to after sign-in; polls `finish`                                                                                                     |
+| `scripts/unipile/`                                   | Local smoke test and webhook receiver against a real Unipile trial account (never deployed)                                                                   |
 
 ## Connecting a mailbox
 
@@ -78,20 +79,21 @@ which is stored so a bounce can mark the reply as not delivered.
 
 ## Settings
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `EMAIL_PROVIDER` | `nylas` | Provider for new connections (`nylas` or `unipile`) |
-| `UNIPILE_API_KEY`, `UNIPILE_WEBHOOK_SECRET`, `UNIPILE_API_URL`, `UNIPILE_REDIRECT_URI` | – | Unipile |
-| `NYLAS_API_KEY`, `NYLAS_CLIENT_ID`, `NYLAS_WEBHOOK_SECRET`, `NYLAS_API_URI`, `NYLAS_REDIRECT_URI` | – | Nylas |
-| `APP_URL` | – | Links in notifications and the default redirect |
-| `INTERNAL_FUNCTION_KEY`, `ESTIM_AI_JOB_SECRET` | – | Internal calls (email-send, triage system mode, AI job) |
-| `EMAIL_INBOUND_HOURLY_CAP` | 60 | Customer mails per company and hour before the flood guard acts |
-| `EMAIL_FLOOD_GUARD_V2` | off | Store flood mail without AI instead of dropping it (see below) |
-| `EMAIL_INBOUND_HOURLY_HARD_CAP`, `EMAIL_SENDER_HOURLY_CAP`, `EMAIL_SENDER_HOURLY_HARD_CAP` | 300, 10, 30 | Only with `EMAIL_FLOOD_GUARD_V2` |
-| `AI_DAILY_CAP`, `AI_UNKNOWN_SENDER_SHARE`, `AI_ENABLED` | 150, 0.6, on | AI budget per company and day (all channels count; only email checks it). The share for unknown senders applies with `EMAIL_FLOOD_GUARD_V2` |
-| `EMAIL_SENDER_CHECK` | off | Sender verification with draft warning |
-| `NOTIFY_ENABLED`, `NOTIFY_HOURLY_CAP` | on, 20 | Notification mails |
-| `EMAIL_HOURLY_CAP` | 30 | Outgoing replies per company and hour |
+| Setting                                                                                           | Default      | Purpose                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EMAIL_PROVIDER`                                                                                  | `nylas`      | Provider for new connections (`nylas` or `unipile`)                                                                                           |
+| `UNIPILE_API_KEY`, `UNIPILE_WEBHOOK_SECRET`, `UNIPILE_API_URL`, `UNIPILE_REDIRECT_URI`            | –            | Unipile                                                                                                                                       |
+| `NYLAS_API_KEY`, `NYLAS_CLIENT_ID`, `NYLAS_WEBHOOK_SECRET`, `NYLAS_API_URI`, `NYLAS_REDIRECT_URI` | –            | Nylas                                                                                                                                         |
+| `APP_URL`                                                                                         | –            | Links in notifications and the default redirect                                                                                               |
+| `INTERNAL_FUNCTION_KEY`, `ESTIM_AI_JOB_SECRET`                                                    | –            | Internal calls (email-send, triage system mode, AI job)                                                                                       |
+| `EMAIL_INBOUND_HOURLY_CAP`                                                                        | 60           | Customer mails per company and hour before the flood guard acts                                                                               |
+| `EMAIL_FLOOD_GUARD_V2`                                                                            | off          | Store flood mail without AI instead of dropping it (see below)                                                                                |
+| `EMAIL_INBOUND_HOURLY_HARD_CAP`, `EMAIL_SENDER_HOURLY_CAP`, `EMAIL_SENDER_HOURLY_HARD_CAP`        | 300, 10, 30  | Only with `EMAIL_FLOOD_GUARD_V2`                                                                                                              |
+| `AI_DAILY_CAP`, `AI_UNKNOWN_SENDER_SHARE`, `AI_ENABLED`                                           | 150, 0.6, on | AI budget per company and day (all channels count; only email checks it). The share for unknown senders applies with `EMAIL_FLOOD_GUARD_V2`   |
+| `EMAIL_SENDER_CHECK`                                                                              | off          | Sender verification with draft warning                                                                                                        |
+| `EMAIL_INBOUND_LEVEL`                                                                             | `0`          | Cumulative identity/threading level (`0` off, `1` form/unverified quarantine, `2` + Message-ID threading, `3` + no silent drops & skip audit) |
+| `NOTIFY_ENABLED`, `NOTIFY_HOURLY_CAP`                                                             | on, 20       | Notification mails                                                                                                                            |
+| `EMAIL_HOURLY_CAP`                                                                                | 30           | Outgoing replies per company and hour                                                                                                         |
 
 Numbers are read with `optNumber`: an empty secret falls back to the default.
 

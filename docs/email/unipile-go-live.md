@@ -11,9 +11,9 @@ Never put secret values, account ids or real mail addresses in this file or in t
 Merging does not switch anything on: `EMAIL_PROVIDER` stays `nylas` until step 4. It does ship the approved fixes that
 also apply to Nylas (revoke rule, disconnect, `sent_at`, forwarded mail, notifications).
 
-- [ ] All tests green: `deno test --allow-env supabase/functions/_shared/`, `deno check` on the email functions,
+- [x] All tests green: `deno test --allow-env supabase/functions/_shared/`, `deno check` on the email functions,
       `npx tsc --noEmit`, `npx vitest run` (tender totals unchanged, all WhatsApp and email tests green), `npx vite build`.
-- [ ] `EMAIL_FLOOD_GUARD_V2` and `EMAIL_SENDER_CHECK` are not set (off).
+- [x] `EMAIL_FLOOD_GUARD_V2` and `EMAIL_SENDER_CHECK` are not set (off).
 
 ## 2. Live checks with the trial account (done 2026-11-25 unless marked)
 
@@ -27,45 +27,45 @@ also apply to Nylas (revoke rule, disconnect, `sent_at`, forwarded mail, notific
 - [x] Gmail: one event per label; only `INBOX` is handled.
 - [x] Attachments download with the mail-only scopes (Gmail and Outlook).
 - [x] A reply sent through the API lands in the same conversation; the answer carries the RFC `message_id`.
-- [ ] **Next day:** both test accounts still `running` and `smoke.ts emails` still works (proves the connection renews
+- [x] **Next day (2026-11-26):** both test accounts still `running` and `smoke.ts emails` still works (proves the connection renews
       without `offline_access` in our scope list). If Outlook has expired, ask Unipile how to request `offline_access`.
-- [ ] Remove the test accounts (`smoke.ts delete`) and remove Unipile's access in the test Google/Microsoft accounts.
+- [x] Remove the test accounts (`smoke.ts delete`) and remove Unipile's access in the test Google/Microsoft accounts (2026-11-26).
 
 ## 3. Configuration
 
 In Lovable (Secrets) / Supabase:
 
-- [ ] `UNIPILE_API_KEY`: a production Account API Key (not the trial key).
-- [ ] `UNIPILE_WEBHOOK_SECRET`: the production endpoint's secret (step below).
-- [ ] `UNIPILE_REDIRECT_URI` if `/epost-klar` is not at `${APP_URL}/epost-klar`; `APP_URL` correct.
-- [ ] `UNIPILE_API_URL` only if Unipile gives a dedicated API host.
+- [ ] `UNIPILE_API_KEY`: a production Account API Key (not the trial key). _(Trial key set 2026-11-26 for smoke test/demo; replace with the company production account key.)_
+- [ ] `UNIPILE_WEBHOOK_SECRET`: the production endpoint's secret (step below). _(Trial endpoint secret set 2026-11-26; replace when moving to the company account.)_
+- [x] `UNIPILE_REDIRECT_URI` if `/epost-klar` is not at `${APP_URL}/epost-klar`; `APP_URL` correct. _(Verified 2026-11-26.)_
+- [x] `UNIPILE_API_URL` only if Unipile gives a dedicated API host. _(Verified 2026-11-26: standard v2 host, not needed.)_
 
 In Unipile's dashboard:
 
 - [ ] Webhook endpoint `https://<project>.supabase.co/functions/v1/nylas-webhook` with the events `email.new`,
       `email.new.bounce`, `account.add`, `account.reconnect`, `account.status.disconnected`, `account.status.running`,
-      `account.remove`. Copy its secret into `UNIPILE_WEBHOOK_SECRET`.
+      `account.remove`. Copy its secret into `UNIPILE_WEBHOOK_SECRET`. _(Configured on trial account 2026-11-26; recreate on the company production account.)_
 - [ ] Two-factor login for every member, as few members as possible. Rotate the API key when someone leaves (the key
       reads every connected mailbox of every company; same for `NYLAS_API_KEY`).
 - [ ] Data processing agreement in writing: where mail data is processed and stored (should be the EU).
 
 Via Lovable:
 
-- [ ] The `mail-attachments` bucket has `public = false`, and its `storage.objects` policy requires
-      `(storage.foldername(name))[1] = public.my_company()::text`.
+- [x] The `mail-attachments` bucket has `public = false`, and its `storage.objects` policy requires
+      `(storage.foldername(name))[1] = public.my_company()::text`. _(Verified 2026-11-26: `public = false`, read-only policy `mail_attachments_read`.)_
 
 ## 4. Switch on
 
-- [ ] Set `EMAIL_PROVIDER=unipile`. Only NEW connections use Unipile; existing Nylas connections are unchanged.
+- [x] Set `EMAIL_PROVIDER=unipile`. Only NEW connections use Unipile; existing Nylas connections are unchanged. _(Set 2026-11-26 on trial account for smoke test/demo.)_
 - [ ] Connect your own test company in the app: consent screen mail only; `/epost-klar` shows the connected address;
-      `email_connections.grant_id` starts with `acc_`.
-- [ ] Send a test mail with a PDF: a draft appears with the attachment, and one notification mail arrives.
-- [ ] Approve and send the reply: it lands in the same conversation, delivery status "sent".
-- [ ] Disconnect: the account disappears in Unipile's dashboard and the app shows the mailbox as disconnected.
+      `email_connections.grant_id` starts with `acc_`. _(2026-11-26: mail-only consent, `account.add` 200 and connected mailbox verified; re-check `/epost-klar` after publishing PR #58 frontend changes.)_
+- [x] Send a test mail with a PDF: a draft appears with the attachment, and one notification mail arrives. _(Verified 2026-11-26.)_
+- [x] Approve and send the reply: it lands in the same conversation, delivery status "sent". _(Verified 2026-11-26.)_
+- [x] Disconnect: the account disappears in Unipile's dashboard and the app shows the mailbox as disconnected. _(Verified 2026-11-26: `account.status.disconnected` + `account.remove` 200.)_
 
 ## 5. Monitoring
 
-Log alerts in Supabase on:
+Log alerts in Supabase on _(2026-11-26: saved ClickHouse query `Email / Unipile alerts` in Supabase Logs Explorer; automated alerts pending paid plan)_:
 
 - [ ] `[unipile] gave up on event` (replay the event from Unipile's dashboard).
 - [ ] `[mail] revoke failed` and `[mail] disconnect failed` (a provider may keep mailbox access).
