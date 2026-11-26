@@ -697,6 +697,7 @@ export type Database = {
           id: string
           in_reply_to: string | null
           provider_message_id: string | null
+          rfc_message_id: string | null
           sent_at: string
           text: string
           thread_id: string
@@ -717,6 +718,7 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           provider_message_id?: string | null
+          rfc_message_id?: string | null
           sent_at?: string
           text: string
           thread_id: string
@@ -737,6 +739,7 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           provider_message_id?: string | null
+          rfc_message_id?: string | null
           sent_at?: string
           text?: string
           thread_id?: string
@@ -1910,9 +1913,11 @@ export type Database = {
           job: string
           last_customer_wa_at: string | null
           last_message_at: string
+          pending_sender: Json | null
           place: string | null
           read: boolean
           status: string
+          suggested_merge_thread_id: string | null
           updated_at: string
           whatsapp_auto_override: boolean | null
           why: string
@@ -1930,9 +1935,11 @@ export type Database = {
           job: string
           last_customer_wa_at?: string | null
           last_message_at?: string
+          pending_sender?: Json | null
           place?: string | null
           read?: boolean
           status?: string
+          suggested_merge_thread_id?: string | null
           updated_at?: string
           whatsapp_auto_override?: boolean | null
           why?: string
@@ -1950,9 +1957,11 @@ export type Database = {
           job?: string
           last_customer_wa_at?: string | null
           last_message_at?: string
+          pending_sender?: Json | null
           place?: string | null
           read?: boolean
           status?: string
+          suggested_merge_thread_id?: string | null
           updated_at?: string
           whatsapp_auto_override?: boolean | null
           why?: string
@@ -1970,6 +1979,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "threads_suggested_merge_thread_id_fkey"
+            columns: ["suggested_merge_thread_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
             referencedColumns: ["id"]
           },
         ]
@@ -1993,6 +2009,16 @@ export type Database = {
         Returns: string
       }
       estim_approve: { Args: { tid: string }; Returns: string }
+      estim_approve_email_sender: {
+        Args: {
+          edited_email?: string
+          edited_name?: string
+          edited_phone?: string
+          tid: string
+          use_customer_id?: string
+        }
+        Returns: Json
+      }
       estim_begin_tender_analysis: { Args: { tid: string }; Returns: string }
       estim_claim_job: { Args: { jid: string }; Returns: boolean }
       estim_claim_tender_document: {
@@ -2084,6 +2110,10 @@ export type Database = {
         Args: { drop_id: string; keep_id: string }
         Returns: string
       }
+      estim_merge_email_thread: {
+        Args: { source_tid: string; target_tid: string }
+        Returns: Json
+      }
       estim_norm_phone: { Args: { p: string }; Returns: string }
       estim_onboard: { Args: { payload: Json }; Returns: string }
       estim_prepare_auto_send: { Args: { jid: string }; Returns: string }
@@ -2095,6 +2125,10 @@ export type Database = {
       }
       estim_receive: {
         Args: { actor?: string; cid: string; payload: Json }
+        Returns: Json
+      }
+      estim_receive_email: {
+        Args: { cid: string; payload: Json }
         Returns: Json
       }
       estim_request: { Args: { payload: Json }; Returns: string }
