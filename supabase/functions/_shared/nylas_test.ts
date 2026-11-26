@@ -8,7 +8,7 @@ async function assertRejects(fn: () => Promise<unknown>, _cls: unknown, includes
   throw new Error("expected rejection");
 }
 import {
-  errCode, gunzip, htmlToText, isNoReplySender, mailText, parseMessage, parseNotification, pointer, readBounded, shouldSkip, stripQuoted, verifyNylasSignature,
+  errCode, extractNylasRfcMessageId, gunzip, htmlToText, isNoReplySender, mailText, parseMessage, parseNotification, pointer, readBounded, shouldSkip, stripQuoted, verifyNylasSignature,
   type NylasMessage,
 } from "./nylas.ts";
 
@@ -131,4 +131,11 @@ Deno.test("mail text: quoted history is cut, but a mail that is only a forward i
   assertEquals(mailText("> bara citat", 8000), "> bara citat");
   assertEquals(mailText("", 8000), "");
   assertEquals(mailText("x".repeat(9000), 8000).length, 8000);
+});
+
+Deno.test("extractNylasRfcMessageId reads direct fields or Message-ID header and rejects invalid values", () => {
+  assertEquals(extractNylasRfcMessageId({ message_id: "<abc123@mail.foretag.se>" }), "abc123@mail.foretag.se");
+  assertEquals(extractNylasRfcMessageId({ headers: [{ name: "Subject", value: "Re: Hej" }, { name: "Message-ID", value: "<hdr-1@foretag.se>" }] }), "hdr-1@foretag.se");
+  assertEquals(extractNylasRfcMessageId({ id: "opaque-nylas-id" }), null);
+  assertEquals(extractNylasRfcMessageId(null), null);
 });

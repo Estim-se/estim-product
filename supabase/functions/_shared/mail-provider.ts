@@ -3,8 +3,8 @@
 // (Unipile account ids start with "acc_", Nylas grant ids are UUIDs). Both can therefore run side by side
 // while companies reconnect, and switching back only means changing the secret.
 
-import { revokeGrant, sendReply as nylasSendReply } from "./nylas.ts";
-import { deleteAccount, isUnipileAccount, sendEmail } from "./unipile.ts";
+import { revokeGrant, sendReply as nylasSendReply, sendReplyWithMeta as nylasSendReplyWithMeta } from "./nylas.ts";
+import { deleteAccount, isUnipileAccount, normalizeMessageId, sendEmail } from "./unipile.ts";
 
 export type ProviderName = "nylas" | "unipile";
 
@@ -24,6 +24,17 @@ export async function sendReply(args: {
     return await sendEmail({ accountId: args.grantId, to: args.to, subject: args.subject, html: args.html, replyToId: args.replyToMessageId ?? null });
   }
   return await nylasSendReply(args);
+}
+
+/** Sends a reply through the connection's own provider and returns both provider id and RFC Message-ID (for threading). */
+export async function sendReplyWithRfcId(args: {
+  grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;
+}): Promise<{ id: string; rfcMessageId: string | null }> {
+  if (providerOf(args.grantId) === "unipile") {
+    const id = await sendEmail({ accountId: args.grantId, to: args.to, subject: args.subject, html: args.html, replyToId: args.replyToMessageId ?? null });
+    return { id, rfcMessageId: normalizeMessageId(id) };
+  }
+  return await nylasSendReplyWithMeta(args, true);
 }
 
 /**

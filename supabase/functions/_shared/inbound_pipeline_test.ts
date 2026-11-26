@@ -415,3 +415,46 @@ Deno.test("level 3 (Step 10): no-reply lead without email is quarantined instead
   const skipAudit = skipped.rows("audit_log").filter((r) => r.event === "Mejl hoppat över");
   assertEquals(skipAudit.map((r) => r.after), [{ reason: "triage_other", provider: "nylas" }]);
 });
+
+Deno.test("issue #62 scenario 1: fake form mail naming a WhatsApp customer's phone never fills in her email", async () => {
+  const db = pipelineDb({
+    customers: [{ id: "cu_wa", company_id: COMPANY, name: "Anna", phone: "0701234567", email: null }],
+    threads: [{ id: "t_wa", company_id: COMPANY, channel: "wa", customer_id: "cu_wa", status: "svar" }],
+  });
+  const spoofForm = { category: "forfragan", is_form_mail: true, customer: { name: "Anna", email: "attacker@example.com", phone: "0701234567" } };
+  await withEnv({ EMAIL_INBOUND_LEVEL: "1" }, db, () =>
+    run(db, mail({ fromEmail: "attacker@own-domain.example", fromName: "Attacker", senderCheck: "pass" })), spoofForm
+  );
+  assert(!db.calls.some((c) => c.startsWith("rpc.estim_receive(")), "must not call estim_receive");
+  assertEquals(db.rows("customers")[0]!.email, null);
+  const qThread = db.rows("threads").find((t) => t.id === "et1")!;
+  assertEquals(qThread.pending_sender, { name: "Anna", email: "attacker@example.com", phone: "0701234567", source: "form" });
+});
+
+Deno.test("issue #71 checks: References joins Nylas rfc_message_id; provider thread_id alone never joins", async () => {
+  const db = pipelineDb({
+    customers: [{ id: "cu1", company_id: COMPANY, email: "anna@example.com" }],
+    threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "skickad" }],
+    // Nylas sent reply: provider_message_id is Nylas opaque id, rfc_message_id holds the real RFC Message-ID.
+    messages: [{ id: "nylas_sent", company_id: COMPANY, channel: "email", from: "vv", thread_id: "t0", provider_message_id: "nylas-opaque-99", rfc_message_id: "nylas-rfc-99@foretag.se", created_at: recent() }],
+  });
+  // 1. Reply citing our Nylas rfc_message_id via References (no In-Reply-To) joins t0
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
+    run(db, mail({
+      messageKey: "m_ref", fromEmail: "anna@example.com",
+      threadHeaders: { messageId: "anna-ref-reply@example.com", inReplyTo: [], references: ["older@example.com", "nylas-rfc-99@foretag.se"] },
+    }))
+  );
+  const joinCall = db.calls.find((c) => c.includes('"provider_message_id":"m_ref"') && c.startsWith("rpc.estim_receive_email("))!;
+  assert(joinCall.includes('"mode":"join_thread"') && joinCall.includes('"target_thread_id":"t0"'), joinCall);
+
+  // 2. A fresh mail from Anna with NO matching headers never joins t0 (even if the provider grouped them under one thread_id)
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
+    run(db, mail({
+      messageKey: "m_fresh", fromEmail: "anna@example.com",
+      threadHeaders: { messageId: "anna-new-job@example.com", inReplyTo: [], references: [] },
+    }))
+  );
+  const newCall = db.calls.find((c) => c.includes('"provider_message_id":"m_fresh"') && c.startsWith("rpc.estim_receive_email("))!;
+  assert(newCall.includes('"mode":"new_thread"') && newCall.includes('"suggested_merge_thread_id":"t0"'), newCall);
+});

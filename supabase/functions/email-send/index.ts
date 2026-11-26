@@ -13,7 +13,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import { json } from "../_shared/cors.ts";
 import { env, optNumber } from "../_shared/nylas.ts";
-import { sendReply } from "../_shared/mail-provider.ts";
+import { sendReplyWithRfcId } from "../_shared/mail-provider.ts";
 import { renderHtml } from "../_shared/mail-format.ts";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -72,10 +72,14 @@ Deno.serve(async (req) => {
   const base = String(parent.data?.email_subject ?? thread.data.job ?? "Din förfrågan").trim() || "Din förfrågan";
   const subject = /^(re|sv):/i.test(base) ? base : `Re: ${base}`;
   try {
-    const id = await sendReply({
+    const { id, rfcMessageId } = await sendReplyWithRfcId({
       grantId: mailbox, to: { email: to, ...(customer.data?.name ? { name: customer.data.name } : {}) },
       subject, html: renderHtml(text), replyToMessageId: parent.data?.provider_message_id ?? null,
     });
+    if (rfcMessageId) {
+      const savedRfc = await db.from("messages").update({ rfc_message_id: rfcMessageId }).eq("id", messageId).eq("company_id", companyId);
+      if (savedRfc.error) console.error("[email-send] could not save rfc_message_id");
+    }
     return json({ ok: true, provider_message_id: id });
   } catch (e) {
     console.error("[email-send] send failed:", e instanceof Error ? e.message : "unknown"); // never log mail content

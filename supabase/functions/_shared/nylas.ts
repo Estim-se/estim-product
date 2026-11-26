@@ -281,10 +281,43 @@ export async function downloadAttachment(grantId: string, messageId: string, att
   return bytes;
 }
 
+/** Extracts a normalized RFC Message-ID from a Nylas send/message data object (field or headers), if present. */
+export function extractNylasRfcMessageId(data: unknown): string | null {
+  if (!isObj(data)) return null;
+  const norm = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    const id = v.trim().replace(/^<|>$/g, "").trim();
+    return id && id.length <= 500 && /^[^\s<>]+@[^\s<>]+$/.test(id) ? id : null;
+  };
+  for (const key of ["message_id", "rfc_message_id", "header_message_id"] as const) {
+    const direct = norm(data[key]);
+    if (direct) return direct;
+  }
+  if (Array.isArray(data.headers)) {
+    for (const h of data.headers) {
+      if (isObj(h) && typeof h.name === "string" && h.name.trim().toLowerCase() === "message-id") {
+        const fromHeader = norm(h.value);
+        if (fromHeader) return fromHeader;
+      }
+    }
+  }
+  return null;
+}
+
 /** Sends a reply. `html` must already be safe (see mail-format.ts renderHtml). */
 export async function sendReply(args: {
   grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;
 }): Promise<string> {
+  return (await sendReplyWithMeta(args, false)).id;
+}
+
+/**
+ * Sends a reply via Nylas and optionally resolves its RFC Message-ID (best-effort, never fails the send) so
+ * In-Reply-To / References threading (Step 9 / #71) can match customer replies even on Nylas connections.
+ */
+export async function sendReplyWithMeta(args: {
+  grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;
+}, resolveRfcId = true): Promise<{ id: string; rfcMessageId: string | null }> {
   const res = await nylasFetch(`/v3/grants/${encodeURIComponent(args.grantId)}/messages/send`, {
     method: "POST", timeoutMs: 25_000,
     body: JSON.stringify({
@@ -298,7 +331,14 @@ export async function sendReply(args: {
   const json = await res.json() as { data?: { id?: unknown } };
   const id = json.data?.id;
   if (typeof id !== "string" || !id) throw new Error("nylas_send_no_id");
-  return id;
+  let rfcMessageId = extractNylasRfcMessageId(json.data);
+  if (resolveRfcId && !rfcMessageId) {
+    try {
+      const sent = await getMessage(args.grantId, id);
+      rfcMessageId = extractNylasRfcMessageId({ headers: sent.headers });
+    } catch { /* best-effort: sending already succeeded */ }
+  }
+  return { id, rfcMessageId };
 }
 
 /* ---------- Calling the existing AI edge functions ---------- */
