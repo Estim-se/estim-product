@@ -37,6 +37,19 @@ use the editor.
 - After every merge: run the tender tests locally (totals unchanged) and all WhatsApp and email tests.
 - Tests run the same in every terminal: `vitest.config.ts` normalises a lower-case Windows drive letter, so `vi.mock` applies; never trust a local result where mocks did not apply.
 
+## Pull requests and the review gate
+
+- Every pull request targets `main`, so the gate reviews it; don't stack pull requests on other branches. Independent
+  pull requests can be open side by side; work that depends on an open pull request waits until it has merged.
+- Merge only after the user approves, never with `--admin`. Until the repo allows auto-merge (after the rulesets), use
+  `gh pr merge --merge`; after that, `gh pr merge --auto --merge`, so GitHub merges once the required checks and
+  reviews pass.
+- Read review findings with `gh pr checks` and the `estim-review` check's details, as the fix-review-findings skill
+  does. Only the estim-review App's check counts; PR comments are not findings.
+- A paused `estim-review` (budget, too large and the like) is not a problem in the code. Don't change code to get
+  past it; tell the user the reason.
+- A schema change is SQL in a docs pull request (`docs/**/*.sql`), reviewed before anyone asks Lovable to apply it.
+
 ## App structure
 - Refresh incoming AI interpretation before drafting; derive estimate ranges in code so follow-ups use current job details and catalog prices.
 - Save company WhatsApp settings through authenticated RLS with a returned row; grant only the setting column and expose structural error codes, so denied/no-row writes cannot appear successful.

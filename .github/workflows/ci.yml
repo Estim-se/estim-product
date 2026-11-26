@@ -17,7 +17,8 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main, lovable]
+    # lovable-sync* branches are where Lovable's back-merges land (C16); they get the same checks.
+    branches: [main, lovable, 'lovable-sync*']
   workflow_dispatch:
 
 permissions:
@@ -194,6 +195,11 @@ jobs:
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node_modules/.bin/vitest run
+
+      # The review gate's engine (.github/review/): Python's standard library only, nothing to install.
+      - name: Review gate tests
+        if: ${{ !cancelled() }}
+        run: python3 -I -m unittest discover -s .github/review/tests -t .github/review
 
       - name: Build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
