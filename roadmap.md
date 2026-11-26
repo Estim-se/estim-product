@@ -1,7 +1,8 @@
 # Prototype rebuild
 
 - [x] Samtal Priority 1 preparation: schema-compatible cleanup error handling; 110 existing + 13 new tests pass. SQL drafts are documentation only; no live changes or deployment.
-- [ ] Samtal Priority 1 atomic guarantees: terminal deletion, stale-worker fencing and durable orphan cleanup remain blocked on separately approved/applied Samtal SQL and guarded handoff design; four synthetic failures remain reproduced. Do not proceed to Priority 2.
+- [x] Samtal Priority 1 local database design: coordinated documentation SQL and rollout/rollback plan; all four former TODOs execute locally; all 123 previous + 44 new tests pass (167 total, no skips). Production code/schema unchanged.
+- [ ] Samtal Priority 1 live readiness: independent-session Postgres races, real Storage/dispatch/staging verification and separately approved live migration/integration remain required. PGlite proves local SQL invariants, not production concurrency; do not proceed to Priority 2.
 
 - [x] Database-only receipt migration: restored the empty-email guard, removed fixture tests, kept cleanup unchanged and applied one migration. Read-only checks confirm three duplicates merged, no remaining duplicate pairs or orphan threads, and unchanged service-role-only execution grants; no app changes or publication.
 

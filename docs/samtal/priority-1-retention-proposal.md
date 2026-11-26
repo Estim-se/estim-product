@@ -2,6 +2,10 @@
 
 **Documentation only. Not a migration. Not approved for execution.**
 
+The coordinated successor is [priority-1-safety-draft.sql](priority-1-safety-draft.sql), with
+[the complete design and rollout contract](priority-1-safety-design.md). The illustrative fragments below
+are historical preparation notes, not independent rollout units. Local regression results are reported separately.
+
 Baseline: `main`, `9c3e4c4b3ba0b7ae625558f99ecb3791b03c811d` (2026-11-26).
 No current application code calls the proposed functions or depends on the proposed table.
 Historical SQL, migrations, generated database types, flags and secrets remain unchanged.

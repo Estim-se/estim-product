@@ -5,6 +5,7 @@ import { purgeDueCalls } from '@/lib/samtal/purge.server';
 import type { Database, Json } from '@/integrations/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Transcript } from '@/lib/samtal/transcript';
+import { defineSamtalSafetyTests } from './helpers/samtal-safety-db';
 
 const company = '0000000a-0000-4000-8000-000000000000';
 const callId = 'c0000000-0000-4000-8000-000000000001';
@@ -141,9 +142,4 @@ describe('Samtal purge per-call recovery', () => {
   });
 });
 
-describe('Priority 1 blocked atomic guarantees — unapplied SQL proposal required', () => {
-  it.todo('purged calls cannot be claimed or manually restarted');
-  it.todo('purge during transcription cannot be followed by a content write');
-  it.todo('expired workers cannot write content or materialize inbox tasks');
-  it.todo('failed upload-path persistence and failed compensation retain durable audio cleanup tracking');
-});
+defineSamtalSafetyTests();
