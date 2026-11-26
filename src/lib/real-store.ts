@@ -6,6 +6,7 @@ import type { Quote } from "./quote";
 import { auditTimeline } from "./real-presentation";
 import { waWindowOpen } from "./channel-rules";
 import { whatsappAutoReply } from "./whatsapp-auto";
+import { toAttachmentItems } from "./mail-attachments";
 
 // AI steps are injected so the store stays testable without network access.
 export interface RealAi {
@@ -90,6 +91,7 @@ export function workspaceState(data: WorkspaceData, previous: EstimState): Estim
         time: time(m.sent_at),
         text: m.delivery_status === "sent" ? m.text : "Dokument skickat",
         att: strings(m.attachments),
+        attachmentFiles: toAttachmentItems(m.attachment_files),
         documents:
           data.documentDeliveries
             ?.filter((d) => d.message_id === m.id)
