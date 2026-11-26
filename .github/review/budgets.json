@@ -1,0 +1,12 @@
+{
+  "note": "Review budgets per credit cycle, in USD. Overrides are keyed by numeric GitHub user id, never by name. What anyone has spent lives only in the private ledger.",
+  "cycle_anchor_day": 18,
+  "cycle_start": null,
+  "global_usd": 120,
+  "default_author_usd": 40,
+  "overrides": {},
+  "lovable_lane_usd": 10,
+  "lane_pause_global_fraction": 0.8,
+  "max_reviews_per_pr": 12,
+  "when_low": "pause"
+}

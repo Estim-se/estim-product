@@ -1,0 +1,43 @@
+{
+  "note": "The review gate's identities and pins. IDs only, never secrets. Read only from main (a gate path), never from repository or environment variables, which any writer can change.",
+  "repository": "Estim-se/estim-product",
+  "repository_id": 1462711895,
+  "owner_id": 358258319,
+  "main": "main",
+  "check_name": "estim-review",
+  "accept_workflow_ref": "Estim-se/estim-product/.github/workflows/review-accept.yml@refs/heads/main",
+  "sweeper_workflow": "review-sweeper.yml",
+  "app": {
+    "id": null,
+    "permissions": { "checks": "write", "contents": "read", "metadata": "read", "pull_requests": "read" },
+    "repositories": ["estim-product", "review-ledger"]
+  },
+  "ledger": {
+    "repository": "Estim-se/review-ledger",
+    "repository_id": null,
+    "root_sha": null,
+    "check_name": "estim-ledger"
+  },
+  "anthropic": {
+    "audience": "https://api.anthropic.com",
+    "organization_id": "049f5edf-0454-49b1-843a-53d438ed0aa2",
+    "workspace_id": "wrkspc_01YW4fxr8ujLtHKBVUUMDtZG",
+    "federation_rule_id": null,
+    "service_account_id": null
+  },
+  "cli": {
+    "version": "2.1.332",
+    "url": "https://downloads.claude.ai/claude-code-releases/2.1.332/linux-x64/claude",
+    "sha256": "a2df1f41bb00250992926420d0063f89b127cb81abdd284dbefb80c50ff1d026"
+  },
+  "bun": {
+    "version": "1.4.5",
+    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-x64.zip",
+    "sha256": "94559b3b528995a49452f9f2404cec74f2efd7d06e0a000a8cd214b02c3666eb"
+  },
+  "models": { "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5" },
+  "lovable": { "head_ref": "lovable", "author_id": 358280687, "debounce_minutes": 30 },
+  "debounce_minutes": 2,
+  "guards": ["migration-guard", "install-scripts-guard", "lockfile-guard", "text-guard", "config-guard"],
+  "drift": null
+}
