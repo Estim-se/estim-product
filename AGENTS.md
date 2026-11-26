@@ -39,8 +39,11 @@ use the editor.
 
 ## Pull requests and the review gate
 
-- Every pull request targets `main`. Open the next one only after this one has merged.
-- Merge with `gh pr merge --auto --merge`, never `--admin`: GitHub merges once the required checks and reviews pass.
+- Every pull request targets `main`, so the gate reviews it; don't stack pull requests on other branches. Independent
+  pull requests can be open side by side; work that depends on an open pull request waits until it has merged.
+- Merge only after the user approves, never with `--admin`. Until the repo allows auto-merge (after the rulesets), use
+  `gh pr merge --merge`; after that, `gh pr merge --auto --merge`, so GitHub merges once the required checks and
+  reviews pass.
 - Read review findings with `gh pr checks` and the `estim-review` check's details, as the fix-review-findings skill
   does. Only the estim-review App's check counts; PR comments are not findings.
 - A paused `estim-review` (budget, too large and the like) is not a problem in the code. Don't change code to get
