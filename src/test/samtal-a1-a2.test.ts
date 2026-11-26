@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
 type Result = { data: unknown; error: { code: string } | null };
@@ -79,7 +79,7 @@ const providerTranscript = (id: string, text: string, over: Record<string, unkno
   segments: [{ start: 0, end: 12.5, speaker: 'SPEAKER_00', text: text.slice(0, 60) }, { start: 12.5, end: 30, speaker: 'SPEAKER_01', text: text.slice(60) || '.' }], ...over,
 });
 
-describe('Samtal A1 + A2 unapplied patches', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A1 + A2 unapplied patches', () => {
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession, dir = '';
   const files = new Map<string, Uint8Array>();
   type Fn = (...a: never[]) => Promise<never>;

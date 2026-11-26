@@ -10,7 +10,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 import type { SamtalAdapter } from '@/lib/samtal/adapter';
 import type { SamtalCall } from '@/lib/samtal/call';
 import type { Transcript } from '@/lib/samtal/transcript';
@@ -82,7 +82,7 @@ function mockedInterpretation(t: Transcript) {
     uncertain: kind === 'ambiguous' ? [{ text: 'Oklart vad samtalet gäller.', source: { start: 0, end: 30 } }] : [], next_steps: [] };
 }
 
-describe('Samtal V2 application patches, end to end against local PostgreSQL', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal V2 application patches, end to end against local PostgreSQL', () => {
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession, dir = '';
   const files = new Map<string, Uint8Array>(), fails = { upload: false, remove: false };
   type Fn = (...a: never[]) => Promise<never>;

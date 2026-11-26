@@ -19,7 +19,7 @@ for f in supabase/migrations/*.sql; do   # structure only: seed rows referencing
 done
 URL="postgresql://postgres@127.0.0.1:$PORT/t?sslmode=disable"
 supabase gen types typescript --db-url "$URL" --schema public > "$W/baseline.ts" 2>/dev/null
-for f in priority-1-coordinated-v2.sql a1-provider-transcript.sql a7-durable-webhook.sql; do $P -d t -f "docs/samtal/$f" >/dev/null 2>&1; done
+for f in priority-1-coordinated-v2.sql a1-provider-transcript.sql a7-durable-webhook.sql a3-a4-ring-estim.sql a5-draft-management.sql a6-monitoring.sql a6-integration.sql; do $P -d t -f "docs/samtal/$f" >/dev/null 2>&1; done
 supabase gen types typescript --db-url "$URL" --schema public > "$W/patched.ts" 2>/dev/null
 check() { # $1 = label, $2 = types file, $3.. = patches
   local label=$1 types=$2; shift 2; local C="$W/copy-$label"; mkdir -p "$C"
@@ -27,12 +27,13 @@ check() { # $1 = label, $2 = types file, $3.. = patches
   for p in "$@"; do patch -p1 --forward --batch -d "$C" -i "$ROOT/docs/samtal/$p" >/dev/null; done
   cp "$types" "$C/src/integrations/supabase/types.ts"
   (cd "$C" && tsgo -b --noEmit > "$W/$label.txt" 2>&1) || true
+  grep "error TS" "$W/$label.txt" | head -5 || true
   echo "$label: $(grep -c 'error TS' "$W/$label.txt") errors ($(grep 'error TS' "$W/$label.txt" | grep -vc '^src/test/') outside tests)"
   grep 'error TS' "$W/$label.txt" | sed 's/(.*//' | sort | uniq -c || true
 }
 check control "$W/baseline.ts"
-check patched "$W/patched.ts" priority-1-app-patch.diff priority-1-app-patch-remaining.diff a1-a2-app-patch.diff a7-provider-framework.diff a7-hardening.diff v1-migration-app-fix.diff v1-test-migration.diff
+check patched "$W/patched.ts" priority-1-app-patch.diff priority-1-app-patch-remaining.diff a1-a2-app-patch.diff a7-provider-framework.diff a7-hardening.diff v1-migration-app-fix.diff v1-test-migration.diff a3-a4-ring-estim.diff a5-draft-management.diff a6-monitoring.diff a6-integration.diff
 SUITES="adapter behandling inkorg-steg sida inkorg integration-preparation isolation postgres-concurrency retention rollspel v2-safety"
 (cd "$W/copy-patched" && env -u SAMTAL npx vitest run $(for s in $SUITES; do echo "src/test/samtal-$s.test.ts"; done) > "$W/tests.txt" 2>&1) || true
-echo "patched tests: $(grep -E 'Tests +[0-9]' "$W/tests.txt")"
+echo "patched tests: $(sed 's/\x1b\[[0-9;]*m//g' "$W/tests.txt" | grep -E 'Tests +[0-9]')"
 (cd "$W/copy-patched" && npx vite build > "$W/build.txt" 2>&1 && echo "patched build: ok") || echo "patched build: FAILED (see $W/build.txt)"

@@ -1,4 +1,5 @@
 import demo from "./demo.json";
+import type { MailAttachmentItem } from "@/lib/mail-attachments";
 
 export interface Message {
   id?: string; // stored message id (real mode only)
@@ -9,6 +10,7 @@ export interface Message {
   auto?: boolean;
   quote?: boolean;
   att?: string[];
+  attachmentFiles?: MailAttachmentItem[];
   documents?: { id: string; name: string }[];
 }
 

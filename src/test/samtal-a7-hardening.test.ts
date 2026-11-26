@@ -8,7 +8,7 @@ import { createHmac } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 import { supabaseOver } from './helpers/samtal-supabase-local';
 
 const ROOT = process.cwd();
@@ -31,7 +31,7 @@ function signed(body: string, o: { t?: number; nonce?: string } = {}) {
   return new Request('https://local.invalid/hook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-synthetic-timestamp': t, 'x-synthetic-signature': `v1=${sig}` }, body });
 }
 
-describe('Samtal A7 hardening (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 hardening (unapplied patch + SQL candidate)', () => {
   let dir = '', du: M, sec: M, ref: M, ingestMod: M, rf: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
   const files = new Map<string, Uint8Array>();

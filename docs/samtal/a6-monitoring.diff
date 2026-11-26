@@ -1,0 +1,282 @@
+--- /dev/null
++++ b/src/components/estim/samtal-monitor.tsx
+@@ -0,0 +1,46 @@
++// Samtal system status for a company owner. Presentation only; data comes from samtal_monitor_company through a
++// Samtal server function (not wired in this patch). Shows counts and alert names, never call content or numbers.
++import { ALERT_LEVEL_TEXT, ALERT_RULE_TEXT, MONITOR_TEXT as T, OVERALL_TEXT, countLabel, overallStatus, stageCounts, type Alert, type Snapshot } from '@/lib/samtal/monitor/status';
++
++export function SamtalMonitor({ snapshot, alerts, connected }: { snapshot: Snapshot; alerts: Alert[]; connected: boolean }) {
++  const overall = overallStatus(snapshot, alerts, connected);
++  const stages = stageCounts(snapshot);
++  const cap = snapshot.tak;
++  const tile = (label: string, value: unknown) => (
++    <div className="rounded-md border border-border bg-card p-3">
++      <div className="text-xs text-muted-foreground">{label}</div>
++      <div className="text-lg font-semibold text-foreground">{countLabel(value, cap)}</div>
++    </div>
++  );
++  return (
++    <section aria-labelledby="samtal-monitor-title" className="space-y-4">
++      <header className="flex items-center justify-between gap-2">
++        <h2 id="samtal-monitor-title" className="text-base font-semibold text-foreground">{T.title}</h2>
++        <span role="status" className={overall === 'ok' ? 'text-sm text-muted-foreground' : 'text-sm font-medium text-destructive'}>{OVERALL_TEXT[overall]}</span>
++      </header>
++      <div>
++        <h3 className="mb-2 text-sm font-medium text-foreground">{T.telephony}</h3>
++        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
++          {tile(T.waiting, snapshot.vantande)}{tile(T.running, snapshot.bearbetas)}{tile(T.retrying, snapshot.forsoker_igen)}{tile(T.failed, snapshot.misslyckade)}
++        </div>
++      </div>
++      <div>
++        <h3 className="mb-2 text-sm font-medium text-foreground">{T.last24h}</h3>
++        <div className="grid grid-cols-3 gap-2">{tile(T.received, stages.received)}{tile(T.processed, stages.processed)}{tile(T.completed, stages.completed)}</div>
++      </div>
++      <div>
++        <h3 className="mb-2 text-sm font-medium text-foreground">{T.ai} · {T.transcription}</h3>
++        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
++          {tile(T.transcription, snapshot.senaste_dygnet?.transkribering_misslyckad)}{tile(T.ai, snapshot.senaste_dygnet?.ai_misslyckad)}
++          {tile(T.outbox, snapshot.utkorg_vantar)}{tile(T.handoffs, snapshot.overlamningar_vantar)}
++        </div>
++      </div>
++      <div className="grid grid-cols-2 gap-2">{tile(T.deletionPending, snapshot.radering_forsenad)}{tile(T.unverified, snapshot.ej_verifierade)}</div>
++      {alerts.length > 0 && (
++        <ul className="space-y-1" aria-label={T.actionNeeded}>
++          {alerts.map(a => <li key={a.regel} className="text-sm text-foreground">{ALERT_LEVEL_TEXT[a.niva] ?? a.niva}: {ALERT_RULE_TEXT[a.regel] ?? a.regel}</li>)}
++        </ul>
++      )}
++    </section>
++  );
++}
+--- /dev/null
++++ b/src/lib/samtal/monitor/recovery.ts
+@@ -0,0 +1,37 @@
++// Retry policy shared by Samtal workers. Pure; the database enforces the same rules for expired leases
++// (samtal_recover_expired in docs/samtal/a6-monitoring.sql).
++
++export type FailureClass = 'tillfallig' | 'permanent' | 'integritet';
++
++const PERMANENT = new Set(['content_deleted', 'invalid_transcript', 'unsupported_audio', 'too_large', 'tenant_mismatch', 'identity_rejected',
++  'retries_exhausted', 'draft_changed', 'forbidden', 'not_found', 'invalid']);
++const PRIVACY = new Set(['cleanup_failed', 'storage_delete_failed', 'erasure_pending']);
++
++export function classifyFailure(code: string | null | undefined): FailureClass {
++  const c = safeErrorCode(code);
++  if (PRIVACY.has(c)) return 'integritet';
++  if (PERMANENT.has(c)) return 'permanent';
++  return 'tillfallig';
++}
++
++// Capped exponential backoff with "equal jitter": half fixed, half random, so retries from many companies spread out.
++export function backoffSeconds(attempt: number, random: () => number = Math.random, baseSeconds = 30, capSeconds = 3600): number {
++  const raw = Math.min(baseSeconds * 2 ** Math.max(0, Math.min(attempt, 20)), capSeconds);
++  return Math.round(raw * (0.5 + random() * 0.5));
++}
++
++// Temporary failures retry up to maxAttempts. Permanent failures never retry. Privacy cleanup (deleting recordings)
++// keeps retrying with capped backoff because deletion must eventually succeed; it is surfaced as an alert instead.
++export function nextStep(code: string | null | undefined, attempts: number, maxAttempts = 5, random: () => number = Math.random):
++  { action: 'retry'; afterSeconds: number } | { action: 'fail' } {
++  const k = classifyFailure(code);
++  if (k === 'permanent') return { action: 'fail' };
++  if (k === 'integritet') return { action: 'retry', afterSeconds: backoffSeconds(attempts, random, 60, 6 * 3600) };
++  return attempts >= maxAttempts ? { action: 'fail' } : { action: 'retry', afterSeconds: backoffSeconds(attempts, random) };
++}
++
++// Error codes are the only error data monitoring keeps. Anything that is not a short code (provider text, a phone
++// number, a transcript fragment, a token) becomes a generic code.
++export function safeErrorCode(code: unknown): string {
++  return typeof code === 'string' && /^[a-z][a-z0-9_]{0,59}$/.test(code) ? code : 'unknown_error';
++}
+--- /dev/null
++++ b/src/lib/samtal/monitor/status.ts
+@@ -0,0 +1,47 @@
++// Swedish labels and overall status for the Samtal monitoring view. Pure; works on the snapshot returned by
++// samtal_monitor_company (counts and codes only, never content).
++
++export const MONITOR_TEXT = {
++  title: 'Systemstatus', telephony: 'Telefoni', ai: 'AI-bearbetning', transcription: 'Transkribering',
++  waiting: 'Väntande samtal', running: 'Bearbetas', completed: 'Slutförda', failed: 'Misslyckade', retrying: 'Försöker igen',
++  delayed: 'Försenad bearbetning', deletionPending: 'Radering väntar', actionNeeded: 'Åtgärd krävs', noConnection: 'Ingen anslutning',
++  unverified: 'Ej verifierad', ok: 'Allt fungerar', warning: 'Varning', critical: 'Kritiskt', recovered: 'Återställd',
++  received: 'Mottagna', processed: 'Bearbetade', handoffs: 'Offertöverlämningar väntar', outbox: 'Utkorg väntar', last24h: 'Senaste dygnet',
++  capped: 'eller fler',
++} as const;
++
++export const ALERT_RULE_TEXT: Record<string, string> = {
++  ko_alder: 'Lång väntetid i kön', utgangna_lan: 'Avbrutna bearbetningar', fastnade_jobb: 'Fastnade samtal', misslyckade_jobb: 'Många misslyckade samtal',
++  leverantorsfel: 'Upprepade fel från telefonileverantören', transkribering: 'Transkribering misslyckas', radering_forsenad: 'Radering är försenad',
++  utkorg: 'Utkorgen växer', dubbletter: 'Ovanligt många dubbletter', hastighetsbegransning: 'Ihållande hastighetsbegränsning', identitetskonflikter: 'Upprepade identitetskonflikter',
++};
++export const ALERT_LEVEL_TEXT: Record<string, string> = { varning: MONITOR_TEXT.warning, kritisk: MONITOR_TEXT.critical, aterstalld: MONITOR_TEXT.recovered };
++
++const SNAPSHOT_KEYS = ['vantande', 'pausade', 'aldsta_ko_sekunder', 'bearbetas', 'utgangna_lan', 'fastnade', 'forsoker_igen', 'misslyckade', 'radering_forsenad',
++  'stadning_misslyckad', 'utkorg_vantar', 'utkorg_blockerad', 'ai_jobb_vantar_aterhamtning', 'overlamningar_vantar', 'ej_verifierade', 'tak'] as const;
++const COUNTER_KEYS = ['inkommande', 'mottagna', 'avvisade', 'dubbletter', 'hastighetsbegransade', 'bearbetade', 'slutforda', 'transkribering_misslyckad',
++  'ai_misslyckad', 'ogiltig_transkription', 'verifiering_misslyckad', 'omforsok', 'utgangna_lan', 'radering_misslyckad', 'mottryck'] as const;
++export type Snapshot = Partial<Record<(typeof SNAPSHOT_KEYS)[number], number>> & { senaste_dygnet?: Partial<Record<(typeof COUNTER_KEYS)[number], number>> };
++export type Alert = { regel: string; niva: string; sedan: string };
++export type Overall = 'ok' | 'forsenad' | 'atgard' | 'ingen_anslutning';
++
++const n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : 0;
++
++// "Completed" is only what the database counted as slutforda (all downstream steps done). Received and processed are
++// shown separately so a call that is accepted but still waiting is never presented as finished.
++export function overallStatus(s: Snapshot, alerts: Alert[], connected: boolean): Overall {
++  if (!connected) return 'ingen_anslutning';
++  if (alerts.some(a => a.niva === 'kritisk') || n(s.radering_forsenad) > 0 || n(s.fastnade) > 0 || n(s.utkorg_blockerad) > 0) return 'atgard';
++  if (alerts.some(a => a.niva === 'varning') || n(s.utgangna_lan) > 0 || n(s.aldsta_ko_sekunder) > 600) return 'forsenad';
++  return 'ok';
++}
++export const OVERALL_TEXT: Record<Overall, string> = { ok: MONITOR_TEXT.ok, forsenad: MONITOR_TEXT.delayed, atgard: MONITOR_TEXT.actionNeeded, ingen_anslutning: MONITOR_TEXT.noConnection };
++
++export function countLabel(v: unknown, cap: number | undefined): string {
++  const x = n(v);
++  return cap && x >= cap ? `${cap} ${MONITOR_TEXT.capped}` : String(x);
++}
++export function stageCounts(s: Snapshot) {
++  const d = s.senaste_dygnet ?? {};
++  return { received: n(d.mottagna), processed: n(d.bearbetade), completed: n(d.slutforda) };
++}
+--- /dev/null
++++ b/src/lib/samtal/ring/handoff.ts
+@@ -0,0 +1,52 @@
++// Handoff of an approved Ring estim quotation draft to the EXISTING estim quote workflow.
++// Samtal does not price, number, version or send quotes. It hands over the approved content once, as a draft quote,
++// through the QuoteHandoffSink interface. The real sink is owned by the quote module (shared integration dependency);
++// tests use an isolated substitute. The sink interface has no send method on purpose.
++
++export type HandoffLine = { description: string; quantity: number | null; unit: string | null; unit_price: null; price_missing: true; quantity_certain: boolean };
++export type QuoteHandoffInput = {
++  company_id: string; customer_id: string; project_ref: string | null; title: string;
++  work: string[]; lines: HandoffLine[]; note: string; source: 'samtal_ring';
++};
++export interface QuoteHandoffSink {
++  // Must create at most one draft quote per idempotency key and must never send it. Returns a quote reference.
++  createDraftQuote(input: QuoteHandoffInput, idempotencyKey: string): Promise<{ quote_ref: string }>;
++}
++
++const str = (v: unknown, max: number) => typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
++const qty = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 100000 ? v : null;
++
++// Maps the approved draft body. Prices are always empty: the person who writes the quote sets them in the quote tool.
++// Missing quantities stay null; nothing is guessed.
++export function buildQuoteHandoff(claim: { company_id: string; customer_id: string; project_ref: string | null; title: string; body: Record<string, unknown> }): QuoteHandoffInput {
++  const rows = Array.isArray(claim.body['rows']) ? claim.body['rows'] : Array.isArray(claim.body['items']) ? claim.body['items'] : [];
++  const lines: HandoffLine[] = [];
++  for (const r of rows.slice(0, 100)) {
++    if (!r || typeof r !== 'object') continue;
++    const o = r as Record<string, unknown>;
++    const description = str(o['item'] ?? o['description'], 200);
++    if (!description) continue;
++    lines.push({ description, quantity: qty(o['quantity']), unit: str(o['unit'], 20), unit_price: null, price_missing: true,
++      quantity_certain: o['certainty'] === 'bekraftad' || o['certainty'] === 'angiven' });
++  }
++  const work = (Array.isArray(claim.body['work']) ? claim.body['work'] : []).map(w => str(typeof w === 'object' && w ? (w as Record<string, unknown>)['text'] ?? (w as Record<string, unknown>)['value'] : w, 300)).filter((w): w is string => !!w).slice(0, 50);
++  return { company_id: claim.company_id, customer_id: claim.customer_id, project_ref: claim.project_ref, title: claim.title.slice(0, 200), work, lines,
++    note: 'Från Ring estim. Priser och villkor sätts i offertverktyget. Inget skickas automatiskt.', source: 'samtal_ring' };
++}
++
++type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { code?: string } | null }>;
++
++// One worker step for one waiting handoff. The handoff id is the idempotency key, so a retry after a crash between
++// "sink created" and "finish recorded" returns the same quote instead of creating a second one.
++export async function runHandoff(rpc: Rpc, sink: QuoteHandoffSink, handoffId: string): Promise<{ status: string; quote_ref?: string }> {
++  const { data, error } = await rpc('samtal_ring_claim_handoff', { p_handoff: handoffId });
++  if (error) return { status: 'error' };
++  const c = data as { status: string; company_id: string; customer_id: string; project_ref: string | null; title: string; body: Record<string, unknown> };
++  if (c.status !== 'ok') return { status: c.status };
++  let quote_ref: string | null = null, code: string | null = null;
++  try { quote_ref = (await sink.createDraftQuote(buildQuoteHandoff(c), handoffId)).quote_ref; }
++  catch { code = 'quote_unavailable'; }
++  const fin = await rpc('samtal_ring_finish_handoff', { p_handoff: handoffId, p_quote_ref: quote_ref, p_error: code });
++  if (fin.error) return { status: 'error' };
++  return quote_ref ? { status: 'ok', quote_ref } : { status: 'retry' };
++}
+--- /dev/null
++++ b/src/lib/samtal/ring/verification.ts
+@@ -0,0 +1,85 @@
++// Provider-independent employee verification for Ring estim enrollment.
++// Binding rule: a verification is accepted only when the provider's OWN authenticated evidence echoes a one-time
++// challenge that was issued for one enrollment (company + employee + provider). Caller ID, the shared Ring estim number
++// and the typed phone number are never inputs. A signed webhook proves only that the provider sent the message; the
++// echoed challenge and the provider account reference inside it are what bind the identity.
++//
++// The 'referens' provider below is a SYNTHETIC reference used in tests and local validation. It is not Lynes and makes
++// no claim about any real provider's API. Identities it creates are stored with evidence_kind 'referens' and can only
++// match calls whose provider is also 'referens'.
++
++export const REFERENCE_PROVIDER = 'referens';
++const enc = new TextEncoder();
++
++const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
++export async function sha256Hex(value: string): Promise<string> { return hex(await crypto.subtle.digest('SHA-256', enc.encode(value))); }
++
++// The nonce goes to the provider; only its hash is stored (samtal_ring_verifications.challenge_hash).
++export async function newChallenge(): Promise<{ nonce: string; hash: string }> {
++  const bytes = crypto.getRandomValues(new Uint8Array(32));
++  const nonce = [...bytes].map(x => x.toString(16).padStart(2, '0')).join('');
++  return { nonce, hash: await sha256Hex(nonce) };
++}
++
++export type VerificationEvidence = { provider: string; event_id: string; challenge: string; account_ref: string; issued_at: number };
++export type EvidenceResult = { ok: true; evidence: VerificationEvidence; evidence_kind: 'leverantor' | 'referens' } | { ok: false; reason: string };
++
++// A real provider adapter implements this once its documented verification mechanism is known.
++export interface VerificationEvidenceAdapter {
++  provider: string;
++  verify(rawBody: string, headers: Record<string, string | undefined>, nowSeconds: number): Promise<EvidenceResult>;
++}
++
++function timingSafeEqual(a: string, b: string): boolean {
++  if (a.length !== b.length) return false;
++  let d = 0;
++  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
++  return d === 0;
++}
++async function hmac(key: string, msg: string): Promise<string> {
++  const k = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
++  return hex(await crypto.subtle.sign('HMAC', k, enc.encode(msg)));
++}
++const text = (v: unknown, max: number) => typeof v === 'string' && v.length >= 1 && v.length <= max ? v : null;
++
++// Synthetic reference provider: HMAC-SHA256 over `${t}.${body}` in header x-referens-signature "t=<unix>,v1=<hex>".
++export function referenceAdapter(key: string, toleranceSeconds = 300): VerificationEvidenceAdapter {
++  return {
++    provider: REFERENCE_PROVIDER,
++    async verify(rawBody, headers, now) {
++      if (!key || key.length < 32) return { ok: false, reason: 'not_configured' };
++      if (rawBody.length > 8192) return { ok: false, reason: 'too_large' };
++      const m = /^t=(\d{1,12}),v1=([0-9a-f]{64})$/.exec(headers['x-referens-signature'] ?? '');
++      if (!m) return { ok: false, reason: 'signature' };
++      const t = Number(m[1]);
++      if (Math.abs(now - t) > toleranceSeconds) return { ok: false, reason: 'stale' };
++      if (!timingSafeEqual(await hmac(key, `${t}.${rawBody}`), m[2]!)) return { ok: false, reason: 'signature' };
++      let body: Record<string, unknown>;
++      try { body = JSON.parse(rawBody) as Record<string, unknown>; } catch { return { ok: false, reason: 'format' }; }
++      const ev = { provider: text(body['provider'], 40), event_id: text(body['event_id'], 200), challenge: text(body['challenge'], 128), account_ref: text(body['account_ref'], 200), issued_at: t };
++      if (ev.provider !== REFERENCE_PROVIDER || !ev.event_id || !ev.challenge || !ev.account_ref) return { ok: false, reason: 'format' };
++      return { ok: true, evidence: ev as VerificationEvidence, evidence_kind: 'referens' };
++    },
++  };
++}
++
++// Test helper for the reference provider only.
++export async function signReference(key: string, body: string, t: number): Promise<string> { return `t=${t},v1=${await hmac(key, `${t}.${body}`)}`; }
++
++type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { code?: string } | null }>;
++export const VERIFY_REASON: Record<string, string> = {
++  ok: 'Verifierad', unverified: 'Ej verifierad', unknown: 'Okänd verifiering', used: 'Redan använd', expired: 'Verifieringen har gått ut',
++  revoked: 'Anslutningen är återkallad', conflict: 'Kontot är redan kopplat', inactive: 'Medarbetaren är inte aktiv',
++};
++
++// Server step after the adapter accepted the evidence: hash the echoed challenge and let the database bind it.
++export async function applyVerification(rpc: Rpc, result: EvidenceResult): Promise<{ status: string; reason: string }> {
++  if (!result.ok) return { status: 'rejected', reason: 'unverified' };
++  const { data, error } = await rpc('samtal_ring_apply_verification', {
++    p_provider: result.evidence.provider, p_event_id: result.evidence.event_id, p_challenge_hash: await sha256Hex(result.evidence.challenge),
++    p_account_ref: result.evidence.account_ref, p_evidence_kind: result.evidence_kind,
++  });
++  if (error || !data || typeof data !== 'object') return { status: 'error', reason: 'database' };
++  const d = data as { status?: string; reason?: string };
++  return { status: d.status ?? 'error', reason: d.reason ?? 'unknown' };
++}
