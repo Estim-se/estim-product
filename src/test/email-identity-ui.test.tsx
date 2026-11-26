@@ -12,7 +12,7 @@ const UUID1 = '11111111-1111-4111-8111-111111111111';
 const UUID2 = '22222222-2222-4222-8222-222222222222';
 const UUID3 = '33333333-3333-4333-8333-333333333333';
 
-describe('email identity mutations and state mapping (Steps 8–9)', () => {
+describe('email identity mutations and state mapping', () => {
   it('validates approve-email-sender and merge-email-thread mutations strictly', () => {
     expect(parseMutation({
       kind: 'approve-email-sender',

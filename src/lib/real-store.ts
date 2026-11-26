@@ -137,11 +137,11 @@ export function createRealStore() {
     mergeCustomers(keep:string,drop:string){
       void persist({kind:'merge',keep,drop},true,true).then(()=>{toast('Kunderna är sammanslagna.');}).catch(error=>{toast(serverMessage(error));});
     },
-    // Step 8 (D18): approves a quarantined email sender suggestion (form mail / unverified).
+    // Approves a quarantined email sender suggestion (form mail / unverified).
     approveEmailSender(id:string,input:{name?:string;email?:string;phone?:string;useCustomerId?:string}){
       void persist({kind:'approve-email-sender',id,...input},true,true).then(()=>{toast('Avsändaren är godkänd.');}).catch(error=>{toast(serverMessage(error));});
     },
-    // Step 9 (D17): merges a new email thread into the suggested existing open thread.
+    // Merges a new email thread into the suggested existing open thread.
     mergeEmailThread(sourceId:string,targetId:string){
       void persist({kind:'merge-email-thread',sourceId,targetId},true,true).then(()=>{
         actions.select(targetId);

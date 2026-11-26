@@ -305,7 +305,7 @@ Deno.test("sent_at: a forged future date is stored as the receive time", async (
   assert(sentAt >= before && sentAt <= Date.now(), "not the receive time");
 });
 
-/* ---------- Steps 8–10: EMAIL_INBOUND_LEVEL (0–3) ---------- */
+/* ---------- EMAIL_INBOUND_LEVEL (0–3): quarantine, Message-ID threading, skip audit ---------- */
 
 Deno.test("EMAIL_INBOUND_LEVEL=0: exact same calls as the golden lists", async () => {
   const db = pipelineDb();
@@ -313,7 +313,7 @@ Deno.test("EMAIL_INBOUND_LEVEL=0: exact same calls as the golden lists", async (
   assertEquals(db.normalized(), GOLDEN_NEW_SENDER);
 });
 
-Deno.test("level 1 (Step 8 / D18): form mail is quarantined with pending_sender and never touches existing customer", async () => {
+Deno.test("level 1 (form quarantine): form mail is quarantined with pending_sender and never touches existing customer", async () => {
   const db = pipelineDb({
     customers: [{ id: "cu1", company_id: COMPANY, email: "offer@existing.se", phone: "0700000000" }],
     threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "ny" }],
@@ -335,7 +335,7 @@ Deno.test("level 1 (Step 8 / D18): form mail is quarantined with pending_sender 
   assert(fetched(db, "/messages/send"), "form mail with valid sender should still notify");
 });
 
-Deno.test("level 1 (Step 8 / D18): unverified sender is quarantined, warned, audited and never notified", async () => {
+Deno.test("level 1 (unverified quarantine): unverified sender is quarantined, warned, audited and never notified", async () => {
   const db = pipelineDb(knownSender(1));
   await withEnv({ EMAIL_INBOUND_LEVEL: "1" }, db, () => run(db, mail({ senderCheck: "fail" })));
   assert(!db.calls.some((c) => c.startsWith("rpc.estim_receive(")), "must not call estim_receive");
@@ -347,7 +347,7 @@ Deno.test("level 1 (Step 8 / D18): unverified sender is quarantined, warned, aud
   assert(!fetched(db, "/messages/send"), "must not notify on unverified sender");
 });
 
-Deno.test("level 2 (Step 9 / D17): reply matching our sent Message-ID joins existing thread and skips triage", async () => {
+Deno.test("level 2 (Message-ID threading): reply matching our sent Message-ID joins existing thread and skips triage", async () => {
   const db = pipelineDb({
     customers: [{ id: "cu1", company_id: COMPANY, email: "kund@example.com" }],
     threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "svar" }],
@@ -365,7 +365,7 @@ Deno.test("level 2 (Step 9 / D17): reply matching our sent Message-ID joins exis
   assert(rpcCall.includes('"rfc_message_id":"cust-reply@example.com"') && rpcCall.includes('"in_reply_to":"reply-123@foretag.se"'), rpcCall);
 });
 
-Deno.test("level 2 (Step 9 / D17): new mail from known address without Message-ID creates new thread with merge suggestion", async () => {
+Deno.test("level 2 (Message-ID threading): new mail from known address without Message-ID creates new thread with merge suggestion", async () => {
   const db = pipelineDb(knownSender(1));
   await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
     run(db, mail({ threadHeaders: { messageId: "fresh@example.com", inReplyTo: [], references: [] } }))
@@ -376,7 +376,7 @@ Deno.test("level 2 (Step 9 / D17): new mail from known address without Message-I
   assertEquals(newThread.suggested_merge_thread_id, "t0");
 });
 
-Deno.test("level 2 (Step 9 / D17): CC reply to customer Message-ID from different From never auto-joins; DB failure retries", async () => {
+Deno.test("level 2 (Message-ID threading): CC reply to customer Message-ID from different From never auto-joins; DB failure retries", async () => {
   const db = pipelineDb({
     customers: [{ id: "cu1", company_id: COMPANY, email: "kund@example.com" }],
     threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "ny" }],
@@ -400,7 +400,7 @@ Deno.test("level 2 (Step 9 / D17): CC reply to customer Message-ID from differen
   });
 });
 
-Deno.test("level 3 (Step 10): no-reply lead without email is quarantined instead of dropped; skips are audit-logged with short codes", async () => {
+Deno.test("level 3 (no silent drops): no-reply lead without email is quarantined instead of dropped; skips are audit-logged with short codes", async () => {
   const db = pipelineDb();
   const phoneOnly = { category: "forfragan", is_form_mail: false, customer: { name: "Lisa", email: null, phone: "0701112233" } };
   await withEnv({ EMAIL_INBOUND_LEVEL: "3" }, db, () => run(db, mail({ fromEmail: "no-reply@leadsite.se", fromName: null })), phoneOnly);

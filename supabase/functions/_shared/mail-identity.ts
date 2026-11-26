@@ -1,13 +1,13 @@
-// Identity, quarantine and Message-ID threading decisions for received email (Steps 8–10, pure, unit tested in
+// Identity, quarantine and Message-ID threading decisions for received email (pure, unit tested in
 // mail_identity_test.ts). Controlled by the cumulative level flag EMAIL_INBOUND_LEVEL (0–3, default 0 = off):
 //   0: off (existing behaviour, golden call list in inbound_pipeline_test.ts unchanged)
-//   1: Step 8 (D18) — form mail and unverified senders are quarantined into their own thread with a contact-less
+//   1: Form-mail & unverified-sender quarantine (D18) — quarantined into their own thread with a contact-less
 //      customer row and a pending_sender suggestion for human approval ("Godkänn avsändare").
-//   2: Step 9 (D17) — includes level 1, plus strict RFC 5322 Message-ID threading: joining an existing open thread
+//   2: Strict RFC 5322 Message-ID threading (D17) — includes level 1; joining an existing open thread
 //      requires In-Reply-To/References matching a Message-ID we sent, or a customer Message-ID when From: also matches
 //      and sender check is not "fail". Otherwise a new thread is created with an optional 1-click merge suggestion.
-//   3: Step 10 — includes levels 1–2, plus no silent drops on no-reply leads (quarantined instead of dropped when not
-//      classified as "ovrigt") and short-code audit logging for skipped/dropped mail (D3: never addresses or content).
+//   3: No silent drops & skip audit — includes levels 1–2; no-reply leads are quarantined instead of dropped when not
+//      classified as "ovrigt", and skipped/dropped mail is audit-logged with short codes only (D3: no addresses/content).
 //
 // Pure functions only: no network, no database, never logs addresses or mail content.
 
@@ -131,7 +131,7 @@ export function extractReplyCandidates(th: ThreadHeaders): string[] {
   return out;
 }
 
-/* ---------- Step 8 (D18): Form mail & unverified sender quarantine ---------- */
+/* ---------- Form mail & unverified sender quarantine (D18) ---------- */
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const cleanStr = (v: string | null | undefined, max: number): string | null => {
@@ -224,7 +224,7 @@ export function decideQuarantine(args: {
   return { quarantine: false, reason: null, suggestion: null, warning: null };
 }
 
-/* ---------- Step 9 (D17): Strict Message-ID threading ---------- */
+/* ---------- Strict Message-ID threading (D17) ---------- */
 
 export interface CandidateMessage {
   threadId: string;

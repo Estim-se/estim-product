@@ -104,7 +104,7 @@ SPF cannot be re-checked without the SMTP connection). **Status:** done (flag of
 At most `NOTIFY_HOURLY_CAP` (20) notification mails per company and hour, never to the connected mailbox itself. Why:
 they are sent from the company's own mailbox, and a flood could get it blocked. **Status:** done.
 
-## Identity and threads (Steps 8–10)
+## Identity and threads
 
 ### D17. The sender address only suggests who it is
 `From:` is text the sender writes. It may suggest the customer, but joining an existing thread must be proven by

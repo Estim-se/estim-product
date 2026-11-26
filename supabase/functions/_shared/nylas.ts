@@ -313,7 +313,7 @@ export async function sendReply(args: {
 
 /**
  * Sends a reply via Nylas and optionally resolves its RFC Message-ID (best-effort, never fails the send) so
- * In-Reply-To / References threading (Step 9 / #71) can match customer replies even on Nylas connections.
+ * In-Reply-To / References threading (#71) can match customer replies even on Nylas connections.
  */
 export async function sendReplyWithMeta(args: {
   grantId: string; to: { email: string; name?: string | undefined }; subject: string; html: string; replyToMessageId?: string | null | undefined;

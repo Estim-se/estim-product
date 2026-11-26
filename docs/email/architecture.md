@@ -28,7 +28,7 @@ Unipile. The short rules for code changes are in the root `AGENTS.md` (Email par
 | `supabase/functions/_shared/nylas.ts` / `unipile.ts` | Provider clients and pure parsers (signature check, event parsing, mail parsing, `readBounded`) |
 | `supabase/functions/_shared/mail-flood.ts` | Pure flood-guard and AI-budget decisions |
 | `supabase/functions/_shared/sender-auth.ts` | Pure sender verdict from the topmost `Authentication-Results` header |
-| `supabase/functions/_shared/mail-identity.ts` | Pure Steps 8–10 decisions (`EMAIL_INBOUND_LEVEL` 0–3): form/unverified quarantine, RFC 5322 `Message-ID`/`In-Reply-To`/`References` threading |
+| `supabase/functions/_shared/mail-identity.ts` | Pure email identity & threading decisions (`EMAIL_INBOUND_LEVEL` 0–3): form/unverified quarantine, RFC 5322 `Message-ID`/`In-Reply-To`/`References` threading |
 | `supabase/functions/_shared/notify.ts` | "Draft ready" mail to the company's members (link only, no customer text) |
 | `supabase/functions/_shared/mail-format.ts` | Escaped HTML for outgoing mail, attachment selection |
 | `src/routes/epost-klar.tsx` | Page the browser returns to after sign-in; polls `finish` |

@@ -1,4 +1,4 @@
-// Real PostgreSQL (PGlite) verification of the Steps 8–10 migration (20261126125238_e35cc9b6-8539-47aa-8540-9f4f0c62c2d1.sql)
+// Real PostgreSQL (PGlite) verification of the email identity & threading migration (20261126125238_e35cc9b6-8539-47aa-8540-9f4f0c62c2d1.sql)
 // and non-regression of estim_receive for WhatsApp / SMS / Samtal (issues #62 and #71).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -124,7 +124,7 @@ beforeAll(async () => {
   `);
 }, 60000);
 
-describe('Steps 8–10 SQL migration on real PostgreSQL (PGlite)', () => {
+describe('Email identity & threading SQL migration on real PostgreSQL (PGlite)', () => {
   it('issue #71 check: estim_receive still auto-joins open threads for WhatsApp and Samtal unchanged', async () => {
     await asRole('service_role', null, async tx => {
       for (const ch of ['wa', 'sms', 'samtal'] as const) {

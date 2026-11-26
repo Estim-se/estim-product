@@ -18,7 +18,7 @@ const DESCRIPTIONS = {
 } as const;
 
 /**
- * Steps 8–9 (D17/D18): renders only for real-mode threads that have a quarantined `pendingSender`
+ * Renders only for real-mode threads that have a quarantined `pendingSender`
  * suggestion ("Godkänn avsändare") or a `suggestedMergeThreadId` 1-click merge hint ("Slå ihop tråd").
  * Ordinary threads render nothing here so existing inbox layout stays unchanged.
  */

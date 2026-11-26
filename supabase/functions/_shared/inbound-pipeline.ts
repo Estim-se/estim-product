@@ -216,7 +216,7 @@ export async function ingestMail(db: SupabaseClient, mail: InboundMail, tag: str
   const noReply = isNoReplySender(mail.fromEmail);
   const unverified = mail.senderCheck === "fail";
 
-  // Level 2+ (Step 9 / D17): resolve Message-ID thread match and open-thread merge hint before triage.
+  // Level 2+ (D17): resolve Message-ID thread match and open-thread merge hint before triage.
   const th = level >= 2 ? (mail.threadHeaders ?? parseThreadHeaders(mail.headers ?? [])) : null;
   const replyIds = th ? extractReplyCandidates(th) : [];
   let threadMatch: ReturnType<typeof decideThreadMatch> | null = null;
