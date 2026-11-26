@@ -1,0 +1,651 @@
+diff --git a7new/src/lib/samtal/provider/events.ts a7new/src/lib/samtal/provider/events.ts
+new file mode 100644
+index 0000000..4cb5269
+--- /dev/null
++++ b/src/lib/samtal/provider/events.ts
+@@ -0,0 +1,107 @@
++// estim Samtal A7 (unapplied patch): the provider-independent event model. Every telephony provider integration maps
++// its own webhook fields into these normalised events; nothing in the core Samtal pipeline sees provider fields.
++// Browser-safe and pure: validation and event folding only.
++//
++// An event never carries a company or an employee. The strict schema rejects such fields, so a provider payload (or a
++// transcript) can never choose the tenant. Identity is resolved separately from trusted enrolments (identity.ts).
++import { z } from 'zod';
++import { providerTranscriptInputSchema, type ProviderTranscriptInput } from '../provider-transcript';
++import { SAMTAL_MAX_DURATION_SECONDS } from '../call';
++
++export const PROVIDER_EVENT_KINDS = ['call_started', 'call_completed', 'recording_ready', 'recording_failed', 'transcript_ready'] as const;
++export type ProviderEventKind = typeof PROVIDER_EVENT_KINDS[number];
++const e164 = z.string().regex(/^\+[1-9]\d{6,14}$/);
++const providerId = z.string().regex(/^[a-z0-9_]{1,40}$/);
++const ref = z.string().trim().min(1).max(200);
++
++export const recordingRefSchema = z.object({
++  // The provider's own id of the recording, bound to the call it was announced for.
++  recording_id: ref,
++  // Untrusted link: only ever fetched through recording-fetch.server.ts with the integration's host allowlist.
++  url: z.string().url().max(2000),
++  content_type: z.string().max(100).optional(),
++  bytes: z.number().int().min(0).optional(),
++  expires_at: z.string().datetime({ offset: true }).optional(),
++}).strict();
++export type RecordingRef = z.infer<typeof recordingRefSchema>;
++
++export const providerEventSchema = z.object({
++  provider: providerId,
++  // The provider's unique delivery-independent id of this event (the duplicate key).
++  event_id: ref,
++  provider_call_id: ref,
++  kind: z.enum(PROVIDER_EVENT_KINDS),
++  direction: z.enum(['inbound', 'outbound']),
++  occurred_at: z.string().datetime({ offset: true }),
++  // Optional provider ordering counter; when absent the event time orders events.
++  sequence: z.number().int().min(0).optional(),
++  // The provider's id of the enrolled account (user, extension, SIP account) that handled the call, if it gives one.
++  account_ref: ref.nullable(),
++  // The business-side number of the call (the employee's leg), as stated by the provider for this direction.
++  business_number: e164.nullable(),
++  // The other party (the customer). Never used to resolve the company.
++  remote_number: e164.nullable(),
++  started_at: z.string().datetime({ offset: true }).nullable(),
++  ended_at: z.string().datetime({ offset: true }).nullable(),
++  duration_seconds: z.number().int().min(0).max(SAMTAL_MAX_DURATION_SECONDS).nullable(),
++  recording: recordingRefSchema.optional(),
++  transcript: providerTranscriptInputSchema.optional(),
++  failure_code: z.string().regex(/^[a-z0-9_]{1,60}$/).optional(),
++}).strict();
++export type ProviderEvent = z.infer<typeof providerEventSchema>;
++
++export type CallState = {
++  provider: string; provider_call_id: string; direction: 'inbound' | 'outbound';
++  account_ref: string | null; business_number: string | null; remote_number: string | null;
++  started_at: string | null; ended_at: string | null; duration_seconds: number | null;
++  completed: boolean; recording: RecordingRef | null; recording_failed: string | null; transcript: ProviderTranscriptInput | null;
++  conflict: boolean;
++};
++export type Readiness = 'wait' | 'ready' | 'no_content' | 'conflict';
++
++const order = (a: ProviderEvent, b: ProviderEvent) =>
++  (a.sequence ?? -1) !== (b.sequence ?? -1) && a.sequence !== undefined && b.sequence !== undefined ? a.sequence - b.sequence
++    : Date.parse(a.occurred_at) - Date.parse(b.occurred_at) || a.event_id.localeCompare(b.event_id);
++
++// Folds all stored events of one call, in any arrival order and with duplicates, into one state. The result does not
++// depend on delivery order. Conflicting identity fields between events (direction, account, business number) mark the
++// call as a conflict: such a call is never ingested automatically.
++export function foldCallEvents(events: readonly ProviderEvent[]): CallState | null {
++  const unique = [...new Map(events.map(e => [`${e.provider}\u0000${e.event_id}`, e])).values()].sort(order);
++  const first = unique[0];
++  if (!first) return null;
++  const s: CallState = {
++    provider: first.provider, provider_call_id: first.provider_call_id, direction: first.direction,
++    account_ref: null, business_number: null, remote_number: null, started_at: null, ended_at: null, duration_seconds: null,
++    completed: false, recording: null, recording_failed: null, transcript: null, conflict: false,
++  };
++  const pin = <K extends 'account_ref' | 'business_number'>(key: K, value: string | null) => {
++    if (value === null) return;
++    if (s[key] !== null && s[key] !== value) s.conflict = true; else s[key] = value;
++  };
++  for (const e of unique) {
++    if (e.provider !== s.provider || e.provider_call_id !== s.provider_call_id || e.direction !== s.direction) { s.conflict = true; continue; }
++    pin('account_ref', e.account_ref);
++    pin('business_number', e.business_number);
++    s.remote_number = e.remote_number ?? s.remote_number;
++    s.started_at = e.started_at ?? s.started_at;
++    s.ended_at = e.ended_at ?? s.ended_at;
++    s.duration_seconds = e.duration_seconds ?? s.duration_seconds;
++    if (e.kind === 'call_completed') s.completed = true;
++    // A ready recording wins over a failure in any order (providers retry); the newest ready reference is kept.
++    if (e.kind === 'recording_ready' && e.recording) { s.recording = e.recording; s.recording_failed = null; }
++    if (e.kind === 'recording_failed' && !s.recording) s.recording_failed = e.failure_code ?? 'recording_failed';
++    if (e.kind === 'transcript_ready' && e.transcript) s.transcript = e.transcript;
++  }
++  return s;
++}
++
++// A call is processed only when it is complete and has content: audio, a provider transcript, or both. A recording
++// that is announced as failed and no transcript gives no_content (reported by code, nothing is stored).
++export function readiness(s: CallState | null): Readiness {
++  if (!s) return 'wait';
++  if (s.conflict) return 'conflict';
++  if (!s.completed) return 'wait';
++  if (s.recording || s.transcript) return 'ready';
++  return s.recording_failed ? 'no_content' : 'wait';
++}
+diff --git a7new/src/lib/samtal/provider/framework.server.ts a7new/src/lib/samtal/provider/framework.server.ts
+new file mode 100644
+index 0000000..293cfe4
+--- /dev/null
++++ b/src/lib/samtal/provider/framework.server.ts
+@@ -0,0 +1,149 @@
++// estim Samtal A7 (unapplied patch): the provider integration framework.
++//
++// A provider (Lynes or another) is added as ONE ProviderIntegration: a verifier strategy, a field mapper into the
++// normalised events and an optional recording authorisation. Everything else is shared and provider independent:
++//
++//   request -> rate limit / backpressure -> bounded raw body -> signature + timestamp -> replay check -> JSON parse
++//     -> provider mapping -> strict event validation -> durable event store (dedupe by event id)
++//     -> fold all events of the call (out-of-order safe) -> when ready: trusted identity resolution
++//     -> standard call -> existing ingestCall (V2 + A1/A2: idempotent, tombstones, lease fencing, transcript-only)
++//
++// Nothing is stored for an unauthenticated, malformed, unknown-identity or conflicting delivery. There is no route:
++// no public production endpoint is exposed or activated by this patch.
++import type { SamtalAdapter, SamtalAudio } from '../adapter';
++import { standardCall, type SamtalCall } from '../call';
++import { foldCallEvents, providerEventSchema, readiness, type CallState, type ProviderEvent, type RecordingRef } from './events';
++import { resolveCallIdentity, type IdentityDirectory, type IdentityResult } from './identity';
++import { fetchRecording, RecordingError, type RecordingPolicy } from './recording-fetch.server';
++import { BodyTooLarge, readBoundedBody, type RateLimiter, type ReplayGuard, type WebhookVerifier } from './webhook-security.server';
++
++export interface ProviderIntegration {
++  readonly id: string;
++  readonly verifier: WebhookVerifier;
++  readonly maxBodyBytes: number;
++  readonly recordingPolicy: RecordingPolicy;
++  // Provider-specific field mapping only. Returns loose events (validated strictly afterwards) and rejected entries
++  // by reference and code. Must not resolve tenants or read secrets.
++  normalize(body: unknown): { events: unknown[]; rejected: { ref: string; code: string }[] };
++  // Authorisation headers for fetching this provider's recordings (e.g. an API key), server side only.
++  recordingHeaders?(recording: RecordingRef): Promise<Record<string, string>>;
++}
++
++export interface ProviderEventStore {
++  // Stores an event once per (provider, event_id). Returns false for a duplicate delivery.
++  append(event: ProviderEvent): Promise<boolean>;
++  forCall(provider: string, providerCallId: string): Promise<ProviderEvent[]>;
++}
++export function memoryEventStore(): ProviderEventStore {
++  const byId = new Map<string, ProviderEvent>();
++  return {
++    async append(e) { const k = `${e.provider}\u0000${e.event_id}`; if (byId.has(k)) return false; byId.set(k, e); return true; },
++    async forCall(p, c) { return [...byId.values()].filter(e => e.provider === p && e.provider_call_id === c); },
++  };
++}
++
++export type IngestOutcome = { status: string; companyId?: string; code?: string };
++export type WebhookDeps = {
++  integrations: ReadonlyMap<string, ProviderIntegration>;
++  replay: ReplayGuard;
++  limiter: RateLimiter;
++  gate: { tryEnter(): boolean; leave(): void };
++  store: ProviderEventStore;
++  identity: IdentityDirectory;
++  // The existing ingestCall bound to a database client; receives only the standard call and the provider adapter.
++  ingest(adapter: SamtalAdapter, call: SamtalCall): Promise<IngestOutcome>;
++  fetch: typeof fetch;
++  now?: () => number;
++  log?: (entry: Record<string, string | number>) => void;
++};
++export type CallOutcome = { provider_call_id_hash: string; result: string };
++
++const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
++  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
++const short = async (s: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].slice(0, 6).map(b => b.toString(16).padStart(2, '0')).join('');
++
++// The SamtalAdapter seen by ingestCall for provider calls: audio is opened only from the reference stored with this
++// provider's own verified events for the same call, through the safe fetcher.
++export function providerAdapter(integration: ProviderIntegration, deps: Pick<WebhookDeps, 'store' | 'fetch' | 'now'>): SamtalAdapter {
++  return {
++    id: integration.id,
++    async receive() { throw new Error('use_webhook'); },
++    async openAudio(call: SamtalCall): Promise<SamtalAudio> {
++      if (call.provider !== integration.id || call.audio?.kind !== 'url') throw new RecordingError('recording_not_owned');
++      const state = foldCallEvents(await deps.store.forCall(integration.id, call.provider_call_id));
++      const rec = state?.recording;
++      if (!rec || rec.url !== call.audio.url) throw new RecordingError('recording_not_owned');
++      return fetchRecording({ url: rec.url, expires_at: rec.expires_at, headers: await integration.recordingHeaders?.(rec) ?? {}, now: (deps.now ?? Date.now)(), policy: integration.recordingPolicy, fetch: deps.fetch });
++    },
++  };
++}
++
++const extensionOf = (rec: RecordingRef) => {
++  const fromType = rec.content_type?.split(';')[0]?.trim().toLowerCase();
++  const map: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/webm': 'webm', 'audio/flac': 'flac', 'audio/aac': 'aac' };
++  return (fromType && map[fromType]) || 'mp3';
++};
++
++// Turns a ready call state plus its resolved identity into the existing standard call. The business number from the
++// enrolment is passed as to_phone (the existing schema resolves company/employee from it in our own database); the
++// customer's number is from_phone regardless of direction. Payload numbers never select the tenant.
++export function toStandardCall(s: CallState, who: Extract<IdentityResult, { ok: true }>): SamtalCall {
++  return standardCall({
++    provider: s.provider, provider_call_id: s.provider_call_id, to_phone: who.business_number, from_phone: s.remote_number,
++    started_at: s.started_at ?? new Date(0).toISOString(), ended_at: s.ended_at, duration_seconds: s.duration_seconds,
++    ...(s.recording ? { audio: { kind: 'url' as const, url: s.recording.url, extension: extensionOf(s.recording) } } : {}),
++    ...(s.transcript ? { transcript: s.transcript } : {}),
++  });
++}
++
++export async function handleProviderWebhook(request: Request, providerId: string, deps: WebhookDeps): Promise<Response> {
++  const now = (deps.now ?? Date.now)();
++  const log = deps.log ?? ((e) => console.error('[samtal-provider]', JSON.stringify(e)));
++  const integration = /^[a-z0-9_]{1,40}$/.test(providerId) ? deps.integrations.get(providerId) : undefined;
++  if (!integration || request.method !== 'POST') return json(404, { error: 'unsupported_provider' });
++  const limited = deps.limiter.take(integration.id, now);
++  if (!limited.ok) return json(429, { error: 'rate_limited' }, { 'retry-after': String(limited.retryAfterSeconds) });
++  if (!deps.gate.tryEnter()) return json(503, { error: 'busy' }, { 'retry-after': '5' });
++  try {
++    let raw: Uint8Array;
++    try { raw = await readBoundedBody(request, integration.maxBodyBytes); }
++    catch (e) { return e instanceof BodyTooLarge ? json(413, { error: 'payload_too_large' }) : json(400, { error: 'body_unreadable' }); }
++    const verified = await integration.verifier.verify({ rawBody: raw, headers: request.headers, now });
++    if (!verified.ok) { log({ stage: 'verify', provider: integration.id, code: verified.code }); return json(401, { error: 'unauthorized' }); }
++    // A byte-identical redelivery within the window is acknowledged without work (the event ids dedupe it anyway).
++    if (!await deps.replay.claim(`${integration.id}:${verified.replayKey}`, now + 15 * 60_000, now)) return json(200, { ok: true, duplicate: true });
++    let body: unknown;
++    try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)); } catch { return json(400, { error: 'malformed_payload' }); }
++    let mapped: ReturnType<ProviderIntegration['normalize']>;
++    try { mapped = integration.normalize(body); } catch { return json(400, { error: 'malformed_payload' }); }
++    if (!Array.isArray(mapped.events) || mapped.events.length > 100) return json(400, { error: 'malformed_payload' });
++    const rejected = [...mapped.rejected.map(r => r.code)];
++    const touched = new Set<string>();
++    for (const loose of mapped.events) {
++      const parsed = providerEventSchema.safeParse(loose);
++      if (!parsed.success || parsed.data.provider !== integration.id) { rejected.push('event_invalid'); continue; }
++      await deps.store.append(parsed.data);
++      touched.add(parsed.data.provider_call_id);
++    }
++    const calls: CallOutcome[] = [];
++    let retry = false;
++    for (const callId of touched) {
++      const hash = await short(`${integration.id}:${callId}`);
++      const state = foldCallEvents(await deps.store.forCall(integration.id, callId));
++      const ready = readiness(state);
++      if (ready !== 'ready' || !state) { calls.push({ provider_call_id_hash: hash, result: ready }); if (ready === 'conflict' || ready === 'no_content') log({ stage: 'fold', provider: integration.id, code: ready }); continue; }
++      const who = await resolveCallIdentity({ provider: integration.id, direction: state.direction, account_ref: state.account_ref, business_number: state.business_number }, deps.identity);
++      if (!who.ok) { log({ stage: 'identity', provider: integration.id, code: who.code }); calls.push({ provider_call_id_hash: hash, result: who.code }); continue; }
++      let call: SamtalCall;
++      try { call = toStandardCall(state, who); } catch { calls.push({ provider_call_id_hash: hash, result: 'call_invalid' }); continue; }
++      const out = await deps.ingest(providerAdapter(integration, deps), call);
++      // Defence in depth: the database must have placed the call in the company the enrolment named.
++      if (out.companyId && out.companyId !== who.company_id) { log({ stage: 'identity', provider: integration.id, code: 'identity_mismatch' }); calls.push({ provider_call_id_hash: hash, result: 'identity_mismatch' }); continue; }
++      if (out.status === 'retry' || out.status === 'backpressure') retry = true;
++      calls.push({ provider_call_id_hash: hash, result: out.code ? `${out.status}:${out.code}` : out.status });
++    }
++    // Retry/backpressure from ingestion is answered with 503 so the provider redelivers (events are already stored).
++    if (retry) return json(503, { error: 'retry', calls, rejected }, { 'retry-after': '30' });
++    return json(200, { ok: true, calls, rejected });
++  } finally { deps.gate.leave(); }
++}
+diff --git a7new/src/lib/samtal/provider/identity.ts a7new/src/lib/samtal/provider/identity.ts
+new file mode 100644
+index 0000000..0d42fc7
+--- /dev/null
++++ b/src/lib/samtal/provider/identity.ts
+@@ -0,0 +1,72 @@
++// estim Samtal A7 (unapplied patch): resolving the company and employee of a provider call.
++//
++// A valid webhook signature authenticates the PROVIDER, not the employee. The tenant is resolved only from trusted
++// enrolments we created ourselves: a provider account (user/extension) enrolled for one employee, or a verified
++// business number that belongs to exactly one employee. Rules:
++//   - The other party's number (remote_number) is never used: on an outgoing call it is the customer.
++//   - A shared estim number (e.g. Ring estim, one destination for many companies) never decides the tenant; only an
++//     enrolled account can, and without one the call is refused.
++//   - company_id / employee_id fields in a payload or transcript are rejected upstream by strict schemas and are never
++//     read here.
++//   - Unknown, ambiguous, conflicting or revoked identities are refused: nothing is stored for any company.
++// Voice notes (A3/A4) get their own resolution later; here they are refused as not supported.
++
++export type ProviderEnrollment = {
++  provider: string;
++  account_ref: string | null;
++  company_id: string;
++  user_id: string;
++  // The employee's own business number as enrolled in samtal_numbers (E.164).
++  business_number: string;
++  verified: boolean;
++  active: boolean;
++};
++
++export interface IdentityDirectory {
++  byAccount(provider: string, accountRef: string): Promise<ProviderEnrollment[]>;
++  byBusinessNumber(provider: string, number: string): Promise<ProviderEnrollment[]>;
++  isSharedNumber(number: string): Promise<boolean>;
++}
++
++export type IdentityInput = {
++  provider: string; direction: 'inbound' | 'outbound'; account_ref: string | null; business_number: string | null;
++  purpose?: 'business_call' | 'voice_note';
++};
++export type IdentityFailure = 'identity_missing' | 'identity_unknown' | 'identity_ambiguous' | 'identity_conflict' | 'identity_unverified' | 'shared_number_unresolvable' | 'purpose_not_supported';
++export type IdentityResult = { ok: true; company_id: string; user_id: string; business_number: string; via: 'account' | 'number' } | { ok: false; code: IdentityFailure };
++
++const usable = (e: ProviderEnrollment, provider: string) => e.provider === provider && e.active;
++
++export async function resolveCallIdentity(input: IdentityInput, dir: IdentityDirectory): Promise<IdentityResult> {
++  if ((input.purpose ?? 'business_call') !== 'business_call') return { ok: false, code: 'purpose_not_supported' };
++  const shared = input.business_number ? await dir.isSharedNumber(input.business_number) : false;
++  if (input.account_ref) {
++    const found = (await dir.byAccount(input.provider, input.account_ref)).filter(e => usable(e, input.provider) && e.account_ref === input.account_ref);
++    if (found.length > 1) return { ok: false, code: 'identity_ambiguous' };
++    const e = found[0];
++    if (!e) return { ok: false, code: shared ? 'shared_number_unresolvable' : 'identity_unknown' };
++    if (!e.verified) return { ok: false, code: 'identity_unverified' };
++    // A stated business number must agree with the enrolment unless it is the shared number the call went through.
++    if (input.business_number && !shared && input.business_number !== e.business_number) return { ok: false, code: 'identity_conflict' };
++    return { ok: true, company_id: e.company_id, user_id: e.user_id, business_number: e.business_number, via: 'account' };
++  }
++  if (!input.business_number) return { ok: false, code: 'identity_missing' };
++  if (shared) return { ok: false, code: 'shared_number_unresolvable' };
++  const found = (await dir.byBusinessNumber(input.provider, input.business_number)).filter(e => usable(e, input.provider) && e.business_number === input.business_number);
++  if (found.length > 1 || new Set(found.map(e => e.company_id)).size > 1) return { ok: false, code: 'identity_ambiguous' };
++  const e = found[0];
++  if (!e) return { ok: false, code: 'identity_unknown' };
++  if (!e.verified) return { ok: false, code: 'identity_unverified' };
++  return { ok: true, company_id: e.company_id, user_id: e.user_id, business_number: e.business_number, via: 'number' };
++}
++
++// In-memory directory for tests and for documenting the contract. A deployed directory reads enrolments from our own
++// database (proposal: samtal_provider_accounts, see a7-provider-framework.md), never from a payload.
++export function memoryIdentityDirectory(enrollments: readonly ProviderEnrollment[], sharedNumbers: readonly string[] = []): IdentityDirectory {
++  const shared = new Set(sharedNumbers);
++  return {
++    async byAccount(provider, accountRef) { return enrollments.filter(e => e.provider === provider && e.account_ref === accountRef); },
++    async byBusinessNumber(provider, number) { return enrollments.filter(e => e.provider === provider && e.business_number === number); },
++    async isSharedNumber(number) { return shared.has(number); },
++  };
++}
+diff --git a7new/src/lib/samtal/provider/recording-fetch.server.ts a7new/src/lib/samtal/provider/recording-fetch.server.ts
+new file mode 100644
+index 0000000..5dbc095
+--- /dev/null
++++ b/src/lib/samtal/provider/recording-fetch.server.ts
+@@ -0,0 +1,92 @@
++// estim Samtal A7 (unapplied patch): safe retrieval of a provider recording.
++//
++// The recording link is untrusted input. It is fetched only when it is https on the default port, has no embedded
++// credentials, is not an IP literal or local name, and its host is on the integration's own allowlist. Redirects are
++// followed manually and every hop is checked again. The content type must be an allowed audio type, the size is
++// bounded while streaming (a missing or lying Content-Length cannot exceed the limit), an incomplete body is refused
++// and the whole retrieval has a timeout. The reference must belong to the same provider call it is opened for.
++// Error results are structural codes only; the URL is never logged.
++import { SAMTAL_AUDIO_TYPES, SAMTAL_MAX_AUDIO_BYTES } from '../call';
++import type { SamtalAudio } from '../adapter';
++
++export type RecordingPolicy = {
++  allowedHosts: readonly string[];
++  maxBytes?: number;
++  timeoutMs?: number;
++  maxRedirects?: number;
++};
++export class RecordingError extends Error {
++  constructor(code: string, readonly retryable = false) { super(code); }
++}
++
++const TYPE_TO_EXT: Record<string, string> = Object.fromEntries(Object.entries(SAMTAL_AUDIO_TYPES).map(([ext, type]) => [type, ext]));
++TYPE_TO_EXT['audio/mp3'] = 'mp3'; TYPE_TO_EXT['audio/x-wav'] = 'wav'; TYPE_TO_EXT['audio/m4a'] = 'm4a';
++
++export function checkRecordingUrl(raw: string, policy: RecordingPolicy): URL {
++  let url: URL;
++  try { url = new URL(raw); } catch { throw new RecordingError('recording_url_invalid'); }
++  if (url.protocol !== 'https:') throw new RecordingError('recording_url_not_https');
++  if (url.username || url.password) throw new RecordingError('recording_url_credentials');
++  if (url.port && url.port !== '443') throw new RecordingError('recording_url_port');
++  const host = url.hostname.toLowerCase().replace(/\.$/, '');
++  if (/^[\d.]+$/.test(host) || host.includes(':') || host.startsWith('[')) throw new RecordingError('recording_url_ip_literal');
++  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || !host.includes('.')) throw new RecordingError('recording_url_local');
++  const allowed = policy.allowedHosts.some(h => { const a = h.toLowerCase(); return a.startsWith('*.') ? host.endsWith(a.slice(1)) && host !== a.slice(2) : host === a; });
++  if (!allowed) throw new RecordingError('recording_host_not_allowed');
++  return url;
++}
++
++export async function fetchRecording(input: {
++  url: string; expires_at?: string | undefined; headers?: Record<string, string>; now: number;
++  policy: RecordingPolicy; fetch: typeof fetch;
++}): Promise<SamtalAudio> {
++  const max = Math.min(input.policy.maxBytes ?? SAMTAL_MAX_AUDIO_BYTES, SAMTAL_MAX_AUDIO_BYTES);
++  if (input.expires_at && Date.parse(input.expires_at) <= input.now) throw new RecordingError('recording_link_expired');
++  const controller = new AbortController();
++  const timer = setTimeout(() => controller.abort(), input.policy.timeoutMs ?? 30_000);
++  try {
++    let url = checkRecordingUrl(input.url, input.policy);
++    let response: Response | null = null;
++    for (let hop = 0; ; hop++) {
++      try { response = await input.fetch(url.toString(), { method: 'GET', redirect: 'manual', headers: input.headers ?? {}, signal: controller.signal }); }
++      catch { throw new RecordingError(controller.signal.aborted ? 'recording_timeout' : 'recording_network_error', true); }
++      if (response.status >= 300 && response.status < 400) {
++        const location = response.headers.get('location');
++        if (!location || hop >= (input.policy.maxRedirects ?? 2)) throw new RecordingError('recording_redirect_refused');
++        url = checkRecordingUrl(new URL(location, url).toString(), input.policy);
++        continue;
++      }
++      break;
++    }
++    if (response.status === 403 || response.status === 404 || response.status === 410) throw new RecordingError('recording_link_expired');
++    if (response.status === 429 || response.status >= 500) throw new RecordingError(`recording_http_${response.status}`, true);
++    if (response.status !== 200) throw new RecordingError(`recording_http_${response.status}`);
++    const type = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
++    const extension = TYPE_TO_EXT[type];
++    if (!extension) throw new RecordingError('recording_type_not_allowed');
++    const declared = response.headers.get('content-length');
++    if (declared !== null && (!/^\d{1,12}$/.test(declared) || Number(declared) > max)) throw new RecordingError('recording_too_large');
++    if (!response.body) throw new RecordingError('recording_incomplete', true);
++    const reader = response.body.getReader();
++    const chunks: Uint8Array[] = [];
++    let size = 0;
++    try {
++      for (;;) {
++        const { done, value } = await reader.read();
++        if (done) break;
++        size += value.byteLength;
++        if (size > max) { await reader.cancel().catch(() => undefined); throw new RecordingError('recording_too_large'); }
++        chunks.push(value);
++      }
++    } catch (e) {
++      if (e instanceof RecordingError) throw e;
++      throw new RecordingError(controller.signal.aborted ? 'recording_timeout' : 'recording_incomplete', true);
++    }
++    if (declared !== null && size !== Number(declared)) throw new RecordingError('recording_incomplete', true);
++    if (size === 0) throw new RecordingError('recording_empty', true);
++    const bytes = new Uint8Array(size);
++    let at = 0;
++    for (const c of chunks) { bytes.set(c, at); at += c.byteLength; }
++    return { bytes, contentType: SAMTAL_AUDIO_TYPES[extension]!, extension };
++  } finally { clearTimeout(timer); }
++}
+diff --git a7new/src/lib/samtal/provider/reference-provider.ts a7new/src/lib/samtal/provider/reference-provider.ts
+new file mode 100644
+index 0000000..755a487
+--- /dev/null
++++ b/src/lib/samtal/provider/reference-provider.ts
+@@ -0,0 +1,49 @@
++// estim Samtal A7 (unapplied patch): a SYNTHETIC reference mapping used by tests and as a template for a future
++// provider. Its field names are invented for this repository; it is NOT a Lynes adapter and makes no claim about the
++// Lynes API, webhook format or authentication. A real integration replaces only this mapping and the verifier.
++import { z } from 'zod';
++import { normalisePhone } from '../call';
++
++const legSchema = z.object({ number: z.string().max(40).nullable().optional(), account: z.string().max(200).nullable().optional() }).strict();
++const syntheticEventSchema = z.object({
++  id: z.string().max(200),
++  type: z.enum(['call.started', 'call.ended', 'recording.available', 'recording.failed', 'transcript.available']),
++  call: z.string().max(200),
++  direction: z.enum(['in', 'out']),
++  at: z.string().max(40),
++  seq: z.number().int().optional(),
++  // The leg handled by the enrolled business account, and the other party.
++  business: legSchema,
++  remote: legSchema.optional(),
++  started_at: z.string().max(40).optional(),
++  ended_at: z.string().max(40).optional(),
++  duration: z.number().int().optional(),
++  recording: z.object({ id: z.string().max(200), url: z.string().max(2000), type: z.string().max(100).optional(), size: z.number().int().optional(), expires: z.string().max(40).optional() }).strict().optional(),
++  transcript: z.unknown().optional(),
++  error: z.string().max(60).optional(),
++}).strict();
++
++const KIND = { 'call.started': 'call_started', 'call.ended': 'call_completed', 'recording.available': 'recording_ready', 'recording.failed': 'recording_failed', 'transcript.available': 'transcript_ready' } as const;
++
++export function syntheticNormalize(provider: string) {
++  return (body: unknown) => {
++    const list = (body as { events?: unknown })?.events;
++    if (!Array.isArray(list)) throw new Error('malformed');
++    const events: unknown[] = [], rejected: { ref: string; code: string }[] = [];
++    list.forEach((item, i) => {
++      const p = syntheticEventSchema.safeParse(item);
++      if (!p.success) { rejected.push({ ref: String(i), code: 'mapping_invalid' }); return; }
++      const e = p.data;
++      events.push({
++        provider, event_id: e.id, provider_call_id: e.call, kind: KIND[e.type], direction: e.direction === 'in' ? 'inbound' : 'outbound',
++        occurred_at: e.at, ...(e.seq !== undefined ? { sequence: e.seq } : {}),
++        account_ref: e.business.account ?? null, business_number: normalisePhone(e.business.number ?? null), remote_number: normalisePhone(e.remote?.number ?? null),
++        started_at: e.started_at ?? null, ended_at: e.ended_at ?? null, duration_seconds: e.duration ?? null,
++        ...(e.recording ? { recording: { recording_id: e.recording.id, url: e.recording.url, ...(e.recording.type ? { content_type: e.recording.type } : {}), ...(e.recording.size !== undefined ? { bytes: e.recording.size } : {}), ...(e.recording.expires ? { expires_at: e.recording.expires } : {}) } } : {}),
++        ...(e.transcript !== undefined ? { transcript: e.transcript } : {}),
++        ...(e.error ? { failure_code: e.error } : {}),
++      });
++    });
++    return { events, rejected };
++  };
++}
+diff --git a7new/src/lib/samtal/provider/webhook-security.server.ts a7new/src/lib/samtal/provider/webhook-security.server.ts
+new file mode 100644
+index 0000000..d76ed90
+--- /dev/null
++++ b/src/lib/samtal/provider/webhook-security.server.ts
+@@ -0,0 +1,146 @@
++// estim Samtal A7 (unapplied patch): reusable webhook verification. Each provider integration supplies one
++// WebhookVerifier strategy; the HMAC-SHA256 strategy below is a REFERENCE implementation only and is not a claim about
++// how any real provider (including Lynes) signs its requests.
++//
++// Everything works on the raw request bytes (never on re-serialised JSON), compares in constant time, bounds the body
++// before reading it, checks the timestamp, refuses replays and supports several active secrets for rotation.
++// Web Crypto only, so it runs unchanged on the edge runtime. Results are structural codes, never secrets or contents.
++
++export type VerifyFailure = 'signature_missing' | 'signature_invalid' | 'timestamp_missing' | 'timestamp_invalid' | 'timestamp_expired' | 'timestamp_future' | 'verifier_not_configured';
++export type VerifyResult = { ok: true; timestamp: number | null; replayKey: string } | { ok: false; code: VerifyFailure };
++
++export interface WebhookVerifier {
++  readonly id: string;
++  verify(input: { rawBody: Uint8Array; headers: Headers; now: number }): Promise<VerifyResult>;
++}
++
++// Reads at most maxBytes of a request body. The declared length is checked first; the stream is then cut off at the
++// limit, so an oversized or lying Content-Length never makes us buffer more than the limit.
++export class BodyTooLarge extends Error { constructor() { super('payload_too_large'); } }
++export async function readBoundedBody(request: Request, maxBytes: number): Promise<Uint8Array> {
++  const declared = request.headers.get('content-length');
++  if (declared !== null && (!/^\d{1,12}$/.test(declared) || Number(declared) > maxBytes)) throw new BodyTooLarge();
++  if (!request.body) return new Uint8Array();
++  const reader = request.body.getReader();
++  const chunks: Uint8Array[] = [];
++  let size = 0;
++  for (;;) {
++    const { done, value } = await reader.read();
++    if (done) break;
++    size += value.byteLength;
++    if (size > maxBytes) { await reader.cancel().catch(() => undefined); throw new BodyTooLarge(); }
++    chunks.push(value);
++  }
++  const out = new Uint8Array(size);
++  let at = 0;
++  for (const c of chunks) { out.set(c, at); at += c.byteLength; }
++  return out;
++}
++
++// Constant-time comparison of two byte strings: the time depends only on the length of the expected value.
++export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
++  let diff = a.length ^ b.length;
++  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ (b[i % Math.max(b.length, 1)] ?? 0);
++  return diff === 0;
++}
++
++const encoder = new TextEncoder();
++const fromHex = (s: string) => /^(?:[0-9a-f]{2})+$/i.test(s) ? Uint8Array.from(s.match(/../g)!.map(h => parseInt(h, 16))) : null;
++const fromBase64 = (s: string) => { try { return /^[A-Za-z0-9+/]+={0,2}$/.test(s) ? Uint8Array.from(atob(s), c => c.charCodeAt(0)) : null; } catch { return null; } };
++async function hmac(secret: string, data: Uint8Array) {
++  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
++  return new Uint8Array(await crypto.subtle.sign('HMAC', key, new Uint8Array(data)));
++}
++export async function sha256Hex(data: Uint8Array) {
++  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(data)))].map(b => b.toString(16).padStart(2, '0')).join('');
++}
++const concat = (...parts: Uint8Array[]) => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let at = 0; for (const p of parts) { out.set(p, at); at += p.length; } return out; };
++
++export type HmacReferenceOptions = {
++  id?: string;
++  // Active secrets, newest first. During rotation both the new and the previous secret verify.
++  secrets: readonly (string | undefined)[];
++  signatureHeader: string;
++  // When set, the timestamp header is required and signed as `${timestamp}.${rawBody}`; otherwise only the body is signed.
++  timestampHeader?: string;
++  toleranceSeconds?: number;
++  encoding?: 'hex' | 'base64';
++  // Optional scheme prefix, e.g. "v1=". A header may carry several comma-separated signatures.
++  prefix?: string;
++};
++
++// REFERENCE strategy: HMAC-SHA256 over the original body bytes.
++export function hmacReferenceVerifier(o: HmacReferenceOptions): WebhookVerifier {
++  const secrets = o.secrets.filter((s): s is string => typeof s === 'string' && s.length >= 32);
++  const tolerance = (o.toleranceSeconds ?? 300) * 1000;
++  return {
++    id: o.id ?? 'hmac_sha256_reference',
++    async verify({ rawBody, headers, now }) {
++      if (!secrets.length) return { ok: false, code: 'verifier_not_configured' };
++      const header = headers.get(o.signatureHeader);
++      if (!header || header.length > 2048) return { ok: false, code: 'signature_missing' };
++      let timestamp: number | null = null, signed = rawBody;
++      if (o.timestampHeader) {
++        const t = headers.get(o.timestampHeader);
++        if (!t) return { ok: false, code: 'timestamp_missing' };
++        if (!/^\d{9,11}$/.test(t)) return { ok: false, code: 'timestamp_invalid' };
++        timestamp = Number(t) * 1000;
++        if (now - timestamp > tolerance) return { ok: false, code: 'timestamp_expired' };
++        if (timestamp - now > tolerance) return { ok: false, code: 'timestamp_future' };
++        signed = concat(encoder.encode(`${t}.`), rawBody);
++      }
++      const candidates = header.split(',').map(s => s.trim()).filter(s => !o.prefix || s.startsWith(o.prefix)).map(s => o.prefix ? s.slice(o.prefix.length) : s)
++        .map(s => (o.encoding ?? 'hex') === 'hex' ? fromHex(s) : fromBase64(s)).filter((s): s is Uint8Array<ArrayBuffer> => s !== null).slice(0, 5);
++      if (!candidates.length) return { ok: false, code: 'signature_invalid' };
++      let match: Uint8Array | null = null;
++      // Every secret and every candidate is compared, so timing does not reveal which one matched.
++      for (const secret of secrets) {
++        const expected = await hmac(secret, signed);
++        for (const c of candidates) if (timingSafeEqual(expected, c)) match = c;
++      }
++      if (!match) return { ok: false, code: 'signature_invalid' };
++      return { ok: true, timestamp, replayKey: await sha256Hex(concat(encoder.encode(`${o.id ?? 'hmac'}:`), match)) };
++    },
++  };
++}
++
++// Replay protection: a verified signature (or delivery id) may be used once within its validity window. The in-memory
++// store is for tests only; a deployed integration needs a shared durable store (see a7-provider-framework.md).
++export interface ReplayGuard { claim(key: string, expiresAt: number, now: number): Promise<boolean> }
++export function memoryReplayGuard(max = 10_000): ReplayGuard {
++  const seen = new Map<string, number>();
++  return {
++    async claim(key, expiresAt, now) {
++      for (const [k, exp] of seen) if (exp <= now) seen.delete(k);
++      if (seen.has(key)) return false;
++      if (seen.size >= max) return false; // fail closed rather than forgetting keys
++      seen.set(key, expiresAt);
++      return true;
++    },
++  };
++}
++
++// Rate limiting (token bucket per key) and backpressure (bounded concurrent deliveries). Both answer with a retry hint
++// so a well-behaved provider redelivers later; nothing is accepted and then dropped.
++export interface RateLimiter { take(key: string, now: number): { ok: true } | { ok: false; retryAfterSeconds: number } }
++export function tokenBucket(o: { capacity: number; refillPerSecond: number }): RateLimiter {
++  const buckets = new Map<string, { tokens: number; at: number }>();
++  return {
++    take(key, now) {
++      const b = buckets.get(key) ?? { tokens: o.capacity, at: now };
++      b.tokens = Math.min(o.capacity, b.tokens + ((now - b.at) / 1000) * o.refillPerSecond); b.at = now;
++      buckets.set(key, b);
++      if (b.tokens < 1) return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - b.tokens) / o.refillPerSecond)) };
++      b.tokens -= 1;
++      return { ok: true };
++    },
++  };
++}
++export function concurrencyGate(max: number) {
++  let active = 0;
++  return {
++    tryEnter() { if (active >= max) return false; active++; return true; },
++    leave() { active = Math.max(0, active - 1); },
++    get active() { return active; },
++  };
++}
