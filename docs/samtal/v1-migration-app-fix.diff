@@ -1,0 +1,21 @@
+diff -ruN a/src/lib/samtal/purge.server.ts b/src/lib/samtal/purge.server.ts
+--- a/src/lib/samtal/purge.server.ts	2026-11-26 13:52:59.517300588 +0000
++++ b/src/lib/samtal/purge.server.ts	2026-11-26 13:52:59.518300588 +0000
+@@ -37,8 +37,15 @@
+       } catch {
+         // Unresolved: the row stays tracked; exceptions may contain private content.
+       }
+-      const done = await db.rpc('samtal_finish_cleanup', { p_audio: a.id, p_company: a.company_id, p_token: a.cleanup_token as string, p_removed: ok });
+-      if (ok && !done.error && done.data === true) removed++; else pending++;
++      // A failed or thrown confirmation leaves the row pending under its lease; the run continues with the next row.
++      let confirmed = false;
++      try {
++        const done = await db.rpc('samtal_finish_cleanup', { p_audio: a.id, p_company: a.company_id, p_token: a.cleanup_token as string, p_removed: ok });
++        confirmed = !done.error && done.data === true;
++      } catch {
++        // Unconfirmed: never counted as removed; exceptions may contain private content and are not logged.
++      }
++      if (ok && confirmed) removed++; else pending++;
+     }
+   }
+   if (failedQueues === SAMTAL_CLEANUP_QUEUES.length) throw new Error('cleanup_claim_failed');

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # TEST-ONLY. Type-checks the combined patched Samtal application against database types generated from a disposable
 # local PostgreSQL (127.0.0.1, random temp dir). Never connects to the preview or production database.
+# Also runs the directly runnable Samtal suites and the production build in the fully patched copy (SAMTAL unset).
+# The five patch-applier suites (a1-a2, a7-*, app-patch, app-e2e) apply the patches themselves and run from the
+# unpatched repository instead.
 # Usage (from repository root): nix shell nixpkgs#postgresql_17 -c bash docs/samtal/run-a7-local-typecheck.sh
 set -euo pipefail
 ROOT=$(pwd); W=$(mktemp -d); PORT=55499; chown nobody "$W" 2>/dev/null || true
@@ -28,4 +31,8 @@ check() { # $1 = label, $2 = types file, $3.. = patches
   grep 'error TS' "$W/$label.txt" | sed 's/(.*//' | sort | uniq -c || true
 }
 check control "$W/baseline.ts"
-check patched "$W/patched.ts" priority-1-app-patch.diff priority-1-app-patch-remaining.diff a1-a2-app-patch.diff a7-provider-framework.diff a7-hardening.diff
+check patched "$W/patched.ts" priority-1-app-patch.diff priority-1-app-patch-remaining.diff a1-a2-app-patch.diff a7-provider-framework.diff a7-hardening.diff v1-migration-app-fix.diff v1-test-migration.diff
+SUITES="adapter behandling inkorg-steg sida inkorg integration-preparation isolation postgres-concurrency retention rollspel v2-safety"
+(cd "$W/copy-patched" && env -u SAMTAL npx vitest run $(for s in $SUITES; do echo "src/test/samtal-$s.test.ts"; done) > "$W/tests.txt" 2>&1) || true
+echo "patched tests: $(grep -E 'Tests +[0-9]' "$W/tests.txt")"
+(cd "$W/copy-patched" && npx vite build > "$W/build.txt" 2>&1 && echo "patched build: ok") || echo "patched build: FAILED (see $W/build.txt)"

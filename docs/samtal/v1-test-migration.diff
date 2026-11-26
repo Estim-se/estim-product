@@ -1,0 +1,797 @@
+diff -ruN a/src/test/samtal-adapter.test.ts b/src/test/samtal-adapter.test.ts
+--- a/src/test/samtal-adapter.test.ts	2026-11-26 13:53:47.174302293 +0000
++++ b/src/test/samtal-adapter.test.ts	2026-11-26 13:53:47.176302293 +0000
+@@ -8,7 +8,7 @@
+ import { folderAdapter } from '@/lib/samtal/test-adapter.server';
+ import { ingestAll, ingestCall } from '@/lib/samtal/ingest.server';
+ 
+-const A = '0000000a-0000-4000-8000-000000000000', CALL = 'c0000000-0000-4000-8000-000000000001';
++const A = '0000000a-0000-4000-8000-000000000000', B = '0000000b-0000-4000-8000-000000000000', CALL = 'c0000000-0000-4000-8000-000000000001';
+ 
+ describe('standard call object', () => {
+   it.each([
+@@ -52,7 +52,7 @@
+   afterAll(() => rm(folder, { recursive: true, force: true }));
+   it('reads each metadata file with its recording into a standard call; invalid entries are reported by code only', async () => {
+     const { calls, rejected } = await folderAdapter(folder).receive(null);
+-    expect(calls.map(c => [c.provider_call_id, c.to_phone, c.from_phone, c.duration_seconds, c.audio.extension])).toEqual([
++    expect(calls.map(c => [c.provider_call_id, c.to_phone, c.from_phone, c.duration_seconds, c.audio?.extension])).toEqual([
+       ['rollspel-01', '+46701111111', '+46709999999', 60, 'mp3'], ['rollspel-02', '+46702222222', null, 42, 'wav']]);
+     expect(rejected).toEqual([{ ref: 'fel-nummer', code: 'invalid_receiver_number' }, { ref: 'trasig', code: 'invalid_json' }, { ref: 'utan-ljud', code: 'audio_missing' }]);
+   });
+@@ -64,58 +64,83 @@
+   });
+ });
+ 
+-// A recording fake of the Supabase client: rpc, storage upload and table updates with their filters.
+-function fakeDb(registered: Record<string, unknown> | { error: object }) {
+-  const log: { rpc: unknown[]; uploads: { bucket: string; path: string; upsert: unknown }[]; updates: { table: string; values: unknown; filters: [string, unknown][] }[] } = { rpc: [], uploads: [], updates: [] };
++// A recording fake of the Supabase client (V2): rpc answers by name, storage upload. V2 ingestion has no direct table
++// writes; any table access is recorded so a test can prove there was none.
++type Answers = Record<string, unknown>;
++function fakeDb(answers: Answers, o: { upload?: 'ok' | 'error' } = {}) {
++  const log: { rpc: { name: string; args: Record<string, unknown> }[]; uploads: { bucket: string; path: string; upsert: unknown }[]; tables: string[] } = { rpc: [], uploads: [], tables: [] };
+   const db = {
+-    rpc: async (name: string, args: unknown) => { log.rpc.push({ name, args }); return 'error' in registered ? { data: null, error: registered.error } : { data: registered, error: null }; },
+-    storage: { from: (bucket: string) => ({ upload: async (path: string, _bytes: Uint8Array, o: { upsert?: unknown }) => { log.uploads.push({ bucket, path, upsert: o.upsert }); return { data: {}, error: null }; } }) },
+-    from: (table: string) => ({ update: (values: unknown) => { const entry = { table, values, filters: [] as [string, unknown][] }; log.updates.push(entry);
+-      const chain = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return chain; }, then: (ok: (v: unknown) => void) => ok({ error: null }) }; return chain; } }),
++    rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args }); return name in answers ? { data: answers[name], error: null } : { data: null, error: { code: 'unexpected_rpc' } }; },
++    storage: { from: (bucket: string) => ({ upload: async (path: string, _bytes: Uint8Array, opt: { upsert?: unknown }) => { log.uploads.push({ bucket, path, upsert: opt.upsert });
++      return o.upload === 'error' ? { data: null, error: { message: 'synthetic' } } : { data: {}, error: null }; } }) },
++    from: (table: string) => { log.tables.push(table); throw new Error('no_direct_table_access'); },
+   };
+   return { db: db as never, log };
+ }
++const reserved = (auto = true) => ({ samtal_ingest_recover: { status: 'upload', call_id: CALL, company_id: A, auto_process: auto, audio: { id: 'a1', audio_path: `${A}/${CALL}.mp3`, upload_token: 'tok', state: 'reserved' } }, samtal_finish_audio: true });
++const finished = (log: ReturnType<typeof fakeDb>['log']) => log.rpc.filter(r => r.name === 'samtal_finish_audio').map(r => r.args);
+ const call = standardCall({ provider: 'test', provider_call_id: 'rollspel-01', to_phone: '0701111111', from_phone: '0709999999', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, audio: { kind: 'file', path: '/x.mp3', extension: 'mp3' } });
+ const adapter = (open = vi.fn(async () => ({ bytes: new Uint8Array([1]), contentType: 'audio/mpeg', extension: 'mp3' }))) => ({ id: 'test', receive: vi.fn(), openAudio: open });
+ 
+ describe('receiving a call', () => {
+   afterEach(() => vi.unstubAllEnvs());
+   it('does nothing without the flag', async () => {
++    vi.stubEnv('SAMTAL', '');
+     const { db, log } = fakeDb({});
+     expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'disabled' });
+     expect(log.rpc).toEqual([]);
+   });
+-  it('registers by the receiving number only, stores the audio in the company folder and binds every write to that company', async () => {
++  it('registers by the receiving number only, stores the audio in the reserved company path and confirms it under the upload token', async () => {
+     vi.stubEnv('SAMTAL', '1');
+-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: true });
+-    expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'registered', callId: CALL, companyId: A, autoProcess: true });
+-    const payload = (log.rpc[0] as { args: { payload: Record<string, unknown> } }).args.payload;
+-    expect(payload).toEqual({ provider: 'test', provider_call_id: 'rollspel-01', to_phone: '+46701111111', from_phone: '+46709999999', started_at: '2026-11-25T08:00:00.000Z', ended_at: '2026-11-25T08:01:00.000Z', duration_seconds: 60 });
+-    expect(Object.keys(payload)).not.toContain('company_id');
++    const { db, log } = fakeDb(reserved());
++    expect(await ingestCall(db, adapter(), call, 'req-1')).toEqual({ status: 'registered', callId: CALL, companyId: A, autoProcess: true });
++    const register = log.rpc[0]!;
++    expect(register.name).toBe('samtal_ingest_recover');
++    expect(register.args).toEqual({ payload: { provider: 'test', provider_call_id: 'rollspel-01', to_phone: '+46701111111', from_phone: '+46709999999', started_at: '2026-11-25T08:00:00.000Z', ended_at: '2026-11-25T08:01:00.000Z', duration_seconds: 60 }, p_request: 'req-1', p_extension: 'mp3' });
++    expect(Object.keys(register.args['payload'] as object)).not.toContain('company_id');
+     expect(log.uploads).toEqual([{ bucket: 'samtal-audio', path: `${A}/${CALL}.mp3`, upsert: false }]);
+-    expect(log.updates).toEqual([{ table: 'samtal_calls', values: { audio_path: `${A}/${CALL}.mp3` }, filters: [['id', CALL], ['company_id', A]] }]);
++    expect(finished(log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: true }]);
++    expect(log.tables).toEqual([]);
+   });
+-  it('an unknown number or a duplicate never reads or stores audio', async () => {
++  it('a reserved path outside the company folder is never uploaded to', async () => {
+     vi.stubEnv('SAMTAL', '1');
+-    for (const [registered, status] of [[{ ignored: 'unknown_number' }, 'ignored'], [{ duplicate: true }, 'duplicate']] as const) {
+-      const open = vi.fn(), { db, log } = fakeDb(registered);
++    const bad = reserved(); bad.samtal_ingest_recover.audio.audio_path = `${B}/${CALL}.mp3`;
++    const open = vi.fn(), { db, log } = fakeDb(bad);
++    expect(await ingestCall(db, adapter(open as never), call)).toEqual({ status: 'failed', stage: 'register', code: 'audio_path_invalid', callId: CALL });
++    expect(open).not.toHaveBeenCalled();
++    expect(log.uploads).toEqual([]);
++  });
++  it('an unknown number, a duplicate or a live reservation by another delivery never reads or stores audio', async () => {
++    vi.stubEnv('SAMTAL', '1');
++    for (const [answer, status] of [[{ status: 'rejected' }, 'ignored'], [{ status: 'attached', call_id: CALL, company_id: A }, 'duplicate'],
++      [{ status: 'upload', call_id: CALL, company_id: A, audio: { id: 'a1', state: 'reserved' } }, 'duplicate'], [{ status: 'retry' }, 'retry'], [{ status: 'backpressure' }, 'backpressure']] as const) {
++      const open = vi.fn(), { db, log } = fakeDb({ samtal_ingest_recover: answer });
+       expect(await ingestCall(db, adapter(open as never), call)).toEqual({ status });
+       expect(open).not.toHaveBeenCalled();
+       expect(log.uploads).toEqual([]);
++      expect(finished(log)).toEqual([]);
+     }
+   });
+-  it('an unreadable recording marks the call with an error code, in its own company only', async () => {
++  it('an unreadable recording or a failed upload hands the reserved path to cleanup, in its own company only', async () => {
++    vi.stubEnv('SAMTAL', '1');
++    const unreadable = fakeDb(reserved(false));
++    expect(await ingestCall(unreadable.db, adapter(vi.fn(async () => { throw new Error('audio_too_large'); })), call)).toEqual({ status: 'failed', stage: 'audio', code: 'audio_too_large', callId: CALL });
++    expect(finished(unreadable.log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: false }]);
++    const upload = fakeDb(reserved(), { upload: 'error' });
++    expect(await ingestCall(upload.db, adapter(), call)).toEqual({ status: 'failed', stage: 'upload', code: 'audio_upload_failed', callId: CALL });
++    expect(finished(upload.log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: false }]);
++    expect([...unreadable.log.tables, ...upload.log.tables]).toEqual([]);
++  });
++  it('an upload the database does not confirm is reported as cleanup pending, never as registered', async () => {
+     vi.stubEnv('SAMTAL', '1');
+-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: false });
+-    const result = await ingestCall(db, adapter(vi.fn(async () => { throw new Error('audio_too_large'); })), call);
+-    expect(result).toEqual({ status: 'failed', stage: 'audio', code: 'audio_too_large', callId: CALL });
+-    expect(log.updates).toEqual([{ table: 'samtal_calls', values: { status: 'fel', error_code: 'audio_too_large' }, filters: [['id', CALL], ['company_id', A]] }]);
++    const { db } = fakeDb({ ...reserved(), samtal_finish_audio: false });
++    expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'cleanup_pending', callId: CALL, companyId: A });
+   });
+   it('one failing call does not stop the others, and the log holds codes only', async () => {
+     vi.stubEnv('SAMTAL', '1');
+     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+     const second = { ...call, provider_call_id: 'rollspel-02' };
+-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: true });
++    const { db, log } = fakeDb(reserved());
+     const open = vi.fn().mockRejectedValueOnce(new Error('Kunden Anna Svensson på Storgatan 1')).mockResolvedValueOnce({ bytes: new Uint8Array([1]), contentType: 'audio/mpeg', extension: 'mp3' });
+     const { results } = await ingestAll(db, { id: 'test', receive: async () => ({ calls: [call, second], rejected: [] }), openAudio: open }, null);
+     expect(results.map(r => r.status)).toEqual(['failed', 'registered']);
+diff -ruN a/src/test/samtal-behandling.test.ts b/src/test/samtal-behandling.test.ts
+--- a/src/test/samtal-behandling.test.ts	2026-11-26 13:53:47.177302293 +0000
++++ b/src/test/samtal-behandling.test.ts	2026-11-26 13:53:47.178302293 +0000
+@@ -123,95 +123,133 @@
+   });
+ });
+ 
+-// A recording fake of the Supabase client for the processing: rpc, storage download/remove and samtal_calls/customers.
+-function fakeDb(o: { call?: Record<string, unknown> | null; customers?: unknown[]; download?: 'ok' | 'error'; remove?: 'ok' | 'error'; jobs?: unknown[]; due?: unknown[]; marked?: boolean } = {}) {
+-  const log = { rpc: [] as { name: string; args: Record<string, unknown> }[], updates: [] as { values: Record<string, unknown>; filters: [string, unknown][] }[], selects: [] as { table: string; filters: [string, unknown][] }[], downloads: [] as string[], removes: [] as string[][] };
++// A recording fake of the Supabase client for V2 processing: lease-fenced RPCs answer by name (default true), storage
++// download/remove, and reads of samtal_calls/customers/samtal_erasure_requests. V2 has no direct table writes; any
++// update or insert is recorded so a test can prove there was none.
++type Rpc = { name: string; args: Record<string, unknown> };
++function fakeDb(o: { call?: Record<string, unknown> | null; customers?: unknown[]; download?: 'ok' | 'error'; remove?: 'ok' | 'error' | 'throw'; jobs?: unknown[];
++  rpc?: Record<string, unknown | ((args: Record<string, unknown>) => unknown)>; errors?: string[] } = {}) {
++  const log = { rpc: [] as Rpc[], writes: [] as string[], selects: [] as { table: string; filters: [string, unknown][] }[], downloads: [] as string[], removes: [] as string[][] };
+   const db = {
+     rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args });
++      if (o.errors?.includes(name)) return { data: null, error: { code: 'synthetic' } };
++      const a = o.rpc?.[name];
++      if (a !== undefined) return { data: typeof a === 'function' ? (a as (x: Record<string, unknown>) => unknown)(args) : a, error: null };
+       if (name === 'samtal_claim_jobs') return { data: o.jobs ?? [], error: null };
+-      if (name === 'samtal_due_for_deletion') return { data: o.due ?? [], error: null };
+-      if (name === 'samtal_mark_deleted') return { data: o.marked ?? true, error: null };
++      if (name === 'samtal_claim_cleanup_class') return { data: [], error: null };
+       if (name === 'samtal_purge_secret_valid') return { data: args['p_secret'] === 'rätt', error: null };
+       return { data: true, error: null }; },
+     storage: { from: () => ({
+       download: async (path: string) => { log.downloads.push(path); return o.download === 'error' ? { data: null, error: {} } : { data: { arrayBuffer: async () => new Uint8Array([1]).buffer }, error: null }; },
+-      remove: async (paths: string[]) => { log.removes.push(paths); return { error: o.remove === 'error' ? {} : null }; } }) },
++      remove: async (paths: string[]) => { log.removes.push(paths); if (o.remove === 'throw') throw new Error('Anna Berg'); return { error: o.remove === 'error' ? {} : null }; } }) },
+     from: (table: string) => {
+       const filters: [string, unknown][] = [];
+       const chain: Record<string, unknown> = {
+-        select: () => chain, order: () => chain, limit: async () => ({ data: o.customers ?? [], error: null }),
++        select: () => chain, order: () => chain,
++        limit: async () => { log.selects.push({ table, filters }); return { data: table === 'customers' ? o.customers ?? [] : [], error: null }; },
+         eq: (c: string, v: unknown) => { filters.push([c, v]); return chain; },
+         maybeSingle: async () => { log.selects.push({ table, filters }); return { data: o.call === undefined ? null : o.call, error: null }; },
+-        update: (values: Record<string, unknown>) => { const entry = { values, filters: [] as [string, unknown][] }; log.updates.push(entry);
+-          const u = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return u; }, select: () => u,
+-            maybeSingle: async () => ({ data: o.call ? { id: o.call['id'] } : null, error: null }),
+-            then: (ok: (v: unknown) => void) => ok({ error: null }) }; return u; },
++        update: () => { log.writes.push(`update ${table}`); throw new Error('no_direct_write'); },
++        insert: () => { log.writes.push(`insert ${table}`); throw new Error('no_direct_write'); },
+       };
+-      if (table === 'customers') log.selects.push({ table, filters });
+       return chain;
+     },
+   };
+   return { db: db as never, log };
+ }
+ const job = (over: Record<string, unknown> = {}) => ({ id: 'j1', call_id: CALL, company_id: A, step: 'transkribera', attempts: 1, lease_token: 't1', state: 'running', ...over }) as never;
+-const call = (over: Record<string, unknown> = {}) => ({ id: CALL, company_id: A, user_id: 'u1', audio_path: `${A}/${CALL}.mp3`, caller_phone: '+46701234567', transcript: null, ...over });
++const call = (over: Record<string, unknown> = {}) => ({ id: CALL, company_id: A, user_id: 'u1', audio_path: `${A}/${CALL}.mp3`, caller_phone: '+46701234567', transcript: null, extraction: null, ...over });
+ const deps = (o: { stt?: () => Promise<Transcript>; ai?: () => Promise<unknown> } = {}) => ({
+   stt: { id: 'fake', transcribe: vi.fn(o.stt ?? (async () => transcript)) }, ai: { id: 'fake', interpret: vi.fn(o.ai ?? (async () => answer())) }, today: () => '2026-11-25' });
+-const released = (log: ReturnType<typeof fakeDb>['log']) => log.rpc.filter(r => r.name === 'samtal_release_job').map(r => [r.args['p_state'], r.args['p_step'], r.args['p_error'], r.args['p_retry_seconds']]);
++const named = (log: ReturnType<typeof fakeDb>['log'], name: string) => log.rpc.filter(r => r.name === name).map(r => r.args);
++const released = (log: ReturnType<typeof fakeDb>['log']) => named(log, 'samtal_release_job').map(a => [a['p_state'], a['p_step'], a['p_error'], a['p_retry_seconds']]);
++const retried = (log: ReturnType<typeof fakeDb>['log']) => named(log, 'samtal_retry_guarded').map(a => [a['p_error'], a['p_retry_seconds']]);
++const lease = { p_call: CALL, p_company: A, p_job: 'j1', p_token: 't1' };
++const privateAnswer = () => answer({ classification: 'privat', fields: Object.fromEntries(Object.keys(answer().fields).map(k => [k, none])) as never, next_steps: [] });
+ 
+ describe('processing a call job', () => {
+   afterEach(() => vi.unstubAllEnvs());
+-  it('transcribes the company\'s own audio, interprets, matches the customer and finishes; every write is bound to the company', async () => {
++  it('transcribes the company\'s own audio, interprets, matches the customer and finishes; every write is lease-fenced and bound to the company', async () => {
+     const { db, log } = fakeDb({ call: call(), customers: [{ id: 'k1', name: 'Anna Berg', phone: '0701234567', address: 'Storgatan 5', place: 'Solna' }] });
+     expect(await processJob(db, deps(), job())).toBe('done');
+     expect(log.downloads).toEqual([`${A}/${CALL}.mp3`]);
+-    expect(log.updates.every(u => JSON.stringify(u.filters) === JSON.stringify([['id', CALL], ['company_id', A]]))).toBe(true);
++    expect(log.writes).toEqual([]);
+     expect(log.selects.map(s => s.filters.find(f => f[0] === 'company_id'))).toEqual([['company_id', A], ['company_id', A]]);
+-    const last = log.updates.at(-1)!.values;
+-    expect(last).toMatchObject({ classification: 'jobb', customer_id: 'k1', status: 'klar' });
+-    expect((last['extraction'] as { customer_match: unknown }).customer_match).toEqual({ kind: 'befintlig', customer_id: 'k1', by: 'telefon' });
++    const stages = named(log, 'samtal_write_stage');
++    expect(stages.map(s => s['p_stage'])).toEqual(['transkribera', 'tolka']);
++    expect(stages.every(s => s['p_company'] === A && s['p_job'] === 'j1' && s['p_token'] === 't1' && s['p_call'] === CALL)).toBe(true);
++    const extraction = stages[1]!['p_value'] as { interpretation: { classification: string }; customer_match: unknown };
++    expect(extraction.interpretation.classification).toBe('jobb');
++    expect(extraction.customer_match).toEqual({ kind: 'befintlig', customer_id: 'k1', by: 'telefon' });
++    expect(named(log, 'samtal_safety_live').every(a => JSON.stringify(a) === JSON.stringify(lease))).toBe(true);
+     expect(released(log)).toEqual([['done', 'klar', null, 0]]);
+   });
+-  it('a private call: audio and text are deleted at once, only that a call took place remains', async () => {
++  it('a private call: text and extraction are removed in one fenced transaction and the recording goes to the urgent cleanup queue', async () => {
+     const { db, log } = fakeDb({ call: call() });
+-    expect(await processJob(db, deps({ ai: async () => answer({ classification: 'privat', fields: Object.fromEntries(Object.keys(answer().fields).map(k => [k, none])) as never, next_steps: [] }) }), job())).toBe('privat');
+-    expect(log.removes).toEqual([[`${A}/${CALL}.mp3`]]);
+-    expect(log.updates.at(-1)!.values).toMatchObject({ classification: 'privat', status: 'privat', transcript: null, extraction: null, caller_phone: null, audio_path: null });
+-    expect(log.rpc.some(r => r.name === 'samtal_mark_deleted')).toBe(false);
+-    expect(released(log)).toEqual([['done', 'klar', null, 0]]);
++    expect(await processJob(db, deps({ ai: async () => privateAnswer() }), job())).toBe('privat');
++    expect(named(log, 'samtal_commit_private')).toEqual([lease]);
++    // Nothing private is saved first, no customer is read and the worker never deletes files itself.
++    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
++    expect(log.selects.some(s => s.table === 'customers')).toBe(false);
++    expect(log.removes).toEqual([]);
++    expect(log.writes).toEqual([]);
++  });
++  it('if the private commit cannot be saved, the job is retried and nothing private is kept by the worker', async () => {
++    const { db, log } = fakeDb({ call: call(), errors: ['samtal_commit_private'] });
++    expect(await processJob(db, deps({ ai: async () => privateAnswer() }), job({ attempts: 9 }))).toBe('retry');
++    expect(retried(log)).toEqual([['private_cleanup_not_saved', 3600]]);
++    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
++    expect(released(log)).toEqual([]);
+   });
+-  it('if the private audio cannot be removed now, the text is still deleted and the call is made due for the hourly purge', async () => {
+-    const { db, log } = fakeDb({ call: call(), remove: 'error' });
+-    await processJob(db, deps({ ai: async () => answer({ classification: 'privat', next_steps: [] }) }), job());
+-    expect(log.updates.at(-1)!.values).toMatchObject({ transcript: null, extraction: null, delete_after: expect.any(String) });
+-    expect(log.updates.at(-1)!.values).not.toHaveProperty('audio_path');
++  it('a call deleted or made private meanwhile (lease no longer live) stops without writing', async () => {
++    let n = 0;
++    const { db, log } = fakeDb({ call: call(), rpc: { samtal_safety_live: () => n++ === 0 } });
++    expect(await processJob(db, deps(), job())).toBe('stopped');
++    expect(named(log, 'samtal_write_stage')).toEqual([]);
++    expect(released(log)).toEqual([]);
++    const refused = fakeDb({ call: call(), rpc: { samtal_write_stage: false } });
++    expect(await processJob(refused.db, deps(), job())).toBe('stopped');
++    expect(named(refused.log, 'samtal_write_stage')).toHaveLength(1);
+   });
+   it('never reads audio outside the job\'s company folder', async () => {
+     const { db, log } = fakeDb({ call: call({ audio_path: `${B}/${CALL}.mp3` }) });
+     expect(await processJob(db, deps(), job())).toBe('audio_missing');
+     expect(log.downloads).toEqual([]);
+-    expect(log.updates.at(-1)!.values).toEqual({ status: 'fel', error_code: 'audio_missing' });
++    expect(released(log)).toEqual([['failed', 'transkribera', 'audio_missing', 0]]);
+   });
+   it('without the speech-to-text key the call waits an hour instead of failing', async () => {
+     const { db, log } = fakeDb({ call: call() });
+     expect(await processJob(db, deps({ stt: async () => { throw new SttError('stt_not_configured', true); } }), job({ attempts: 9 }))).toBe('retry');
+-    expect(released(log)).toEqual([['queued', 'transkribera', 'stt_not_configured', 3600]]);
++    expect(retried(log)).toEqual([['stt_not_configured', 3600]]);
++    expect(named(log, 'samtal_retry_guarded')[0]).toMatchObject(lease);
+   });
+   it('a transient AI failure after transcription resumes at the interpretation, without transcribing again', async () => {
+     const first = fakeDb({ call: call() });
+     const d = deps({ ai: async () => { throw Object.assign(new Error('ai_http_503'), { retryable: true }); } });
+     expect(await processJob(first.db, d, job({ attempts: 2 }))).toBe('retry');
+-    expect(released(first.log)).toEqual([['queued', 'tolka', 'ai_http_503', 120]]);
++    expect(retried(first.log)).toEqual([['ai_http_503', 120]]);
++    expect(named(first.log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
+     const second = fakeDb({ call: call({ transcript }) });
+     const again = deps();
+     expect(await processJob(second.db, again, job({ step: 'tolka', attempts: 3 }))).toBe('done');
+     expect(again.stt.transcribe).not.toHaveBeenCalled();
+   });
+-  it('after the last attempt, or on a permanent error, the call is marked with its code and the job fails', async () => {
++  it('after the last attempt, or on a permanent error, the job fails with its code under the lease', async () => {
+     const { db, log } = fakeDb({ call: call() });
+     expect(await processJob(db, deps({ stt: async () => { throw new SttError('stt_http_503', true); } }), job({ attempts: 5 }))).toBe('stt_http_503');
+-    expect(log.updates.at(-1)!.values).toEqual({ status: 'fel', error_code: 'stt_http_503' });
++    expect(retried(log)).toEqual([]);
+     expect(released(log)).toEqual([['failed', 'transkribera', 'stt_http_503', 0]]);
++    expect(named(log, 'samtal_release_job')[0]).toMatchObject({ p_job: 'j1', p_token: 't1' });
++    const lost = fakeDb({ call: call(), rpc: { samtal_release_job: false } });
++    expect(await processJob(lost.db, deps({ stt: async () => { throw new SttError('stt_http_400', false); } }), job())).toBe('stopped');
++  });
++  it('an uncertain call is held for review: its extraction is saved, nothing goes to the inbox', async () => {
++    const inbox = vi.fn(async () => true);
++    const { db, log } = fakeDb({ call: call() });
++    expect(await processJob(db, { ...deps({ ai: async () => answer({ classification: 'osaker' }) }), inbox }, job())).toBe('osaker');
++    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera', 'tolka']);
++    expect(inbox).not.toHaveBeenCalled();
++    expect(released(log)).toEqual([]);
+   });
+   it('many jobs run together and one failing job does not stop the others; the log holds codes only', async () => {
+     vi.stubEnv('SAMTAL', '1');
+@@ -228,16 +266,20 @@
+   it('a retried inbox step runs the inbox again from the saved extraction, without speech to text or AI', async () => {
+     const saved = { interpretation: validateInterpretation(answer(), transcript), customer_match: { kind: 'befintlig', customer_id: 'k1', by: 'telefon' } };
+     const { db, log } = fakeDb({ call: call({ transcript, extraction: saved }) });
+-    const inbox = vi.fn(async () => {}), d = { ...deps(), inbox };
++    const inbox = vi.fn(async () => true), d = { ...deps(), inbox };
+     expect(await processJob(db, d, job({ step: 'inkorg', attempts: 2 }))).toBe('done');
+-    expect(inbox).toHaveBeenCalledWith(expect.objectContaining({ interpretation: saved.interpretation, match: saved.customer_match }));
++    expect(inbox).toHaveBeenCalledWith(expect.objectContaining({ interpretation: saved.interpretation, match: saved.customer_match, lease: { job: 'j1', token: 't1' } }));
+     expect(d.stt.transcribe).not.toHaveBeenCalled();
+     expect(d.ai.interpret).not.toHaveBeenCalled();
+-    expect(log.updates.at(-1)!.values).toEqual({ status: 'klar' });
++    expect(log.writes).toEqual([]);
++    // A refused handoff (lost lease, deleted call) is not reported as done.
++    const refused = fakeDb({ call: call({ transcript, extraction: saved }) });
++    expect(await processJob(refused.db, { ...deps(), inbox: vi.fn(async () => false) }, job({ step: 'inkorg' }))).toBe('stopped');
+     const missing = fakeDb({ call: call({ transcript }) });
+     expect(await processJob(missing.db, { ...deps(), inbox }, job({ step: 'inkorg' }))).toBe('extraction_missing');
+   });
+   it('does nothing without the flag', async () => {
++    vi.stubEnv('SAMTAL', '');
+     const { db, log } = fakeDb({ jobs: [job()] });
+     expect(await runSamtalJobs(db, deps())).toEqual({ claimed: 0, results: [] });
+     expect(log.rpc).toEqual([]);
+@@ -253,16 +295,27 @@
+     expect(await purgeSecretValid(db, 'x'.repeat(501))).toBe(false);
+     expect(log.rpc).toHaveLength(2);
+   });
+-  it('deletes each due file in its own company folder, then the call\'s content with that company; failures are kept for the next run', async () => {
+-    const { db, log } = fakeDb({ due: [
+-      { call_id: 'c1', company_id: A, audio_path: `${A}/c1.mp3` }, { call_id: 'c2', company_id: A, audio_path: `${B}/c2.mp3` }, { call_id: 'c3', company_id: B, audio_path: null }] });
+-    expect(await purgeDueCalls(db)).toEqual({ due: 3, deleted: 2, kept: 1 });
+-    expect(log.removes).toEqual([[`${A}/c1.mp3`]]);
+-    expect(log.rpc.filter(r => r.name === 'samtal_mark_deleted').map(r => r.args)).toEqual([{ p_call: 'c1', p_company: A }, { p_call: 'c3', p_company: B }]);
+-  });
+-  it('a file that cannot be deleted keeps its call (content and all) for the next run', async () => {
+-    const { db, log } = fakeDb({ remove: 'error', due: [{ call_id: 'c1', company_id: A, audio_path: `${A}/c1.mp3` }] });
+-    expect(await purgeDueCalls(db)).toEqual({ due: 1, deleted: 0, kept: 1 });
+-    expect(log.rpc.some(r => r.name === 'samtal_mark_deleted')).toBe(false);
++  it('removes each claimed file in its own company folder and confirms it with its token; a foreign path is never touched and stays pending', async () => {
++    const rows: Record<string, unknown[]> = { urgent: [{ id: 'a1', company_id: A, audio_path: `${A}/c1.mp3`, cleanup_token: 'k1' }, { id: 'a2', company_id: A, audio_path: `${B}/c2.mp3`, cleanup_token: 'k2' }],
++      retry: [{ id: 'a3', company_id: B, audio_path: `${B}/c3.mp3`, cleanup_token: 'k3' }], verify: [] };
++    const { db, log } = fakeDb({ rpc: { samtal_claim_cleanup_class: (a: Record<string, unknown>) => rows[a['p_queue'] as string] } });
++    expect(await purgeDueCalls(db)).toEqual({ claimed: 3, removed: 2, pending: 1, erased: 0 });
++    expect(log.removes).toEqual([[`${A}/c1.mp3`], [`${B}/c3.mp3`]]);
++    expect(named(log, 'samtal_claim_cleanup_class').map(a => a['p_queue'])).toEqual(['urgent', 'retry', 'verify']);
++    expect(named(log, 'samtal_finish_cleanup')).toEqual([{ p_audio: 'a1', p_company: A, p_token: 'k1', p_removed: true }, { p_audio: 'a2', p_company: A, p_token: 'k2', p_removed: false }, { p_audio: 'a3', p_company: B, p_token: 'k3', p_removed: true }]);
++  });
++  it('a file that cannot be deleted, or whose removal the database does not accept, stays pending and is never reported as removed', async () => {
++    const one = { samtal_claim_cleanup_class: (a: Record<string, unknown>) => a['p_queue'] === 'urgent' ? [{ id: 'a1', company_id: A, audio_path: `${A}/c1.mp3`, cleanup_token: 'k1' }] : [] };
++    for (const o of [{ remove: 'error' as const }, { remove: 'throw' as const }]) {
++      const { db, log } = fakeDb({ ...o, rpc: one });
++      expect(await purgeDueCalls(db)).toEqual({ claimed: 1, removed: 0, pending: 1, erased: 0 });
++      expect(named(log, 'samtal_finish_cleanup')).toEqual([{ p_audio: 'a1', p_company: A, p_token: 'k1', p_removed: false }]);
++    }
++    const stale = fakeDb({ rpc: { ...one, samtal_finish_cleanup: false } });
++    expect(await purgeDueCalls(stale.db)).toEqual({ claimed: 1, removed: 0, pending: 1, erased: 0 });
++  });
++  it('fails loudly when no cleanup queue can be claimed', async () => {
++    const { db } = fakeDb({ errors: ['samtal_claim_cleanup_class'] });
++    await expect(purgeDueCalls(db)).rejects.toThrow('cleanup_claim_failed');
+   });
+ });
+diff -ruN a/src/test/samtal-inkorg-steg.test.ts b/src/test/samtal-inkorg-steg.test.ts
+--- a/src/test/samtal-inkorg-steg.test.ts	2026-11-26 13:53:47.179302293 +0000
++++ b/src/test/samtal-inkorg-steg.test.ts	2026-11-26 13:53:47.180302293 +0000
+@@ -2,10 +2,10 @@
+ // (quote draft from the catalog). Fake database for the step; the payload it sends is then run through the real
+ // estim_receive (docs/samtal/inkorg.sql) in PGlite.
+ import { describe, expect, it, vi } from 'vitest';
+-import { requestSummary, requestTitle, samtalInboxStep, stockholmTime, suggestedTasks } from '@/lib/samtal/inbox.server';
++import { drainSamtalDispatch, requestSummary, requestTitle, samtalInboxStep, stockholmTime, suggestedTasks } from '@/lib/samtal/inbox.server';
+ import { validateInterpretation, type RawInterpretation } from '@/lib/samtal/interpretation';
+ import type { Transcript } from '@/lib/samtal/transcript';
+-import { CID, database } from './helpers/samtal-inbox-db';
++import { CID } from './helpers/samtal-inbox-db';
+ 
+ const A = CID, CALL = 'c0000000-0000-4000-8000-000000000001', EMPLOYEE = 'e0000000-0000-4000-8000-000000000001';
+ const transcript: Transcript = { service: 'fake', model: 'fake', language: 'sv', segments: [
+@@ -46,81 +46,81 @@
+   });
+ });
+ 
+-// A recording fake: estim_receive, reads of calls/messages/threads/customers/tasks, and writes with their filters.
+-function fakeDb(o: { receive?: Record<string, unknown>; existingTasks?: number; customerPhone?: string | null } = {}) {
+-  const log = { rpc: [] as { name: string; args: Record<string, unknown> }[], writes: [] as { table: string; op: string; values: unknown; filters: [string, unknown][] }[], reads: [] as { table: string; filters: [string, unknown][] }[] };
++// A recording fake for V2: the step reads the call's time from samtal_calls (company-bound) and hands everything to the
++// lease-fenced samtal_inbox_guarded in one call; the outbox drain starts the existing AI job. No direct table writes.
++type Rpc = { name: string; args: Record<string, unknown> };
++function fakeDb(o: { rpc?: Record<string, unknown | ((a: Record<string, unknown>) => unknown)>; errors?: string[]; tables?: Record<string, unknown[]> } = {}) {
++  const log = { rpc: [] as Rpc[], writes: [] as string[], reads: [] as { table: string; filters: [string, unknown][] }[] };
+   const db = {
+-    rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args }); return { data: o.receive ?? { id: 't1', job_id: 'j1', duplicate: false }, error: null }; },
++    rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args });
++      if (o.errors?.includes(name)) return { data: null, error: { code: 'synthetic' } };
++      const a = o.rpc?.[name];
++      return { data: a === undefined ? true : typeof a === 'function' ? (a as (x: Record<string, unknown>) => unknown)(args) : a, error: null }; },
+     from: (table: string) => {
+       const filters: [string, unknown][] = [];
+-      const read = () => { log.reads.push({ table, filters });
+-        if (table === 'samtal_calls') return { data: meta, error: null };
+-        if (table === 'messages') return { data: { thread_id: 't-befintlig' }, error: null };
+-        if (table === 'threads') return { data: { customer_id: 'k1' }, error: null };
+-        if (table === 'customers') return { data: { phone: o.customerPhone ?? null }, error: null };
+-        return { data: null, error: null }; };
+       const chain: Record<string, unknown> = {
+-        select: () => chain, eq: (c: string, v: unknown) => { filters.push([c, v]); return chain; }, maybeSingle: async () => read(),
+-        then: (ok: (v: unknown) => void) => { log.reads.push({ table, filters }); ok({ count: o.existingTasks ?? 0, error: null }); },
+-        insert: async (values: unknown) => { log.writes.push({ table, op: 'insert', values, filters: [] }); return { error: null }; },
+-        update: (values: unknown) => { const w = { table, op: 'update', values, filters: [] as [string, unknown][] }; log.writes.push(w);
+-          const u = { eq: (c: string, v: unknown) => { w.filters.push([c, v]); return u; }, then: (ok: (v: unknown) => void) => ok({ error: null }) }; return u; },
++        select: () => chain, eq: (c: string, v: unknown) => { filters.push([c, v]); return chain; },
++        maybeSingle: async () => { log.reads.push({ table, filters }); return { data: table === 'samtal_calls' ? meta : null, error: null }; },
++        limit: async () => { log.reads.push({ table, filters }); return { data: o.tables?.[table] ?? [], error: null }; },
++        update: () => { log.writes.push(`update ${table}`); throw new Error('no_direct_write'); },
++        insert: () => { log.writes.push(`insert ${table}`); throw new Error('no_direct_write'); },
+       };
+       return chain;
+     },
+   };
+   return { db: db as never, log };
+ }
++const lease = { job: 'job-1', token: 'tok-1' };
++const fresh = { kind: 'ny' as const, name: 'Anna Berg', phone: '+46701234567', address: 'Storgatan 5', place: 'Solna', possible: [] };
++const guarded = (log: ReturnType<typeof fakeDb>['log']) => log.rpc.filter(r => r.name === 'samtal_inbox_guarded').map(r => r.args);
+ 
+ describe('the inbox step', () => {
+-  it('creates the request through estim_receive with channel samtal, links it, adds tasks for the employee and starts the existing AI job', async () => {
+-    const { db, log } = fakeDb(), dispatch = vi.fn(async () => {});
+-    await samtalInboxStep(dispatch)({ db, call, interpretation, match: { kind: 'ny', name: 'Anna Berg', phone: '+46701234567', address: 'Storgatan 5', place: 'Solna', possible: [] } });
+-    const receive = log.rpc.find(r => r.name === 'estim_receive')!.args;
+-    expect(receive['cid']).toBe(A);
+-    expect(receive['payload']).toMatchObject({ channel: 'samtal', provider_message_id: `samtal:${CALL}`, sent_at: meta.started_at, customer_phone: '+46701234567', customer_name: 'Anna Berg',
+-      address: 'Storgatan 5', place: 'Solna', job: 'Laddbox: Installera laddbox i garaget' });
+-    expect(log.writes.find(w => w.table === 'samtal_calls')).toEqual({ table: 'samtal_calls', op: 'update', values: { thread_id: 't1', customer_id: 'k1' }, filters: [['id', CALL], ['company_id', A]] });
+-    const tasks = log.writes.find(w => w.table === 'samtal_tasks')!.values as Record<string, unknown>[];
+-    expect(tasks.map(t => [t['kind'], t['company_id'], t['call_id'], t['user_id']])).toEqual([['ring_tillbaka', A, CALL, EMPLOYEE], ['platsbesok', A, CALL, EMPLOYEE], ['offert', A, CALL, EMPLOYEE]]);
+-    expect(dispatch).toHaveBeenCalledWith('j1');
+-    expect(log.reads.every(r => r.filters.some(([c, v]) => c === 'company_id' && v === A))).toBe(true);
+-  });
+-  it('an existing customer is found by estim_receive on its stored phone', async () => {
+-    const { db, log } = fakeDb({ customerPhone: '08-555 66 77' });
+-    await samtalInboxStep(vi.fn(async () => {}))({ db, call, interpretation, match: { kind: 'befintlig', customer_id: 'k9', by: 'namn_och_adress' } });
+-    expect((log.rpc[0]!.args['payload'] as Record<string, unknown>)['customer_phone']).toBe('08-555 66 77');
+-    expect(log.reads.find(r => r.table === 'customers')!.filters).toEqual([['id', 'k9'], ['company_id', A]]);
+-  });
+-  it('run again for the same call: the existing thread is used, tasks are not added twice, no new AI job', async () => {
+-    const { db, log } = fakeDb({ receive: { duplicate: true }, existingTasks: 3 }), dispatch = vi.fn();
+-    await samtalInboxStep(dispatch)({ db, call, interpretation, match: { kind: 'ny', name: null, phone: null, address: null, place: null, possible: [] } });
+-    expect(log.reads.find(r => r.table === 'messages')!.filters).toEqual([['company_id', A], ['channel', 'samtal'], ['provider_message_id', `samtal:${CALL}`]]);
+-    expect(log.writes.find(w => w.table === 'samtal_calls')!.values).toEqual({ thread_id: 't-befintlig', customer_id: 'k1' });
+-    expect(log.writes.some(w => w.table === 'samtal_tasks')).toBe(false);
++  it('hands the request, the tasks and the AI-job intent to one lease-fenced database step bound to the call\'s company', async () => {
++    const { db, log } = fakeDb({ rpc: { samtal_inbox_guarded: { accepted: true } } });
++    expect(await samtalInboxStep()({ db, call, interpretation, match: fresh, lease })).toBe(true);
++    const [args] = guarded(log);
++    expect(args).toMatchObject({ p_call: CALL, p_company: A, p_job: 'job-1', p_token: 'tok-1', p_title: 'Laddbox: Installera laddbox i garaget', p_extraction: { interpretation, customer_match: fresh } });
++    expect(args!['p_tasks']).toEqual(suggestedTasks(interpretation));
++    expect(args!['p_summary']).toBe(requestSummary(interpretation, meta));
++    expect(log.reads).toEqual([{ table: 'samtal_calls', filters: [['id', CALL], ['company_id', A]] }]);
++    expect(log.writes).toEqual([]);
++  });
++  it('the inbox message never carries the transcript', async () => {
++    const { db, log } = fakeDb({ rpc: { samtal_inbox_guarded: { accepted: true } } });
++    await samtalInboxStep()({ db, call, interpretation, match: fresh, lease });
++    expect(JSON.stringify(guarded(log)[0]!['p_summary'])).not.toContain('portkod');
++  });
++  it('an existing customer is passed as the saved match; the database resolves its stored phone', async () => {
++    const { db, log } = fakeDb({ rpc: { samtal_inbox_guarded: { accepted: true } } });
++    const match = { kind: 'befintlig' as const, customer_id: 'k9', by: 'namn_och_adress' as const };
++    await samtalInboxStep()({ db, call, interpretation, match, lease });
++    expect(guarded(log)[0]!['p_extraction']).toEqual({ interpretation, customer_match: match });
++    expect(log.reads.some(r => r.table === 'customers')).toBe(false);
++  });
++  it('a refused handoff (lost lease, deleted or private call, or a repeat) reports false; a database error is retryable', async () => {
++    const refused = fakeDb({ rpc: { samtal_inbox_guarded: { accepted: false } } });
++    expect(await samtalInboxStep()({ db: refused.db, call, interpretation, match: fresh, lease })).toBe(false);
++    const failing = fakeDb({ errors: ['samtal_inbox_guarded'] });
++    await expect(samtalInboxStep()({ db: failing.db, call, interpretation, match: fresh, lease })).rejects.toMatchObject({ message: 'inbox_failed', retryable: true });
++  });
++  it('the outbox starts the existing AI job once; a failed start keeps the row for retry and never edits shared jobs, drafts or threads', async () => {
++    const rows = [{ id: 'o1', company_id: A, token: 'k1', job_id: 'ai-1' }, { id: 'o2', company_id: A, token: 'k2', job_id: 'ai-2' }, { id: 'o3', company_id: A, token: null, job_id: 'ai-3' }];
++    const { db, log } = fakeDb({ rpc: { samtal_claim_dispatch: rows }, tables: { samtal_dispatch_outbox: [{ company_id: A }] } });
++    const dispatch = vi.fn(async (id: string) => { if (id === 'ai-2') throw new Error('down'); });
++    expect(await drainSamtalDispatch(db, dispatch)).toEqual({ claimed: 3, started: 1, retried: 1 });
++    expect(dispatch.mock.calls.map(c => c[0])).toEqual(['ai-1', 'ai-2']);
++    expect(log.rpc.filter(r => r.name === 'samtal_finish_dispatch').map(r => [r.args['p_outbox'], r.args['p_company'], r.args['p_accepted']])).toEqual([['o1', A, true], ['o2', A, false]]);
++    expect(log.rpc.filter(r => r.name === 'samtal_observe_dispatch').map(r => r.args)).toEqual([{ p_company: A, p_limit: 50 }]);
++    expect(log.writes).toEqual([]);
++  });
++  it('a row whose lease is no longer live is not started', async () => {
++    const { db } = fakeDb({ rpc: { samtal_claim_dispatch: [{ id: 'o1', company_id: A, token: 'k1', job_id: 'ai-1' }], samtal_dispatch_live: false } });
++    const dispatch = vi.fn();
++    expect(await drainSamtalDispatch(db, dispatch)).toEqual({ claimed: 1, started: 0, retried: 0 });
+     expect(dispatch).not.toHaveBeenCalled();
+   });
+-  it('if the AI job cannot start, the request stays for manual handling, as for other channels', async () => {
+-    const { db, log } = fakeDb();
+-    await samtalInboxStep(vi.fn(async () => { throw new Error('down'); }))({ db, call, interpretation, match: { kind: 'ny', name: null, phone: null, address: null, place: null, possible: [] } });
+-    expect(log.writes.filter(w => ['ai_jobs', 'drafts', 'threads'].includes(w.table)).map(w => [w.table, w.values, w.filters.find(f => f[0] === 'company_id')])).toEqual([
+-      ['ai_jobs', { state: 'failed' }, ['company_id', A]], ['drafts', { text: '', warnings: ['AI kunde inte svara just nu'], needs_review: true }, ['company_id', A]], ['threads', { status: 'svar' }, ['company_id', A]]]);
+-  });
+-});
+-
+-describe('the payload is accepted by the real estim_receive', () => {
+-  it('a call becomes a thread in channel samtal with the summary as the customer message, an SMS draft awaiting review and a queued AI job; the same call twice is one request', async () => {
+-    const { db: fake, log } = fakeDb();
+-    await samtalInboxStep(vi.fn(async () => {}))({ db: fake, call, interpretation, match: { kind: 'ny', name: 'Anna Berg', phone: '+46701234567', address: 'Storgatan 5', place: 'Solna', possible: [] } });
+-    const payload = log.rpc[0]!.args['payload'];
+-    const pg = await database(true);
+-    const receive = async () => (await pg.query<{ r: Record<string, unknown> }>(`SELECT public.estim_receive($1, $2) AS r`, [A, payload])).rows[0]!.r;
+-    const first = await receive();
+-    expect((await pg.query(`SELECT t.channel, t.job, t.place, c.name FROM public.threads t JOIN public.customers c ON c.id = t.customer_id WHERE t.id = $1`, [first['id']])).rows)
+-      .toEqual([{ channel: 'samtal', job: 'Laddbox: Installera laddbox i garaget', place: 'Solna', name: 'Befintlig Kund' }]);
+-    expect((await pg.query<{ text: string }>(`SELECT text FROM public.messages WHERE thread_id = $1`, [first['id']])).rows[0]!.text).toContain('Beskrivning: Installera laddbox i garaget');
+-    expect((await pg.query(`SELECT channel, needs_review FROM public.drafts WHERE thread_id = $1`, [first['id']])).rows).toEqual([{ channel: 'sms', needs_review: true }]);
+-    expect((await pg.query(`SELECT state FROM public.ai_jobs WHERE thread_id = $1`, [first['id']])).rows).toEqual([{ state: 'queued' }]);
+-    expect(await receive()).toEqual({ duplicate: true });
+-  }, 30000);
+ });
++// The former "payload is accepted by the real estim_receive" test is retired here: in V2 the estim_receive payload is
++// built inside samtal_inbox_guarded (SQL), and that real path is exercised against PostgreSQL in samtal-v2-safety
++// ("outbox intent is committed atomically with Inbox…") and samtal-app-e2e (business/mixed calls become samtal threads
++// with one request per call). See docs/samtal/v1-test-migration.md.
+diff -ruN a/src/test/samtal-retention.test.ts b/src/test/samtal-retention.test.ts
+--- a/src/test/samtal-retention.test.ts	2026-11-26 13:53:47.184302293 +0000
++++ b/src/test/samtal-retention.test.ts	2026-11-26 13:53:47.185302293 +0000
+@@ -23,34 +23,33 @@
+   uncertain: [], next_steps: [],
+ };
+ 
+-function cleanupDb(options: { persistence?: 'error' | 'none' | 'throw'; remove?: 'error' | 'throw' } = {}) {
+-  const row: Record<string, unknown> = { id: callId, company_id: company, user_id: null, audio_path: path, caller_phone: null, transcript: transcript as unknown as Json, extraction: null };
+-  const updates: Record<string, unknown>[] = [];
+-  const releases: Record<string, unknown>[] = [];
+-  const removal = vi.fn(async () => {
+-    if (options.remove === 'throw') throw new Error('synthetic sensitive recording text');
+-    return { error: options.remove === 'error' ? { message: 'synthetic sensitive recording text' } : null };
+-  });
++// V2: private content is removed by the lease-fenced samtal_commit_private in one transaction; the worker never deletes
++// files itself, and the recording goes to the urgent cleanup queue. The fake records every RPC and refuses direct writes.
++function cleanupDb(options: { commit?: 'error' | 'false' | 'throw' } = {}) {
++  const rpcs: { name: string; args: Record<string, unknown> }[] = [];
++  const removal = vi.fn(async () => ({ error: null }));
++  const writes: string[] = [];
++  const row = { id: callId, company_id: company, user_id: null, audio_path: path, caller_phone: null, transcript: transcript as unknown as Json, extraction: null };
+   const db = {
+     storage: { from: () => ({ remove: removal }) },
+-    rpc: async (_name: string, args: Record<string, unknown>) => { releases.push(args); return { data: true, error: null }; },
+-    from: () => {
+-      const read = { select: () => read, eq: () => read, maybeSingle: async () => ({ data: { ...row }, error: null }) };
+-      return { ...read, update: (values: Record<string, unknown>) => {
+-        updates.push(values);
+-        const result = () => {
+-          if (options.persistence === 'throw') throw new Error('synthetic sensitive database text');
+-          const error = options.persistence === 'error' ? { message: 'synthetic sensitive database text' } : null;
+-          if (!error && options.persistence !== 'none') Object.assign(row, values);
+-          return { error, data: error || options.persistence === 'none' ? null : { id: callId } };
+-        };
+-        const write = { eq: () => write, select: () => write, maybeSingle: async () => result(), then: (resolve: (value: unknown) => void) => resolve(result()) };
+-        return write;
+-      } };
++    rpc: async (name: string, args: Record<string, unknown>) => {
++      rpcs.push({ name, args });
++      if (name === 'samtal_commit_private') {
++        if (options.commit === 'throw') throw new Error('synthetic sensitive database text');
++        if (options.commit === 'error') return { data: null, error: { message: 'synthetic sensitive database text' } };
++        if (options.commit === 'false') return { data: false, error: null };
++      }
++      return { data: true, error: null };
++    },
++    from: (table: string) => {
++      const read = { select: () => read, eq: () => read, maybeSingle: async () => ({ data: { ...row }, error: null }),
++        update: () => { writes.push(`update ${table}`); throw new Error('no_direct_write'); } };
++      return read;
+     },
+   };
+-  return { db: db as unknown as SupabaseClient<Database>, row, updates, releases, removal };
++  return { db: db as unknown as SupabaseClient<Database>, rpcs, removal, writes };
+ }
++const named = (f: { rpcs: { name: string; args: Record<string, unknown> }[] }, name: string) => f.rpcs.filter(r => r.name === name).map(r => r.args);
+ 
+ async function runPrivate(f: ReturnType<typeof cleanupDb>) {
+   return processJob(f.db, { stt: { id: 'synthetic', transcribe: async () => transcript }, ai: { id: 'synthetic', interpret: async () => privateAnswer } }, job);
+@@ -59,86 +58,79 @@
+ describe('Samtal private cleanup result handling', () => {
+   afterEach(() => vi.restoreAllMocks());
+   it('does not complete the job when private content persistence returns an error', async () => {
+-    const f = cleanupDb({ persistence: 'error' });
++    const f = cleanupDb({ commit: 'error' });
+     expect(await runPrivate(f)).toBe('retry');
+-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'queued', p_step: 'tolka', p_error: 'private_cleanup_not_saved', p_retry_seconds: 60 })]);
+-    expect(f.row['transcript']).toEqual(transcript);
++    expect(named(f, 'samtal_retry_guarded')).toEqual([expect.objectContaining({ p_error: 'private_cleanup_not_saved', p_retry_seconds: 60 })]);
++    expect(named(f, 'samtal_release_job')).toEqual([]);
+   });
+-  it('requires a returned call row instead of accepting a no-row cleanup write', async () => {
+-    const f = cleanupDb({ persistence: 'none' });
+-    expect(await runPrivate(f)).toBe('retry');
+-    expect(f.releases.some(r => r['p_state'] === 'done')).toBe(false);
++  it('a refused private commit (lost lease, already deleted) is not reported as done', async () => {
++    const f = cleanupDb({ commit: 'false' });
++    expect(await runPrivate(f)).toBe('stopped');
++    expect(named(f, 'samtal_release_job').some(r => r['p_state'] === 'done')).toBe(false);
+   });
+   it('uses a structural retry code when private cleanup persistence rejects', async () => {
+-    const f = cleanupDb({ persistence: 'throw' });
++    const f = cleanupDb({ commit: 'throw' });
+     expect(await runPrivate(f)).toBe('retry');
+-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'queued', p_error: 'private_cleanup_not_saved' })]);
++    const [retry] = named(f, 'samtal_retry_guarded');
++    expect(retry).toMatchObject({ p_call: callId, p_company: company });
++    expect(String(retry!['p_error'])).toMatch(/^[a-z0-9_]+$/);
++    expect(JSON.stringify(f.rpcs)).not.toContain('sensitive');
+   });
+-  it('clears text and keeps the audio reference due when storage deletion rejects', async () => {
+-    const f = cleanupDb({ remove: 'throw' });
+-    expect(await runPrivate(f)).toBe('privat');
+-    expect(f.row['transcript']).toBeNull();
+-    expect(f.row['extraction']).toBeNull();
+-    expect(f.row['audio_path']).toBe(path);
+-    expect(Date.parse(String(f.row['delete_after']))).toBeLessThanOrEqual(Date.now());
+-    expect(f.row).not.toHaveProperty('content_deleted_at');
+-  });
+-  it('keeps failed audio removal eligible for purge when storage returns an error', async () => {
+-    const f = cleanupDb({ remove: 'error' });
+-    expect(await runPrivate(f)).toBe('privat');
+-    expect(f.row['audio_path']).toBe(path);
+-    expect(f.row['transcript']).toBeNull();
+-    expect(f.row).not.toHaveProperty('content_deleted_at');
+-  });
+-  it('confirms successful deletion using the existing schema', async () => {
++  it('commits the private call through the fenced function and leaves the recording to the cleanup queue', async () => {
+     const f = cleanupDb();
+     expect(await runPrivate(f)).toBe('privat');
+-    expect(f.row['audio_path']).toBeNull();
+-    expect(f.row['transcript']).toBeNull();
+-    expect(f.row['content_deleted_at']).toEqual(expect.any(String));
+-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'done' })]);
++    expect(named(f, 'samtal_commit_private')).toEqual([{ p_call: callId, p_company: company, p_job: job.id, p_token: job.lease_token }]);
++    expect(f.removal).not.toHaveBeenCalled();
++    expect(f.writes).toEqual([]);
++    // Nothing from the private call was saved before the commit.
++    expect(named(f, 'samtal_write_stage')).toEqual([]);
+   });
+ });
+ 
+-function purgeDb(failure: 'storage_throw' | 'mark_throw' | 'mark_error' | 'mark_false' | 'none') {
++function purgeDb(failure: 'storage_throw' | 'storage_error' | 'finish_throw' | 'finish_error' | 'finish_false' | 'none') {
+   const pending = new Set(['first', 'second']);
+   const attempts: string[] = [];
+   let fail = failure !== 'none';
+   const db = {
+     storage: { from: () => ({ remove: async (paths: string[]) => {
+-      if (fail && failure === 'storage_throw' && paths[0] === `${company}/first.mp3`) { fail = false; throw new Error('synthetic sensitive storage text'); }
++      if (fail && paths[0] === `${company}/first.mp3`) {
++        if (failure === 'storage_throw') { fail = false; throw new Error('synthetic sensitive storage text'); }
++        if (failure === 'storage_error') { fail = false; return { error: { message: 'synthetic sensitive storage text' } }; }
++      }
+       return { error: null };
+     } }) },
+     rpc: async (name: string, args: Record<string, unknown>) => {
+-      if (name === 'samtal_due_for_deletion') return { data: [...pending].map(id => ({ call_id: id, company_id: company, audio_path: `${company}/${id}.mp3` })), error: null };
+-      const id = String(args['p_call']); attempts.push(id);
++      if (name === 'samtal_claim_cleanup_class') return { data: args['p_queue'] === 'urgent' ? [...pending].map(id => ({ id, company_id: company, audio_path: `${company}/${id}.mp3`, cleanup_token: `t-${id}` })) : [], error: null };
++      const id = String(args['p_audio']); attempts.push(id);
+       if (fail && id === 'first') {
+         fail = false;
+-        if (failure === 'mark_throw') throw new Error('synthetic sensitive database text');
+-        if (failure === 'mark_error') return { data: null, error: { message: 'synthetic sensitive database text' } };
+-        if (failure === 'mark_false') return { data: false, error: null };
++        if (failure === 'finish_throw') throw new Error('synthetic sensitive database text');
++        if (failure === 'finish_error') return { data: null, error: { message: 'synthetic sensitive database text' } };
++        if (failure === 'finish_false') return { data: false, error: null };
+       }
+-      pending.delete(id); return { data: true, error: null };
++      if (args['p_removed'] === true) pending.delete(id);
++      return { data: true, error: null };
+     },
++    from: () => { const q = { select: () => q, eq: () => q, limit: async () => ({ data: [], error: null }) }; return q; },
+   };
+   return { db: db as unknown as SupabaseClient<Database>, pending, attempts };
+ }
+ 
+ describe('Samtal purge per-call recovery', () => {
+   afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+-  it.each(['storage_throw', 'mark_throw', 'mark_error', 'mark_false'] as const)('keeps %s retryable and continues with the next call', async failure => {
++  it.each(['storage_throw', 'storage_error', 'finish_throw', 'finish_error', 'finish_false'] as const)('keeps %s pending and continues with the next call', async failure => {
+     const f = purgeDb(failure);
+     const logger = vi.spyOn(console, 'error').mockImplementation(() => {});
+-    expect(await purgeDueCalls(f.db)).toEqual({ due: 2, deleted: 1, kept: 1 });
++    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 2, removed: 1, pending: 1, erased: 0 });
+     expect([...f.pending]).toEqual(['first']);
+-    expect(await purgeDueCalls(f.db)).toEqual({ due: 1, deleted: 1, kept: 0 });
++    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 1, removed: 1, pending: 0, erased: 0 });
+     expect(f.pending.size).toBe(0);
+     expect(logger).not.toHaveBeenCalled();
+   });
+   it.each(['', '0', '1'])('retention still runs with test-process SAMTAL=%s', async flag => {
+     vi.stubEnv('SAMTAL', flag);
+     const f = purgeDb('none');
+-    expect(await purgeDueCalls(f.db)).toEqual({ due: 2, deleted: 2, kept: 0 });
++    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 2, removed: 2, pending: 0, erased: 0 });
+   });
+ });
+ 
+diff -ruN a/src/test/samtal-sida.test.ts b/src/test/samtal-sida.test.ts
+--- a/src/test/samtal-sida.test.ts	2026-11-26 13:53:47.182302293 +0000
++++ b/src/test/samtal-sida.test.ts	2026-11-26 13:53:47.183302293 +0000
+@@ -37,14 +37,17 @@
+       ? { data: [{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', audio_path: `${A}/${CALL}.mp3`,
+         extraction: { interpretation: { fields: { job_type: { value: 'laddbox' }, description: { value: 'Ny laddbox' } } } }, transcript: { segments: [{ text: 'hemligt' }] } }] }
+       : table === 'samtal_calls' ? { count: 2 } : { data: [] }, owner);
+-    const admin = fake(table => table === 'company_members' ? { data: [{ user_id: 'u1', role: 'användare' }] } : { data: [{ id: 'u1', display_name: 'Ali' }] });
++    const admin = fake(table => table === 'company_members' ? { data: [{ user_id: 'u1', role: 'användare' }] } : table === 'profiles' ? { data: [{ id: 'u1', display_name: 'Ali' }] } : { data: [] });
+     const page = await loadSamtalPage(user.client, admin.client, 'u0', { stt: false, ai: true });
+-    expect(page.calls).toEqual([{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true }]);
++    expect(page.calls).toEqual([{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true, needs_review: false }]);
+     expect(JSON.stringify(page)).not.toContain('hemligt');
+     expect(page.members).toEqual([{ user_id: 'u1', role: 'användare', name: 'Ali' }]);
+-    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles']);
++    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles', 'samtal_reviews']);
+     expect(has(admin.log.queries[0]!.ops, 'eq', 'company_id', A)).toBe(true);
+     expect(has(admin.log.queries[1]!.ops, 'in', 'id', ['u1'])).toBe(true);
++    // Pending reviews are read for the own company and only for calls the user's client already returned.
++    const reviews = admin.log.queries[2]!.ops;
++    expect(has(reviews, 'eq', 'company_id', A) && has(reviews, 'eq', 'decision', 'pending') && has(reviews, 'in', 'call_id', [CALL])).toBe(true);
+     expect(page).toMatchObject({ owner: true, waiting: 2, keys: { stt: false, ai: true } });
+   });
+   it('a user without an active company gets nothing', async () => {
+@@ -85,20 +88,29 @@
+ });
+ 
+ describe('audio, tasks and restarting: the user\'s client must see the call first', () => {
++  const PATH = `${A}/${CALL}.mp3`;
+   it('no signed link for a call the user\'s client cannot see (another company, or a colleague\'s call for an employee)', async () => {
+-    const admin = fake(() => ({}));
+-    await expect(samtalAudioLink(fake(() => ({ data: null })).client, admin.client, CALL)).rejects.toThrow('Inspelningen finns inte.');
++    const admin = fake(() => ({}), { samtal_audio_access_guarded: PATH });
++    await expect(samtalAudioLink(fake(() => ({ data: null }), employee).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
++    await expect(samtalAudioLink(fake(() => ({ data: { company_id: B, audio_path: `${B}/x.mp3` } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
+     expect(admin.log.signed).toEqual([]);
++    expect(admin.log.rpc).toEqual([]);
+   });
+   it('no signed link for a path outside the call\'s company folder', async () => {
+-    const admin = fake(() => ({}));
+-    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${B}/x.mp3` } })).client, admin.client, CALL)).rejects.toThrow('Inspelningen finns inte.');
++    const admin = fake(() => ({}), { samtal_audio_access_guarded: `${B}/x.mp3` });
++    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${B}/x.mp3` } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
+     expect(admin.log.signed).toEqual([]);
+   });
+-  it('a visible call gets a link valid for 60 seconds', async () => {
+-    const admin = fake(() => ({}));
+-    expect(await samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${A}/${CALL}.mp3` } })).client, admin.client, CALL)).toEqual({ url: `https://signed/${A}/${CALL}.mp3`, expires_in: 60 });
+-    expect(admin.log.signed).toEqual([{ path: `${A}/${CALL}.mp3`, seconds: 60 }]);
++  it('a deleted, private or expired call (guard returns no path) is never signed', async () => {
++    const admin = fake(() => ({}), { samtal_audio_access_guarded: null });
++    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: PATH } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
++    expect(admin.log.signed).toEqual([]);
++  });
++  it('a visible call gets a link valid for 60 seconds, checked by the guard before and after signing with the verified actor', async () => {
++    const admin = fake(() => ({}), { samtal_audio_access_guarded: PATH });
++    expect(await samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: PATH } }), employee).client, admin.client, CALL, 'u0')).toEqual({ url: `https://signed/${PATH}`, expires_in: 60 });
++    expect(admin.log.signed).toEqual([{ path: PATH, seconds: 60 }]);
++    expect(admin.log.rpc).toEqual([1, 2].map(() => ({ name: 'samtal_audio_access_guarded', args: { p_call: CALL, p_company: A, p_actor: 'u0' } })));
+   });
+   it('tasks are decided by the database function with the user\'s own rights', async () => {
+     const user = fake(() => ({}), { samtal_decide_task: { state: 'bekraftad' } });
+@@ -106,17 +118,18 @@
+     expect(user.log.rpc).toEqual([{ name: 'samtal_decide_task', args: { p_task: 't1', p_decision: 'bekraftad' } }]);
+     await expect(decideSamtalTask(fake(() => ({})).client, { id: 't-b', decision: 'avvisad' })).rejects.toThrow('kunde inte ändras');
+   });
+-  it('only an owner restarts a call, only one their client sees in their company, only a waiting or failed job', async () => {
+-    const admin = fake((_t, ops) => has(ops, 'select', 'id') ? { data: [{ id: 'j1' }] } : {});
+-    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), employee).client, admin.client, CALL)).rejects.toThrow('Bara ägaren');
+-    await expect(startSamtalCall(fake(() => ({ data: null }), owner).client, admin.client, CALL)).rejects.toThrow('Samtalet finns inte.');
+-    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: B } }), owner).client, admin.client, CALL)).rejects.toThrow('Samtalet finns inte.');
++  it('only an owner restarts a call, only one their client sees in their company, and only through the guarded function', async () => {
++    const admin = fake(() => ({}), { samtal_restart_guarded: true });
++    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), employee).client, admin.client, CALL, 'u0')).rejects.toThrow('Bara ägaren');
++    await expect(startSamtalCall(fake(() => ({ data: null }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Samtalet finns inte.');
++    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: B } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Samtalet finns inte.');
++    expect(admin.log.rpc).toEqual([]);
++    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, admin.client, CALL, 'u0')).toEqual({ started: true });
++    expect(admin.log.rpc).toEqual([{ name: 'samtal_restart_guarded', args: { p_call: CALL, p_company: A, p_actor: 'u0' } }]);
++    // No direct job or call writes: the guard decides whether the job is waiting, failed, private or unreviewed.
+     expect(admin.log.queries).toEqual([]);
+-    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, admin.client, CALL)).toEqual({ started: true });
+-    const job = admin.log.queries[0]!;
+-    expect(job.table).toBe('samtal_jobs');
+-    expect(has(job.ops, 'eq', 'company_id', A) && has(job.ops, 'eq', 'call_id', CALL) && has(job.ops, 'in', 'state', ['paused', 'failed'])).toBe(true);
+-    expect(has(admin.log.queries[1]!.ops, 'eq', 'company_id', A)).toBe(true);
++    const refused = fake(() => ({}), { samtal_restart_guarded: false });
++    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, refused.client, CALL, 'u0')).toEqual({ started: false });
+   });
+ });
+ 
