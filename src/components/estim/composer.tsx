@@ -27,6 +27,7 @@ export function Composer({ thread: t }: { thread: Thread }) {
     return () => observer.disconnect();
   }, [d?.text]);
   if (!d) return null;
+  const needsSenderApproval = real && Boolean(t.pendingSender) && d.ch === 'email';
   const note = d.ch === 'wa' ? (t.waWin ? 'Fritt svar: kunden skrev i WhatsApp nyss' : 'Utanför 24 h: skickas som godkänd mall med länk') : d.ch === 'sms' && d.text.length > 300 ? 'Lång text: SMS:et skickas med länk till hela svaret' : '';
   return <div className={`composer${state.hl === 'composer' ? ' hl' : ''}`} data-hl="composer">
     {real&&t.deliveryError&&<div className="flag" role="alert"><Icon name="warn" /><span>{t.deliveryError}</span></div>}
@@ -37,8 +38,9 @@ export function Composer({ thread: t }: { thread: Thread }) {
       <div className="tools">{d.att.map((a, i) => <span className="att" key={`${a}-${i}`}><Icon name={a.startsWith('Offert') ? 'offert' : 'clip'} />{a}<Button variant="prototype" title="Ta bort" aria-label={`Ta bort ${a}`} onClick={() => actions.delAtt(t.id, i)}><Icon name="x" /></Button></span>)}
         <select aria-label="Bifoga" className="tchip attachment-select" value="" onChange={e => actions.addAtt(t.id, e.target.value)}><option value="">+ Bifoga</option>{t.q && <option>Offert #{t.q.nr}</option>}{!real&&docs.map(doc => <option key={doc}>{doc}</option>)}</select></div></div>
     <div className="cmp-f"><div className="chpills"><span className="xs muted b">Skicka via</span>{(['email', 'sms', 'wa'] as const).map(ch => <Button key={ch} variant="prototype" className={`chpill ${d.ch === ch ? 'on' : ''}`} aria-pressed={d.ch === ch} disabled={ch === 'email' ? t.email === '—' : t.phone === '—'} onClick={() => actions.setCh(t.id, ch)}><Icon name={channelIcon(ch)} />{demo.channels[ch][0]}</Button>)}</div>
-      <Button variant="prototype" className="btn btn-primary btn-sm" disabled={real&&(d.busy||(d.review&&!d.edited))} onClick={() => actions.send(t.id)}><Icon name="send" />{t.autopilot&&!real ? 'Skicka nu' : 'Godkänn och skicka'}</Button></div>
+      <Button variant="prototype" className="btn btn-primary btn-sm" disabled={real&&(d.busy||needsSenderApproval||(d.review&&!d.edited))} onClick={() => actions.send(t.id)}><Icon name="send" />{t.autopilot&&!real ? 'Skicka nu' : 'Godkänn och skicka'}</Button></div>
     {(!real&&note) && <div className="xs muted channel-note"><Icon name="info" />{note}</div>}
+    {needsSenderApproval && <div className="xs muted channel-note"><Icon name="info" />Godkänn avsändaren till höger innan du skickar.</div>}
     {real&&d.ch==='wa'&&!t.waWin&&<div className="xs muted channel-note"><Icon name="info" />Utanför 24 h: skickas som godkänd mall</div>}
   </div>;
 }

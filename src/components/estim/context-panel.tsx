@@ -58,6 +58,7 @@ export function ContextPanel({ thread: t }: { thread: Thread }) {
   const status = qStatus(t);
   return (
     <div className="ctx">
+      <EmailIdentityCard thread={t} />
       {t.asks.length > 0 && (
         <div className="card">
           <div className="row context-heading">
@@ -143,7 +144,6 @@ export function ContextPanel({ thread: t }: { thread: Thread }) {
           </div>
         </div>
       )}
-      <EmailIdentityCard thread={t} />
       <CustomerCard thread={t} />
       <div className="card">
         <h3>Händelser</h3>
