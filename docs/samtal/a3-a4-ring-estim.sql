@@ -221,6 +221,8 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM samtal_ring_identities i JOIN company_members m ON m.company_id = i.company_id AND m.user_id = i.user_id JOIN companies x ON x.id = i.company_id AND x.active
     WHERE i.user_id = p_actor AND i.company_id = p_company AND i.revoked_at IS NULL) THEN RETURN jsonb_build_object('status','rejected');END IF;
+  -- Registers the tenant for fair claiming, exactly as ingestion does.
+  IF NOT samtal_v2_try_tenant(p_company) THEN RETURN jsonb_build_object('status','retry');END IF;
   c := samtal_ring_create_call(p_company, p_actor, jsonb_build_object('provider', p.provider, 'provider_call_id', p.provider_call_id, 'started_at', p.started_at, 'duration_seconds', p.duration_seconds));
   IF c.id IS NULL THEN RETURN jsonb_build_object('status','rejected');END IF;
   UPDATE samtal_calls SET transcript = p.transcript WHERE id = c.id AND transcript IS NULL;
@@ -246,8 +248,10 @@ DECLARE c samtal_calls; d jsonb; deadline timestamptz;
 BEGIN
   IF NOT samtal_safety_live(p_call, p_company, p_job, p_token) THEN RETURN false;END IF;
   SELECT * INTO c FROM samtal_calls WHERE id = p_call;
-  IF c.kind <> 'rostanteckning' OR p_extraction#>>'{interpretation,classification}' IS DISTINCT FROM 'jobb' OR jsonb_typeof(p_drafts) <> 'array' OR jsonb_array_length(p_drafts) > 30
-    OR (p_transcript IS NOT NULL AND jsonb_typeof(p_transcript->'segments') <> 'array') THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_invalid_ring_commit';END IF;
+  IF c.kind <> 'rostanteckning' THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_ring_not_voice_note';END IF;
+  IF p_extraction#>>'{interpretation,classification}' IS DISTINCT FROM 'jobb' THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_ring_not_business';END IF;
+  IF jsonb_typeof(p_drafts) IS DISTINCT FROM 'array' OR jsonb_array_length(p_drafts) > 30 THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_ring_invalid_drafts';END IF;
+  IF p_transcript IS NOT NULL AND jsonb_typeof(p_transcript) <> 'null' AND jsonb_typeof(p_transcript->'segments') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_ring_invalid_transcript';END IF;
   IF p_customer IS NOT NULL AND NOT EXISTS (SELECT 1 FROM customers WHERE id = p_customer AND company_id = p_company) THEN RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'samtal_invalid_customer';END IF;
   SELECT least(j.lease_until, c.delete_after) INTO deadline FROM samtal_jobs j WHERE j.id = p_job;
   FOR d IN SELECT * FROM jsonb_array_elements(p_drafts) LOOP
@@ -257,7 +261,7 @@ BEGIN
         CASE WHEN d->>'kind' IN ('offertutkast','materialunderlag') THEN true ELSE coalesce((d->>'needs_review')::boolean, true) END)
       ON CONFLICT (call_id, kind, title) DO NOTHING;
   END LOOP;
-  UPDATE samtal_calls SET extraction = p_extraction, transcript = coalesce(p_transcript, transcript), classification = 'jobb', customer_id = p_customer, status = 'klar', error_code = NULL WHERE id = p_call;
+  UPDATE samtal_calls SET extraction = p_extraction, transcript = CASE WHEN p_transcript IS NULL OR jsonb_typeof(p_transcript) = 'null' THEN transcript ELSE p_transcript END, classification = 'jobb', customer_id = p_customer, status = 'klar', error_code = NULL WHERE id = p_call;
   UPDATE samtal_jobs SET state = 'done', step = 'klar', lease_token = NULL, lease_until = NULL, error_code = NULL WHERE id = p_job;
   PERFORM samtal_v2_deadline(deadline);
   RETURN true;

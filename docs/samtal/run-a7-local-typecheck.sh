@@ -34,5 +34,5 @@ check control "$W/baseline.ts"
 check patched "$W/patched.ts" priority-1-app-patch.diff priority-1-app-patch-remaining.diff a1-a2-app-patch.diff a7-provider-framework.diff a7-hardening.diff v1-migration-app-fix.diff v1-test-migration.diff a3-a4-ring-estim.diff
 SUITES="adapter behandling inkorg-steg sida inkorg integration-preparation isolation postgres-concurrency retention rollspel v2-safety"
 (cd "$W/copy-patched" && env -u SAMTAL npx vitest run $(for s in $SUITES; do echo "src/test/samtal-$s.test.ts"; done) > "$W/tests.txt" 2>&1) || true
-echo "patched tests: $(grep -E 'Tests +[0-9]' "$W/tests.txt")"
+echo "patched tests: $(sed 's/\x1b\[[0-9;]*m//g' "$W/tests.txt" | grep -E 'Tests +[0-9]')"
 (cd "$W/copy-patched" && npx vite build > "$W/build.txt" 2>&1 && echo "patched build: ok") || echo "patched build: FAILED (see $W/build.txt)"

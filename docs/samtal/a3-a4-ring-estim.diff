@@ -1,6 +1,6 @@
 diff -ruN ra/src/components/estim/samtal-page.tsx rb/src/components/estim/samtal-page.tsx
---- ra/src/components/estim/samtal-page.tsx	2026-11-26 14:05:52.321328226 +0000
-+++ rb/src/components/estim/samtal-page.tsx	2026-11-26 14:05:52.319328226 +0000
+--- ra/src/components/estim/samtal-page.tsx	2026-11-26 14:15:43.383349364 +0000
++++ rb/src/components/estim/samtal-page.tsx	2026-11-26 14:15:43.382349364 +0000
 @@ -3,7 +3,9 @@
  import { useServerFn } from '@tanstack/react-start';
  import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -46,10 +46,10 @@ diff -ruN ra/src/components/estim/samtal-page.tsx rb/src/components/estim/samtal
          <div className="row mt4">
 diff -ruN ra/src/components/estim/samtal-ring.tsx rb/src/components/estim/samtal-ring.tsx
 --- ra/src/components/estim/samtal-ring.tsx	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/components/estim/samtal-ring.tsx	2026-11-26 14:05:52.337328226 +0000
++++ rb/src/components/estim/samtal-ring.tsx	2026-11-26 14:15:43.399349364 +0000
 @@ -0,0 +1,53 @@
 +import { Button } from '@/components/ui/button';
-+import { RING_DRAFT_KIND, RING_GREETING, RING_NUMBER_DISPLAY, RING_TEXT } from '@/lib/samtal/ring/labels';
++import { RING_DRAFT_KIND, RING_GREETING, RING_NUMBER_DISPLAY, RING_TEXT } from '../../lib/samtal/ring/labels';
 +
 +// estim Samtal A3/A4 (unapplied): the Ring estim section of the Samtal page. Shows the signed-in user's own
 +// voice-note drafts (owners: the company's), lets an employee with several companies choose the company before or
@@ -102,8 +102,8 @@ diff -ruN ra/src/components/estim/samtal-ring.tsx rb/src/components/estim/samtal
 +  </div>;
 +}
 diff -ruN ra/src/lib/samtal/page.server.ts rb/src/lib/samtal/page.server.ts
---- ra/src/lib/samtal/page.server.ts	2026-11-26 14:05:52.308328225 +0000
-+++ rb/src/lib/samtal/page.server.ts	2026-11-26 14:05:52.307328225 +0000
+--- ra/src/lib/samtal/page.server.ts	2026-11-26 14:15:43.371349363 +0000
++++ rb/src/lib/samtal/page.server.ts	2026-11-26 14:15:43.370349363 +0000
 @@ -28,7 +28,7 @@
    const [settings, numbers, calls, tasks, members] = await Promise.all([
      user.from('samtal_settings').select('auto_process, retention_days, provider, provider_status, provider_error').maybeSingle(),
@@ -123,8 +123,8 @@ diff -ruN ra/src/lib/samtal/page.server.ts rb/src/lib/samtal/page.server.ts
      tasks: tasks.data ?? [],
    };
 diff -ruN ra/src/lib/samtal/process.server.ts rb/src/lib/samtal/process.server.ts
---- ra/src/lib/samtal/process.server.ts	2026-11-26 14:05:52.302328225 +0000
-+++ rb/src/lib/samtal/process.server.ts	2026-11-26 14:05:52.301328225 +0000
+--- ra/src/lib/samtal/process.server.ts	2026-11-26 14:15:43.365349363 +0000
++++ rb/src/lib/samtal/process.server.ts	2026-11-26 14:15:43.364349363 +0000
 @@ -23,14 +23,16 @@
  import type { SamtalAi } from './ai.server';
  import type { SpeechToText } from './stt.server';
@@ -173,7 +173,7 @@ diff -ruN ra/src/lib/samtal/process.server.ts rb/src/lib/samtal/process.server.t
        const r = await db.rpc('samtal_retry_guarded', { p_call: job.call_id, p_company: company, p_job: job.id, p_token: token, p_error: code, p_retry_seconds: missingKey ? 3600 : backoff(job.attempts) });
 diff -ruN ra/src/lib/samtal/ring/ai.server.ts rb/src/lib/samtal/ring/ai.server.ts
 --- ra/src/lib/samtal/ring/ai.server.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/ai.server.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/ai.server.ts	2026-11-26 14:15:43.393349364 +0000
 @@ -0,0 +1,37 @@
 +// estim Samtal A3/A4 (Ring estim): the AI that structures a voice note, through the same Lovable AI gateway route as
 +// the call interpretation (LOVABLE_API_KEY, server-only). One forced tool call; the transcript is data only.
@@ -214,7 +214,7 @@ diff -ruN ra/src/lib/samtal/ring/ai.server.ts rb/src/lib/samtal/ring/ai.server.t
 +}
 diff -ruN ra/src/lib/samtal/ring/deadline.ts rb/src/lib/samtal/ring/deadline.ts
 --- ra/src/lib/samtal/ring/deadline.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/deadline.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/deadline.ts	2026-11-26 14:15:43.393349364 +0000
 @@ -0,0 +1,56 @@
 +// estim Samtal A3/A4 (Ring estim): Swedish relative deadlines resolved in code from the words of the note and the
 +// call time in Swedish time. The AI only quotes the phrase; it never supplies a date. Browser-safe and pure.
@@ -274,7 +274,7 @@ diff -ruN ra/src/lib/samtal/ring/deadline.ts rb/src/lib/samtal/ring/deadline.ts
 +}
 diff -ruN ra/src/lib/samtal/ring/drafts.ts rb/src/lib/samtal/ring/drafts.ts
 --- ra/src/lib/samtal/ring/drafts.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/drafts.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/drafts.ts	2026-11-26 14:15:43.393349364 +0000
 @@ -0,0 +1,51 @@
 +// estim Samtal A3/A4 (Ring estim): internal drafts prepared from a validated voice note, and the customer match.
 +// Drafts are Samtal-owned rows (samtal_ring_drafts). Nothing here sends a quotation, an SMS or an email, places an
@@ -329,7 +329,7 @@ diff -ruN ra/src/lib/samtal/ring/drafts.ts rb/src/lib/samtal/ring/drafts.ts
 +}
 diff -ruN ra/src/lib/samtal/ring/ingest.server.ts rb/src/lib/samtal/ring/ingest.server.ts
 --- ra/src/lib/samtal/ring/ingest.server.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/ingest.server.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/ingest.server.ts	2026-11-26 14:15:43.394349364 +0000
 @@ -0,0 +1,61 @@
 +// estim Samtal A3/A4 (Ring estim): receiving one voice note on the shared Ring estim number. The company and the
 +// employee are resolved in the database (samtal_ring_ingest) from the authenticated provider account only; the
@@ -394,7 +394,7 @@ diff -ruN ra/src/lib/samtal/ring/ingest.server.ts rb/src/lib/samtal/ring/ingest.
 +}
 diff -ruN ra/src/lib/samtal/ring/labels.ts rb/src/lib/samtal/ring/labels.ts
 --- ra/src/lib/samtal/ring/labels.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/labels.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/labels.ts	2026-11-26 14:15:43.394349364 +0000
 @@ -0,0 +1,22 @@
 +// estim Samtal A3/A4 (Ring estim): Swedish labels. Browser-safe.
 +export const RING_NUMBER_DISPLAY = '08-525 146 19';
@@ -420,7 +420,7 @@ diff -ruN ra/src/lib/samtal/ring/labels.ts rb/src/lib/samtal/ring/labels.ts
 +};
 diff -ruN ra/src/lib/samtal/ring/page.server.ts rb/src/lib/samtal/ring/page.server.ts
 --- ra/src/lib/samtal/ring/page.server.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/page.server.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/page.server.ts	2026-11-26 14:15:43.394349364 +0000
 @@ -0,0 +1,45 @@
 +// estim Samtal A3/A4 (Ring estim): the server side of the voice-note section of the Samtal page.
 +//   - drafts are read through the signed-in user's own client, so RLS decides visibility (owners: company; employees:
@@ -469,7 +469,7 @@ diff -ruN ra/src/lib/samtal/ring/page.server.ts rb/src/lib/samtal/ring/page.serv
 +}
 diff -ruN ra/src/lib/samtal/ring/process.server.ts rb/src/lib/samtal/ring/process.server.ts
 --- ra/src/lib/samtal/ring/process.server.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/process.server.ts	2026-11-26 14:05:52.332328226 +0000
++++ rb/src/lib/samtal/ring/process.server.ts	2026-11-26 14:15:43.394349364 +0000
 @@ -0,0 +1,96 @@
 +// estim Samtal A3/A4 (Ring estim): processing of one voice-note job, on the same claimed, lease-fenced job as a
 +// telephone call (process.server.ts hands over when samtal_calls.kind = 'rostanteckning'). Same guarantees:
@@ -569,12 +569,12 @@ diff -ruN ra/src/lib/samtal/ring/process.server.ts rb/src/lib/samtal/ring/proces
 +}
 diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note.ts
 --- ra/src/lib/samtal/ring/voice-note.ts	1970-01-01 00:00:00.000000000 +0000
-+++ rb/src/lib/samtal/ring/voice-note.ts	2026-11-26 14:05:52.332328226 +0000
-@@ -0,0 +1,165 @@
++++ rb/src/lib/samtal/ring/voice-note.ts	2026-11-26 14:15:43.394349364 +0000
+@@ -0,0 +1,172 @@
 +// estim Samtal A3/A4 (Ring estim): the structured result of one voice note, validated in code against the transcript.
 +// The transcript is untrusted data. Every item must cite a time span in the note; names, quantities and the words of
 +// work and material items must appear in the cited passage, so nothing invented survives validation. Deadlines are
-+// resolved in code (deadline.ts). Passages the AI marks private (mixed notes) are dropped from every item.
++// resolved in code (deadline.ts). Uncertainty notes never repeat a rejected value, so invented content is not kept. Passages the AI marks private (mixed notes) are dropped from every item.
 +// Browser-safe and pure.
 +import { z } from 'zod';
 +import type { Transcript } from '../transcript';
@@ -625,7 +625,9 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +
 +// The text of the transcript passage a span cites (segments overlapping it).
 +export function spanText(t: Transcript, s: Span) {
-+  return t.segments.filter(x => s.start <= x.end + 0.5 && s.end >= x.start - 0.5).map(x => x.text).join(' ');
++  // Strict overlap: a span ending where the next segment starts does not cite that segment (so a value cannot borrow
++  // words from a neighbouring passage). A zero-length span cites the segment that contains it.
++  return t.segments.filter(x => s.end > s.start ? x.start < s.end && x.end > s.start : x.start <= s.start && s.start <= x.end).map(x => x.text).join(' ');
 +}
 +const overlaps = (a: Span, b: Span) => a.start < b.end && b.start < a.end;
 +// A quantity is accepted only when the passage says it (digits, decimal comma or a Swedish number word).
@@ -642,6 +644,10 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +  const stem = (w: string) => w.slice(0, Math.max(4, w.length - 3));
 +  const has = (w: string) => said.some(s => s.startsWith(stem(w)) || w.startsWith(s.slice(0, Math.max(4, s.length - 3))) && s.length >= 4);
 +  return content.some(has) && content.filter(w => w.length >= 6).every(has);
++}
++export function anyWordSaid(passage: string, item: string) {
++  const said = words(passage);
++  return words(item).filter(w => w.length >= 4).some(w => said.some(s => s.length >= 4 && (s.startsWith(w.slice(0, Math.max(4, w.length - 3))) || w.startsWith(s.slice(0, Math.max(4, s.length - 3))))));
 +}
 +const nameSaid = (passage: string, name: string) => words(name).every(w => words(passage).includes(w));
 +
@@ -683,7 +689,7 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +  const quantity = (q: number | null, p: string, label: string) => {
 +    if (q === null) return null;
 +    if (quantitySaid(p, q)) return q;
-+    uncertain.push(`${label}: antalet sägs inte i anteckningen`);
++    uncertain.push(`Antal för ${label}: sägs inte i anteckningen`);
 +    return null;
 +  };
 +  const note: VoiceNote = {
@@ -691,14 +697,15 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +    mixed: privateSpans.length > 0,
 +    customer: { name: keepField(r.customer.name, 'Kund', nameSaid), address: keepField(r.customer.address, 'Adress'), place: keepField(r.customer.place, 'Ort') },
 +    project: keepField(r.project, 'Projekt'),
-+    work: r.work.flatMap(w => { const p = passage(w.source); if (!p || !wordsSaid(p, w.text)) { uncertain.push(`Arbete "${w.text.slice(0, 60)}": saknar stöd`); return []; } return [w.text]; }),
++    // Work descriptions may paraphrase the note, so one content word must be said; materials stay strict.
++    work: r.work.flatMap(w => { const p = passage(w.source); if (!p || !anyWordSaid(p, w.text)) { uncertain.push('Ett arbete saknar stöd i anteckningen'); return []; } return [w.text]; }),
 +    agreements: texts(r.agreements, 'Överenskommelse'),
 +    customer_notes: texts(r.customer_notes, 'Kundanteckning'),
 +    follow_ups: texts(r.follow_ups, 'Uppföljning'),
 +    measurements: r.measurements.flatMap(m => { const p = passage(m.source); if (!p) return []; return [{ text: m.text, quantity: quantity(m.quantity, p, m.text), unit: m.unit }]; }),
 +    materials: r.materials.flatMap(m => {
 +      const p = passage(m.source);
-+      if (!p || !wordsSaid(p, m.item)) { uncertain.push(`Material "${m.item.slice(0, 60)}": sägs inte i anteckningen`); return []; }
++      if (!p || !wordsSaid(p, m.item)) { uncertain.push('Ett material sägs inte i anteckningen'); return []; }
 +      return [{ item: m.item, quantity: quantity(m.quantity, p, m.item), unit: m.unit }];
 +    }),
 +    tasks: r.tasks.flatMap(t => { const p = passage(t.source); if (!p) return []; return [{ title: t.title, due: due(t.deadline, p) }]; }),
@@ -706,7 +713,7 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +    quote: (() => { const p = passage(r.quote.source); return r.quote.needed && p ? { needed: true, due: due(r.quote.deadline, p) } : { needed: false, due: null }; })(),
 +    private_spans: privateSpans,
 +  };
-+  note.uncertain = [...uncertain, ...r.uncertain.filter(u => !u.source || passage(u.source)).map(u => u.text)].slice(0, 30);
++  note.uncertain = [...uncertain, ...r.uncertain.filter(u => u.source && passage(u.source)).map(u => u.text)].slice(0, 30);
 +  return note;
 +}
 +
@@ -737,8 +744,8 @@ diff -ruN ra/src/lib/samtal/ring/voice-note.ts rb/src/lib/samtal/ring/voice-note
 +quote.needed = true bara när det sägs att en offert ska tas fram eller skickas. Priser sätts aldrig här.
 +Använd verktyget rostanteckning.`;
 diff -ruN ra/src/lib/samtal/samtal.functions.ts rb/src/lib/samtal/samtal.functions.ts
---- ra/src/lib/samtal/samtal.functions.ts	2026-11-26 14:05:52.314328226 +0000
-+++ rb/src/lib/samtal/samtal.functions.ts	2026-11-26 14:05:52.313328226 +0000
+--- ra/src/lib/samtal/samtal.functions.ts	2026-11-26 14:15:43.377349364 +0000
++++ rb/src/lib/samtal/samtal.functions.ts	2026-11-26 14:15:43.376349364 +0000
 @@ -21,7 +21,9 @@
    const { supabaseAdmin } = await import('@/integrations/supabase/client.server');
    // Only whether the keys exist, never their values.
@@ -772,8 +779,8 @@ diff -ruN ra/src/lib/samtal/samtal.functions.ts rb/src/lib/samtal/samtal.functio
 +    return safe(() => assignRingNote(supabaseAdmin, context.userId, data.pending_id, data.company_id));
 +  });
 diff -ruN ra/src/routes/api/public/samtal-worker.ts rb/src/routes/api/public/samtal-worker.ts
---- ra/src/routes/api/public/samtal-worker.ts	2026-11-26 14:05:52.327328226 +0000
-+++ rb/src/routes/api/public/samtal-worker.ts	2026-11-26 14:05:52.325328226 +0000
+--- ra/src/routes/api/public/samtal-worker.ts	2026-11-26 14:15:43.389349364 +0000
++++ rb/src/routes/api/public/samtal-worker.ts	2026-11-26 14:15:43.388349364 +0000
 @@ -10,11 +10,12 @@
      const { runSamtalJobs } = await import('@/lib/samtal/process.server');
      const { selectSpeechToText } = await import('@/lib/samtal/stt-config.server');
@@ -788,3 +795,15 @@ diff -ruN ra/src/routes/api/public/samtal-worker.ts rb/src/routes/api/public/sam
        const dispatch = await drainSamtalDispatch(db, dispatchAiJob);
        return Response.json({ ok: true, claimed, results, dispatch });
      }
+diff -ruN ra/src/test/samtal-inkorg-steg.test.ts rb/src/test/samtal-inkorg-steg.test.ts
+--- ra/src/test/samtal-inkorg-steg.test.ts	2026-11-26 14:15:43.405349365 +0000
++++ rb/src/test/samtal-inkorg-steg.test.ts	2026-11-26 14:15:43.403349365 +0000
+@@ -18,7 +18,7 @@
+   uncertain: [{ text: 'Oklart om garaget har el idag', source: null }],
+   next_steps: [{ kind: 'platsbesok', title: 'Platsbesök laddbox', date: '2026-12-01', time: '10:00', address: null, source: { start: 10, end: 20 } }], ...over });
+ const interpretation = validateInterpretation(raw(), transcript);
+-const call = { id: CALL, company_id: A, user_id: EMPLOYEE, audio_path: null, caller_phone: '+46701234567', transcript: null, extraction: null };
++const call = { id: CALL, company_id: A, user_id: EMPLOYEE, audio_path: null, caller_phone: '+46701234567', transcript: null, extraction: null, kind: 'telefonsamtal', started_at: '2026-11-25T08:00:00Z' };
+ const meta = { started_at: '2026-11-25T08:00:00Z', duration_seconds: 150 };
+ 
+ describe('the request built from a call', () => {
