@@ -7,6 +7,7 @@
 - [ ] Samtal Priority 1 activation blockers: durable dispatch/shared-running recovery, lawful erasure/finite ledger policy, cleanup capacity/priorities, remaining lease corrections, token amendment approval, uncertainty/replay policy and synthetic real-service staging. Await explicit approval; no Priority 2.
 - [x] Samtal Priority 1 blocker resolution: coordinated V2 documentation SQL, test-only integration, conditional finite cleanup/erasure and independent-session regression proofs; 201 accepted +53 new checks pass (254); no production or shared-worker changes.
 - [ ] Samtal V2 activation dependencies: shared-running recovery approval, validated provider closure/redelivery and external erasure, lawful minimal-evidence retention, real-service/runtime/capacity staging and explicit migration/code/deployment approval. No Priority 2/3.
+- [x] Samtal Priority 1 implementation readiness: mapped all 37 accepted V2 functions, existing modules and Swedish authorized-review UI; specified provider/shared-worker gates, minimal staging/order and next unapplied patch. Documentation only; all 254 tests pass; waiting for explicit implementation approval.
 
 - [x] Database-only receipt migration: restored the empty-email guard, removed fixture tests, kept cleanup unchanged and applied one migration. Read-only checks confirm three duplicates merged, no remaining duplicate pairs or orphan threads, and unchanged service-role-only execution grants; no app changes or publication.
 
