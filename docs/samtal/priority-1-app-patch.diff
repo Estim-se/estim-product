@@ -1,0 +1,209 @@
+diff --git a/src/lib/samtal/page.server.ts b/src/lib/samtal/page.server.ts
+index 9b32036..df0d228 100644
+--- a/src/lib/samtal/page.server.ts
++++ b/src/lib/samtal/page.server.ts
+@@ -4,6 +4,9 @@
+ //   - the names of the company's members (profiles are not readable across users);
+ //   - short-lived signed links to audio, after the user's client has proven the call is visible to them;
+ //   - starting a waiting call's job, for an owner, after the same proof.
++// Priority 1 V2 (unapplied patch): audio, restart and review go through service-only guarded database functions that
++// repeat the membership, tenant, deletion, expiry and review checks under the call lock. The actor is always the
++// verified user id from the auth middleware, never a value from the browser.
+ import type { SupabaseClient } from '@supabase/supabase-js';
+ import type { Database } from '@/integrations/supabase/types';
+ import { normalisePhone } from './call';
+@@ -34,6 +37,14 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys:
+   const profiles = ids.length ? await admin.from('profiles').select('id, display_name').in('id', ids) : { data: [], error: null };
+   const name = new Map((profiles.data ?? []).map(p => [p.id, p.display_name || 'Namnlös']));
+   const waiting = await user.from('samtal_calls').select('id', { count: 'exact', head: true }).eq('status', 'mottagen');
++  // Pending reviews are read with the service client (the table has no user grants), bounded to the company and to
++  // calls the user's own client already returned. Only the call id is exposed.
++  const visible = (calls.data ?? []).map(c => c.id);
++  const reviews = visible.length
++    ? await admin.from('samtal_reviews').select('call_id').eq('company_id', companyId).eq('decision', 'pending').in('call_id', visible)
++    : { data: [], error: null };
++  if (reviews.error) throw new SamtalPageError('Samtal kunde inte läsas.');
++  const pending = new Set((reviews.data ?? []).map(r => r.call_id));
+   return {
+     owner, userId,
+     settings: settings.data ?? { auto_process: false, retention_days: 30, provider: null, provider_status: 'ej_ansluten', provider_error: null },
+@@ -44,7 +55,8 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys:
+     calls: (calls.data ?? []).map(c => {
+       const i = (c.extraction as { interpretation?: Interpretation } | null)?.interpretation;
+       return { id: c.id, user_id: c.user_id, caller_phone: c.caller_phone, started_at: c.started_at, duration_seconds: c.duration_seconds, status: c.status,
+-        classification: c.classification, error_code: c.error_code, thread_id: c.thread_id, title: i ? requestTitle(i) : null, has_audio: !!c.audio_path };
++        classification: c.classification, error_code: c.error_code, thread_id: c.thread_id, title: i && !pending.has(c.id) ? requestTitle(i) : null, has_audio: !!c.audio_path && c.status !== 'privat',
++        needs_review: pending.has(c.id) };
+     }),
+     tasks: tasks.data ?? [],
+   };
+@@ -96,24 +108,44 @@ export async function decideSamtalTask(user: Db, input: { id: string; decision:
+   return { state: input.decision };
+ }
+ 
+-// The user's own client must see the call (RLS); only then is a signed link made, for that company's folder only.
+-export async function samtalAudioLink(user: Db, admin: Db, callId: string) {
++// The user's own client must see the call (RLS). The guarded function then repeats the checks under the call lock and
++// returns the allowed path; it is checked again after signing, so a call deleted or made private meanwhile gets no link.
++export async function samtalAudioLink(user: Db, admin: Db, callId: string, actorId: string) {
++  const { companyId } = await companyOf(user);
+   const call = await user.from('samtal_calls').select('company_id, audio_path').eq('id', callId).maybeSingle();
+-  if (call.error || !call.data?.audio_path || !call.data.audio_path.startsWith(`${call.data.company_id}/`)) throw new SamtalPageError('Inspelningen finns inte.');
+-  const link = await admin.storage.from('samtal-audio').createSignedUrl(call.data.audio_path, SAMTAL_LINK_SECONDS);
++  if (call.error || !call.data?.audio_path || call.data.company_id !== companyId || !call.data.audio_path.startsWith(`${companyId}/`)) throw new SamtalPageError('Inspelningen finns inte.');
++  const guard = () => admin.rpc('samtal_audio_access_guarded', { p_call: callId, p_company: companyId, p_actor: actorId });
++  const before = await guard();
++  if (before.error || before.data !== call.data.audio_path) throw new SamtalPageError('Inspelningen finns inte.');
++  const link = await admin.storage.from('samtal-audio').createSignedUrl(before.data, SAMTAL_LINK_SECONDS);
+   if (link.error || !link.data?.signedUrl) throw new SamtalPageError('Inspelningen kunde inte öppnas.');
++  const after = await guard();
++  if (after.error || after.data !== before.data) throw new SamtalPageError('Inspelningen finns inte.');
+   return { url: link.data.signedUrl, expires_in: SAMTAL_LINK_SECONDS };
+ }
+ 
+-// An owner starts a waiting (paused) or failed call again. The call must be visible to the owner's own client.
+-export async function startSamtalCall(user: Db, admin: Db, callId: string) {
++// An owner starts a waiting (paused) or failed call again. The guarded function rejects deleted, expired, private and
++// unreviewed uncertain calls; there are no direct job or call writes here any more.
++export async function startSamtalCall(user: Db, admin: Db, callId: string, actorId: string) {
+   const { companyId, owner } = await companyOf(user);
+   if (!owner) throw new SamtalPageError('Bara ägaren kan starta bearbetningen.');
+   const call = await user.from('samtal_calls').select('id, company_id').eq('id', callId).maybeSingle();
+   if (call.error || !call.data || call.data.company_id !== companyId) throw new SamtalPageError('Samtalet finns inte.');
+-  const r = await admin.from('samtal_jobs').update({ state: 'queued', run_after: new Date().toISOString(), error_code: null })
+-    .eq('call_id', callId).eq('company_id', companyId).in('state', ['paused', 'failed']).select('id');
++  const r = await admin.rpc('samtal_restart_guarded', { p_call: callId, p_company: companyId, p_actor: actorId });
+   if (r.error) throw new SamtalPageError('Bearbetningen kunde inte startas.');
+-  if (r.data?.length) await admin.from('samtal_calls').update({ status: 'mottagen', error_code: null }).eq('id', callId).eq('company_id', companyId);
+-  return { started: !!r.data?.length };
++  return { started: r.data === true };
++}
++
++// An owner, or the employee the call belongs to, decides whether an uncertain call is business or private. The request
++// id comes from the page and stays the same across retries, so a repeated identical decision is answered as done; a
++// different earlier decision is reported, never overwritten. A private decision only starts deletion: the recording is
++// removed by the cleanup queue, so success never claims physical deletion.
++export async function reviewSamtalCall(user: Db, admin: Db, actorId: string, input: { call_id: string; request_id: string; decision: 'business' | 'private' }) {
++  const { companyId } = await companyOf(user);
++  const call = await user.from('samtal_calls').select('id, company_id').eq('id', input.call_id).maybeSingle();
++  if (call.error || !call.data || call.data.company_id !== companyId) throw new SamtalPageError('Samtalet finns inte.');
++  const r = await admin.rpc('samtal_confirm_review', { p_call: input.call_id, p_company: companyId, p_actor: actorId, p_request: input.request_id, p_decision: input.decision });
++  if (r.error) throw new SamtalPageError('Bedömningen kunde inte sparas. Försök igen.');
++  if (r.data !== true) throw new SamtalPageError('Samtalet kan inte bedömas. Det kan redan vara bedömt, raderat eller så saknar du behörighet.');
++  return { decision: input.decision, deletion_pending: input.decision === 'private' };
+ }
+diff --git a/src/lib/samtal/samtal.functions.ts b/src/lib/samtal/samtal.functions.ts
+index 3195d3c..784835d 100644
+--- a/src/lib/samtal/samtal.functions.ts
++++ b/src/lib/samtal/samtal.functions.ts
+@@ -45,7 +45,7 @@ export const samtalAudioLinkFn = createServerFn({ method: 'POST' }).middleware([
+   .handler(async ({ context, data }) => {
+     ready();
+     const { samtalAudioLink } = await import('./page.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
+-    return safe(() => samtalAudioLink(context.supabase, supabaseAdmin, data.call_id));
++    return safe(() => samtalAudioLink(context.supabase, supabaseAdmin, data.call_id, context.userId));
+   });
+ 
+ export const startSamtalCallFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
+@@ -53,5 +53,14 @@ export const startSamtalCallFn = createServerFn({ method: 'POST' }).middleware([
+   .handler(async ({ context, data }) => {
+     ready();
+     const { startSamtalCall } = await import('./page.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
+-    return safe(() => startSamtalCall(context.supabase, supabaseAdmin, data.call_id));
++    return safe(() => startSamtalCall(context.supabase, supabaseAdmin, data.call_id, context.userId));
++  });
++
++// Decide an uncertain call. Company and actor come from the authenticated session, never from the browser.
++export const confirmSamtalReviewFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
++  .inputValidator(parse(z.object({ call_id: uuid, request_id: uuid, decision: z.enum(['business', 'private']) }).strict()))
++  .handler(async ({ context, data }) => {
++    ready();
++    const { reviewSamtalCall } = await import('./page.server'), { supabaseAdmin } = await import('@/integrations/supabase/client.server');
++    return safe(() => reviewSamtalCall(context.supabase, supabaseAdmin, context.userId, data));
+   });
+diff --git a/src/lib/samtal/labels.ts b/src/lib/samtal/labels.ts
+index 169a988..f98f5a2 100644
+--- a/src/lib/samtal/labels.ts
++++ b/src/lib/samtal/labels.ts
+@@ -1,5 +1,5 @@
+ // estim Samtal: Swedish labels for statuses, task kinds and error codes. Browser-safe.
+-export const CALL_STATUS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', klar: 'Klar', privat: 'Privat (raderad)', fel: 'Fel' };
++export const CALL_STATUS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', klar: 'Klar', privat: 'Privat – raderas', fel: 'Fel' };
+ export const CLASSIFICATION: Record<string, string> = { jobb: 'Jobb', privat: 'Privat', osaker: 'Osäker' };
+ export const TASK_KIND: Record<string, string> = { ring_tillbaka: 'Ring tillbaka', platsbesok: 'Platsbesök', offert: 'Offert' };
+ export const TASK_STATE: Record<string, string> = { forslag: 'Förslag', bekraftad: 'Bekräftad', avvisad: 'Avvisad', klar: 'Klar' };
+@@ -12,6 +12,7 @@ const ERRORS: Record<string, string> = {
+   audio_upload_failed: 'Inspelningen kunde inte sparas.', audio_download_failed: 'Inspelningen kunde inte hämtas.',
+   stt_unreachable: 'Tal till text svarar inte.', stt_invalid_response: 'Tal till text gav ett oväntat svar.',
+   ai_unreachable: 'AI:n svarar inte.', ai_invalid_output: 'AI:n gav ett ogiltigt svar.',
++  uncertain_needs_review: 'Osäkert samtal – bekräfta om det gäller jobb eller är privat.',
+   inbox_failed: 'Förfrågan kunde inte skapas i inkorgen.', tasks_not_saved: 'Uppgifterna kunde inte sparas.', extraction_missing: 'Uppgifterna ur samtalet saknas.',
+ };
+ export function errorLabel(code: string | null | undefined) {
+diff --git a/src/components/estim/samtal-page.tsx b/src/components/estim/samtal-page.tsx
+index aadebba..ad7360c 100644
+--- a/src/components/estim/samtal-page.tsx
++++ b/src/components/estim/samtal-page.tsx
+@@ -1,9 +1,9 @@
+-import { useState } from 'react';
++import { useRef, useState } from 'react';
+ import { useNavigate } from '@tanstack/react-router';
+ import { useServerFn } from '@tanstack/react-start';
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { Button } from '@/components/ui/button';
+-import { addSamtalNumberFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, samtalAudioLinkFn, saveSamtalSettingsFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
++import { addSamtalNumberFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
+ import { CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
+ import { Icon } from './icon';
+ import { useEstim } from './store-provider';
+@@ -21,6 +21,9 @@ export function SamtalPage() {
+   const company = workspace.data?.company?.id, real = workspace.mode === 'real';
+   const load = useServerFn(getSamtal), save = useServerFn(saveSamtalSettingsFn), addNumber = useServerFn(addSamtalNumberFn), changeNumber = useServerFn(changeSamtalNumberFn);
+   const decide = useServerFn(decideSamtalTaskFn), audioLink = useServerFn(samtalAudioLinkFn), start = useServerFn(startSamtalCallFn);
++  const confirmReview = useServerFn(confirmSamtalReviewFn);
++  // One request id per call and decision, kept until it succeeds, so a retry after a timeout repeats the same request.
++  const reviewIds = useRef(new Map<string, string>());
+   const q = useQuery({ queryKey: ['samtal', company], queryFn: () => load(), enabled: real && !!company, staleTime: 15000 });
+   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
+   const [phone, setPhone] = useState(''), [employee, setEmployee] = useState(''), [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
+@@ -38,6 +41,13 @@ export function SamtalPage() {
+   const d = q.data, settings = draft ?? { auto_process: d.settings.auto_process, retention_days: d.settings.retention_days };
+   const name = (id: string | null) => d.members.find(m => m.user_id === id)?.name ?? '–';
+   const failed = d.calls.filter(c => c.status === 'fel');
++  const reviews = d.calls.filter(c => c.needs_review);
++  const review = (callId: string, decision: 'business' | 'private') => {
++    const key = `${callId}:${decision}`, request_id = reviewIds.current.get(key) ?? crypto.randomUUID();
++    reviewIds.current.set(key, request_id);
++    void run(async () => { await confirmReview({ data: { call_id: callId, request_id, decision } }); reviewIds.current.delete(key); },
++      decision === 'business' ? 'Samtalet är bekräftat som jobb och bearbetas.' : 'Samtalet är markerat som privat. Inspelningen och utskriften tas bort.');
++  };
+   const openTasks = d.tasks.filter(t => t.state === 'forslag' || t.state === 'bekraftad');
+   return <section className="page samtal-page">
+     <h1>Samtal</h1>
+@@ -81,6 +91,17 @@ export function SamtalPage() {
+       </form>}
+     </div>
+ 
++    {reviews.length > 0 && <div className="card mt16"><h3>Att bedöma</h3>
++      <div className="sub">AI:n är osäker på om samtalen gäller jobb. Inget skapas i inkorgen förrän du har bekräftat.</div>
++      {reviews.map(c => <div key={c.id} className="row between mt8">
++        <span><b>Osäkert samtal</b> · {when(c.started_at)} {minutes(c.duration_seconds)}{d.owner ? ` · ${name(c.user_id)}` : ''}{c.caller_phone ? ` · från ${c.caller_phone}` : ''}</span>
++        <span className="row">
++          <Button variant="prototype" className="btn btn-sm" disabled={busy} onClick={() => review(c.id, 'business')}>Det är ett jobb</Button>
++          <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => review(c.id, 'private')}>Privat – radera</Button>
++        </span>
++      </div>)}
++    </div>}
++
+     <div className="card mt16"><h3>Uppgifter</h3>
+       {openTasks.length === 0 && <p className="muted mt8">Inga öppna uppgifter.</p>}
+       {openTasks.map(t => <div key={t.id} className="row between mt8">
+@@ -103,7 +124,7 @@ export function SamtalPage() {
+         <div className="row mt4">
+           {c.thread_id && <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { actions.select(c.thread_id!); void navigate({ to: '/' }); }}>Öppna förfrågan</Button>}
+           {c.has_audio && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await audioLink({ data: { call_id: c.id } }); setAudio({ id: c.id, url: r.url }); })}>Lyssna</Button>}
+-          {d.owner && (c.status === 'fel' || c.status === 'mottagen' && !d.settings.auto_process) && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => start({ data: { call_id: c.id } }), 'Samtalet bearbetas.')}>Bearbeta</Button>}
++          {d.owner && !c.needs_review && c.status !== 'privat' && (c.status === 'fel' || c.status === 'mottagen' && !d.settings.auto_process) && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => start({ data: { call_id: c.id } }), 'Samtalet bearbetas.')}>Bearbeta</Button>}
+         </div>
+         {audio?.id === c.id && <audio className="mt4" controls autoPlay src={audio.url} onError={() => setAudio(null)} />}
+       </div>)}
