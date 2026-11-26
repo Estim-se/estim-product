@@ -12,6 +12,13 @@ export interface Message {
   documents?: { id: string; name: string }[];
 }
 
+export interface PendingSender {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  source: 'form' | 'unverified' | 'no_reply';
+}
+
 export interface Thread {
   id: string; name: string; ini: string; ch: string; chs: string[];
   time: string; place: string; addr: string; phone: string; email: string;
@@ -20,6 +27,8 @@ export interface Thread {
   why: string; att: string[]; events: string[][];
   q: { nr: string; owners: number; addOn: boolean; prisform: string; lines: { t: string; typ: string; q: number; u: string; p: number; rot: boolean; opt?: boolean }[] } | null;
   customerId?: string; opened?: boolean; briefSent?: boolean; week?: string; stage2?: boolean; lastSent?: string; deliveryError?: string | undefined; waSent?: boolean;
+  pendingSender?: PendingSender | null;
+  suggestedMergeThreadId?: string | null;
 }
 export type InboxFilter = 'alla' | 'mig' | 'ai' | 'vunna';
 

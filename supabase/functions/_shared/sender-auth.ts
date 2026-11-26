@@ -29,9 +29,12 @@ export function withUnverifiedWarning(warnings: unknown): string[] {
 /** Authentication-Results values are kept up to this length by parseMessage/parseEmail (other headers: 2000). */
 export const AUTH_RESULTS_VALUE_LIMIT = 16_384;
 
-/** The parse limit for one header value: Authentication-Results gets more room, a long one may list many results. */
+/** The parse limit for one header value: Authentication-Results (16 KB) and References (8 KB) get more room. */
 export function headerValueLimit(name: string): number {
-  return name.trim().toLowerCase() === "authentication-results" ? AUTH_RESULTS_VALUE_LIMIT : 2000;
+  const lower = name.trim().toLowerCase();
+  if (lower === "authentication-results") return AUTH_RESULTS_VALUE_LIMIT;
+  if (lower === "references") return 8192;
+  return 2000;
 }
 
 interface AuthResult { method: string; result: string; props: Record<string, string> }

@@ -30,6 +30,7 @@ import * as unipile from "../_shared/unipile.ts";
 import { bindUnipileAccount } from "../_shared/connection-binding.ts";
 import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
 import { senderCheckEnabled, senderVerdict } from "../_shared/sender-auth.ts";
+import { inboundLevel, parseThreadHeaders } from "../_shared/mail-identity.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
@@ -144,13 +145,15 @@ async function processInbound(db: SupabaseClient, connectionId: string, messageI
   const cleaned = mailText(msg.body ?? msg.snippet ?? "", MAX_BODY_CHARS);
   if (!cleaned) return {};
 
+  const level = inboundLevel();
   return await ingestMail(db, {
     companyId, messageKey: msg.id,
     fromEmail: sender.email, fromName: sender.name, subject: msg.subject ?? "", text: cleaned, ts: msg.date,
     attachments: msg.attachments.filter((a) => !a.is_inline).map((a) => ({
       name: a.filename, type: a.content_type, size: a.size, load: () => source.download(msg.id, a.id),
     })),
-    ...(senderCheckEnabled() ? { senderCheck: senderVerdict(msg.headers, sender.email) } : {}),
+    ...(senderCheckEnabled() || level >= 1 ? { senderCheck: senderVerdict(msg.headers, sender.email) } : {}),
+    ...(level >= 2 ? { threadHeaders: parseThreadHeaders(msg.headers) } : {}),
   }, source.tag);
 }
 

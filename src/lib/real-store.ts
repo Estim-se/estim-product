@@ -1,7 +1,7 @@
 import { initial, type EstimState, type Draft, type DesktopPath } from './estim-store';
 import type { WorkspaceData } from './real.functions';
 import type { RealMutation } from './real.schemas';
-import type { Thread } from '@/data/inbox';
+import type { PendingSender, Thread } from '@/data/inbox';
 import type { Quote } from './quote';
 import { auditTimeline } from './real-presentation';
 import { waWindowOpen } from './channel-rules';
@@ -15,7 +15,20 @@ const strings = (value:unknown):string[] => Array.isArray(value) ? value.filter(
 const rows = (value:unknown):string[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>row.map(String)) : [];
 const asks = (value:unknown):(string|number)[][] => Array.isArray(value) ? value.filter(Array.isArray).map(row=>[String(row[0]??''),row[1]?1:0]) : [];
 export function emptyRealState(): EstimState { const s=initial(); return {...s, threads:[],drafts:{},sel:'',stats:{ai:0,sek:0},settings:[true,true,false,true,true,true,true]}; }
-const USER_MESSAGES=new Set(['Vänta tills AI:n är klar.','Jobbet kunde inte markeras som vunnet.','Jobbet kunde inte återställas.','Meddelandet kunde inte flyttas.','Kunderna kunde inte slås ihop.','Välj två olika kunder.']);
+const USER_MESSAGES=new Set([
+  'Vänta tills AI:n är klar.','Jobbet kunde inte markeras som vunnet.','Jobbet kunde inte återställas.',
+  'Meddelandet kunde inte flyttas.','Kunderna kunde inte slås ihop.','Välj två olika kunder.',
+  'Avsändaren är redan godkänd.','Avsändaren kunde inte godkännas.',
+  'Välj två olika trådar.','Tråden har en offert eller ett samtal och kan inte slås ihop.','Trådarna kunde inte slås ihop.',
+]);
+
+function parsePendingSender(raw: unknown): PendingSender | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const source = o['source'] === 'unverified' || o['source'] === 'no_reply' ? o['source'] : 'form';
+  const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
+  return { name: str(o['name']), email: str(o['email']), phone: str(o['phone']), source };
+}
 
 export function workspaceState(data:WorkspaceData, previous:EstimState):EstimState {
   const drafts:Record<string,Draft>={};
@@ -25,7 +38,7 @@ export function workspaceState(data:WorkspaceData, previous:EstimState):EstimSta
     const q=data.quotes.find(q=>q.thread_id===t.id);
     const outgoing=data.messages.filter(m=>m.thread_id===t.id&&(m.from==='vv'||m.from==='ai')).at(-1);
     const msgs=data.messages.filter(m=>m.thread_id===t.id&&(m.delivery_status==='sent'||data.documentDeliveries?.some(d=>d.message_id===m.id))).map(m=>({id:m.id,from:m.from,auto:m.from==='ai',ch:m.channel??t.channel,time:time(m.sent_at),text:m.delivery_status==='sent'?m.text:'Dokument skickat',att:strings(m.attachments),documents:data.documentDeliveries?.filter(d=>d.message_id===m.id).map(d=>({id:d.id,name:d.name}))??[],quote:strings(m.attachments).some(a=>a.startsWith('Offert'))}));
-    return {deliveryError:outgoing?.channel==='wa'&&outgoing.delivery_status==='not_sent'?outgoing.delivery_error??'WhatsApp-svaret kunde inte skickas. Försök igen.':undefined,waSent:outgoing?.channel==='wa'&&outgoing.delivery_status==='sent'&&Boolean(outgoing.provider_message_id),id:t.id,customerId:t.customer_id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.channel==='wa'?whatsappAutoReply(data.company?.whatsapp_auto_reply??false,t.whatsapp_auto_override):t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null};
+    return {deliveryError:outgoing?.channel==='wa'&&outgoing.delivery_status==='not_sent'?outgoing.delivery_error??'WhatsApp-svaret kunde inte skickas. Försök igen.':undefined,waSent:outgoing?.channel==='wa'&&outgoing.delivery_status==='sent'&&Boolean(outgoing.provider_message_id),id:t.id,customerId:t.customer_id,name:c?.name??'',ini:(c?.name??'').split(' ').map(n=>n[0]).slice(0,2).join(''),ch:t.channel,chs:[...new Set([t.channel,...msgs.map(m=>m.ch)])],time:time(t.last_message_at),place:c?.place??t.place??'',addr:c?.address??'—',phone:c?.phone||'—',email:c?.email||'—',job:t.job,status:t.status==='analys'&&Date.now()-new Date(t.updated_at).getTime()>90000?'svar':t.status,read:t.read,autopilot:t.channel==='wa'?whatsappAutoReply(data.company?.whatsapp_auto_reply??false,t.whatsapp_auto_override):t.autopilot,waWin:waWindowOpen(t.last_customer_wa_at),msgs,asks:asks(t.asks),facts:rows(t.facts),why:t.why,att:[],events:data.audit.filter(a=>{const after=a.after;return after && typeof after==='object' && !Array.isArray(after) && after['thread_id']===t.id;}).reverse().map(a=>[time(a.created_at),auditTimeline(a)]),q:q?{nr:q.nr,owners:q.owners,addOn:q.add_on,prisform:q.prisform,lines:Array.isArray(q.lines)?q.lines as unknown as Quote['lines']:[]}:null,pendingSender:parsePendingSender(t.pending_sender),suggestedMergeThreadId:t.suggested_merge_thread_id??null};
   });
   return {...previous,threads,drafts,settings:Array.isArray(data.company?.settings)?data.company.settings.map(Boolean):previous.settings,sel:threads.some(t=>t.id===previous.sel)?previous.sel:threads[0]?.id??'',stats:{ai:data.messages.filter(m=>m.from==='ai').length,sek:0}};
 }
@@ -123,6 +136,17 @@ export function createRealStore() {
     // Joins two customer records; each conversation keeps its own channel.
     mergeCustomers(keep:string,drop:string){
       void persist({kind:'merge',keep,drop},true,true).then(()=>{toast('Kunderna är sammanslagna.');}).catch(error=>{toast(serverMessage(error));});
+    },
+    // Step 8 (D18): approves a quarantined email sender suggestion (form mail / unverified).
+    approveEmailSender(id:string,input:{name?:string;email?:string;phone?:string;useCustomerId?:string}){
+      void persist({kind:'approve-email-sender',id,...input},true,true).then(()=>{toast('Avsändaren är godkänd.');}).catch(error=>{toast(serverMessage(error));});
+    },
+    // Step 9 (D17): merges a new email thread into the suggested existing open thread.
+    mergeEmailThread(sourceId:string,targetId:string){
+      void persist({kind:'merge-email-thread',sourceId,targetId},true,true).then(()=>{
+        actions.select(targetId);
+        toast('Trådarna är sammanslagna.');
+      }).catch(error=>{toast(serverMessage(error));});
     },toggleAddOn(id:string){dirtyQuotes.add(id);update(s=>{const q=s.threads.find(t=>t.id===id)?.q;if(q)q.addOn=!q.addOn;});},approveCustomer(){},submitCustomer(){},sendBrief(_id:string){toast('Överlämning är inte ansluten ännu.');},
     send(id:string,_options?:{silent?:boolean}){const d=state.drafts[id];if(!d?.text.trim()){toast('Skriv ett svar först.');return;}if(d.busy)return;update(s=>{const draft=s.drafts[id];if(draft)draft.busy=true;});void (async()=>{try{await queue;if(!delivery)throw new Error('Ingen anslutning.');const result=await delivery(id);await reload?.();if(result.sent){toast(d.ch==='wa'?'Svar skickat via WhatsApp.':'Svaret är sparat som skickat.');if(state.m.scr==='thread'&&state.m.id===id)actions.mobileGo('done',id);}else{const error=result.error??'WhatsApp-svaret kunde inte skickas. Försök igen.';update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.deliveryError=error;});toast(error);}}catch(error){const message=error instanceof Error?error.message:'Svaret kunde inte skickas.';if(d.ch==='wa')update(s=>{const t=s.threads.find(t=>t.id===id);if(t)t.deliveryError=message;});toast(message);}finally{update(s=>{const draft=s.drafts[id];if(draft)draft.busy=false;});}})();},
     simNew(){toast('Använd Ny förfrågan.');},

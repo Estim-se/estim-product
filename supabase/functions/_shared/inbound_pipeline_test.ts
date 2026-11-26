@@ -7,6 +7,7 @@ import { asClient, FakeDb, type Row } from "./test-db.ts";
 import { ingestMail, type InboundMail, pipelineTiming, sentAtFor } from "./inbound-pipeline.ts";
 import { FLOOD_WARNING } from "./mail-flood.ts";
 import { UNVERIFIED_WARNING } from "./sender-auth.ts";
+import { FORM_MAIL_WARNING, NO_REPLY_LEAD_WARNING } from "./mail-identity.ts";
 
 pipelineTiming.pollMs = 0;
 
@@ -68,6 +69,34 @@ function pipelineDb(extra: Record<string, Row[]> = {}): FakeDb {
     db.tables.threads = [...db.rows("threads"), { id: threadId, company_id: COMPANY, channel: "email", status: "ny" }];
     db.tables.messages = [...db.rows("messages"), { id: `msg${n}`, company_id: COMPANY, channel: "email", from: "kund", thread_id: threadId, provider_message_id: payload.provider_message_id, created_at: new Date().toISOString() }];
     db.tables.drafts = [...db.rows("drafts"), { thread_id: threadId, company_id: COMPANY, text: "", warnings: [] }];
+    db.tables.ai_jobs = [...db.rows("ai_jobs"), { id: jobId, state: "queued" }];
+    return { data: { id: threadId, job_id: jobId, duplicate: false }, error: null };
+  };
+  db.rpcs.estim_receive_email = (args) => {
+    const payload = args.payload as Row;
+    n++;
+    const mode = String(payload.mode ?? "new_thread");
+    const threadId = mode === "join_thread" && typeof payload.target_thread_id === "string" ? payload.target_thread_id : `et${n}`;
+    const jobId = `ej${n}`;
+    if (mode !== "join_thread") {
+      const custId = mode === "quarantine" ? `qcu${n}` : `ecu${n}`;
+      if (mode === "quarantine") {
+        db.tables.customers = [...db.rows("customers"), { id: custId, company_id: COMPANY, name: "Okänd avsändare", email: null, phone: null }];
+      }
+      db.tables.threads = [...db.rows("threads"), {
+        id: threadId, company_id: COMPANY, channel: "email", customer_id: custId, status: "ny",
+        pending_sender: payload.pending_sender ?? null,
+        suggested_merge_thread_id: payload.suggested_merge_thread_id ?? null,
+      }];
+    }
+    db.tables.messages = [...db.rows("messages"), {
+      id: `emsg${n}`, company_id: COMPANY, channel: "email", from: "kund", thread_id: threadId,
+      provider_message_id: payload.provider_message_id, rfc_message_id: payload.rfc_message_id ?? null,
+      in_reply_to: payload.in_reply_to ?? null, created_at: new Date().toISOString(),
+    }];
+    const existingDraft = db.rows("drafts").find((d) => d.thread_id === threadId);
+    if (existingDraft) { existingDraft.text = ""; existingDraft.warnings = []; }
+    else db.tables.drafts = [...db.rows("drafts"), { thread_id: threadId, company_id: COMPANY, text: "", warnings: [] }];
     db.tables.ai_jobs = [...db.rows("ai_jobs"), { id: jobId, state: "queued" }];
     return { data: { id: threadId, job_id: jobId, duplicate: false }, error: null };
   };
@@ -274,4 +303,115 @@ Deno.test("sent_at: a forged future date is stored as the receive time", async (
   const call = db.calls.find((c) => c.startsWith("rpc.estim_receive"))!;
   const sentAt = Date.parse(/"sent_at":"([^"]+)"/.exec(call)![1]!);
   assert(sentAt >= before && sentAt <= Date.now(), "not the receive time");
+});
+
+/* ---------- Steps 8–10: EMAIL_INBOUND_LEVEL (0–3) ---------- */
+
+Deno.test("EMAIL_INBOUND_LEVEL=0: exact same calls as the golden lists", async () => {
+  const db = pipelineDb();
+  await withEnv({ EMAIL_INBOUND_LEVEL: "0" }, db, () => run(db));
+  assertEquals(db.normalized(), GOLDEN_NEW_SENDER);
+});
+
+Deno.test("level 1 (Step 8 / D18): form mail is quarantined with pending_sender and never touches existing customer", async () => {
+  const db = pipelineDb({
+    customers: [{ id: "cu1", company_id: COMPANY, email: "offer@existing.se", phone: "0700000000" }],
+    threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "ny" }],
+  });
+  const formTriage = { category: "forfragan", is_form_mail: true, customer: { name: "Kalle", email: "offer@existing.se", phone: "0709999999" } };
+  await withEnv({ EMAIL_INBOUND_LEVEL: "1" }, db, () => run(db, mail({ fromEmail: "wordpress@foretag.se", fromName: "Formulär" })), formTriage);
+
+  assert(!db.calls.some((c) => c.startsWith("rpc.estim_receive(")), "must not call estim_receive for form mail");
+  assert(db.calls.some((c) => c.startsWith("rpc.estim_receive_email(")), "must call estim_receive_email");
+  // Existing customer untouched; quarantined customer has no email/phone
+  assertEquals(db.rows("customers")[0]!.phone, "0700000000");
+  assertEquals(db.rows("customers")[1]!.email, null);
+  assertEquals(db.rows("customers")[1]!.phone, null);
+  const newThread = db.rows("threads").find((t) => t.id === "et1")!;
+  assertEquals(newThread.pending_sender, { name: "Kalle", email: "offer@existing.se", phone: "0709999999", source: "form" });
+  const draft = db.rows("drafts").find((d) => d.thread_id === "et1")!;
+  assertEquals(draft.warnings, [FORM_MAIL_WARNING]);
+  assertEquals(draft.needs_review, true);
+  assert(fetched(db, "/messages/send"), "form mail with valid sender should still notify");
+});
+
+Deno.test("level 1 (Step 8 / D18): unverified sender is quarantined, warned, audited and never notified", async () => {
+  const db = pipelineDb(knownSender(1));
+  await withEnv({ EMAIL_INBOUND_LEVEL: "1" }, db, () => run(db, mail({ senderCheck: "fail" })));
+  assert(!db.calls.some((c) => c.startsWith("rpc.estim_receive(")), "must not call estim_receive");
+  const newThread = db.rows("threads").find((t) => t.id === "et1")!;
+  assertEquals(newThread.pending_sender, { name: "Kund", email: "kund@example.com", phone: null, source: "unverified" });
+  const draft = db.rows("drafts").find((d) => d.thread_id === "et1")!;
+  assertEquals(draft.warnings, [UNVERIFIED_WARNING]);
+  assert(db.rows("audit_log").some((r) => r.event === "Overifierad avsändare"), "missing audit");
+  assert(!fetched(db, "/messages/send"), "must not notify on unverified sender");
+});
+
+Deno.test("level 2 (Step 9 / D17): reply matching our sent Message-ID joins existing thread and skips triage", async () => {
+  const db = pipelineDb({
+    customers: [{ id: "cu1", company_id: COMPANY, email: "kund@example.com" }],
+    threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "svar" }],
+    messages: [{ id: "sent1", company_id: COMPANY, channel: "email", from: "vv", thread_id: "t0", provider_message_id: "reply-123@foretag.se", created_at: recent() }],
+  });
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
+    run(db, mail({
+      fromEmail: "kund-alias@example.com",
+      threadHeaders: { messageId: "cust-reply@example.com", inReplyTo: ["reply-123@foretag.se"], references: [] },
+    }))
+  );
+  assert(!fetched(db, "triage-email"), "proven reply should skip triage");
+  const rpcCall = db.calls.find((c) => c.startsWith("rpc.estim_receive_email("))!;
+  assert(rpcCall.includes('"mode":"join_thread"') && rpcCall.includes('"target_thread_id":"t0"'), rpcCall);
+  assert(rpcCall.includes('"rfc_message_id":"cust-reply@example.com"') && rpcCall.includes('"in_reply_to":"reply-123@foretag.se"'), rpcCall);
+});
+
+Deno.test("level 2 (Step 9 / D17): new mail from known address without Message-ID creates new thread with merge suggestion", async () => {
+  const db = pipelineDb(knownSender(1));
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
+    run(db, mail({ threadHeaders: { messageId: "fresh@example.com", inReplyTo: [], references: [] } }))
+  );
+  const rpcCall = db.calls.find((c) => c.startsWith("rpc.estim_receive_email("))!;
+  assert(rpcCall.includes('"mode":"new_thread"') && rpcCall.includes('"suggested_merge_thread_id":"t0"'), rpcCall);
+  const newThread = db.rows("threads").find((t) => t.id === "et1")!;
+  assertEquals(newThread.suggested_merge_thread_id, "t0");
+});
+
+Deno.test("level 2 (Step 9 / D17): CC reply to customer Message-ID from different From never auto-joins; DB failure retries", async () => {
+  const db = pipelineDb({
+    customers: [{ id: "cu1", company_id: COMPANY, email: "kund@example.com" }],
+    threads: [{ id: "t0", company_id: COMPANY, channel: "email", customer_id: "cu1", status: "ny" }],
+    messages: [{ id: "m0", company_id: COMPANY, channel: "email", from: "kund", thread_id: "t0", rfc_message_id: "cust-orig@example.com", created_at: recent() }],
+  });
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, db, () =>
+    run(db, mail({
+      fromEmail: "other@cc.se",
+      threadHeaders: { messageId: "cc-reply@cc.se", inReplyTo: ["cust-orig@example.com"], references: [] },
+    }))
+  );
+  const rpcCall = db.calls.find((c) => c.startsWith("rpc.estim_receive_email("))!;
+  assert(rpcCall.includes('"mode":"new_thread"'), rpcCall);
+
+  // DB lookup failure -> retry (fail-closed)
+  const failing = pipelineDb();
+  failing.fail("messages.select(thread_id,from,rfc_message_id,provider_message_id)");
+  await withEnv({ EMAIL_INBOUND_LEVEL: "2" }, failing, async () => {
+    const out = await ingestMail(asClient(failing), mail({ threadHeaders: { messageId: "x@y.se", inReplyTo: ["ref@y.se"], references: [] } }), "unipile");
+    assertEquals(out, { retry: true });
+  });
+});
+
+Deno.test("level 3 (Step 10): no-reply lead without email is quarantined instead of dropped; skips are audit-logged with short codes", async () => {
+  const db = pipelineDb();
+  const phoneOnly = { category: "forfragan", is_form_mail: false, customer: { name: "Lisa", email: null, phone: "0701112233" } };
+  await withEnv({ EMAIL_INBOUND_LEVEL: "3" }, db, () => run(db, mail({ fromEmail: "no-reply@leadsite.se", fromName: null })), phoneOnly);
+  const newThread = db.rows("threads").find((t) => t.id === "et1")!;
+  assertEquals(newThread.pending_sender, { name: "Lisa", email: null, phone: "0701112233", source: "no_reply" });
+  const draft = db.rows("drafts").find((d) => d.thread_id === "et1")!;
+  assertEquals(draft.warnings, [NO_REPLY_LEAD_WARNING]);
+
+  // triage_other is audit-logged with short code only (D3)
+  const skipped = pipelineDb();
+  await withEnv({ EMAIL_INBOUND_LEVEL: "3" }, skipped, () => run(skipped, mail()), { category: "ovrigt", is_form_mail: false, customer: { name: null, email: null, phone: null } });
+  const skipAudit = skipped.rows("audit_log").filter((r) => r.event === "Mejl hoppat över");
+  assertEquals(skipAudit.map((r) => r.after), [{ reason: "triage_other", provider: "nylas" }]);
 });

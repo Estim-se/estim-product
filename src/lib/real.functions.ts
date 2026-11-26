@@ -96,6 +96,30 @@ export const mutateWorkspace =createServerFn({ method: 'POST' }).middleware([req
       if (merged.error || !merged.data) throw new Error('Kunderna kunde inte slås ihop.');
       return { id: merged.data };
     }
+    case 'approve-email-sender': {
+      const approved = await db.rpc('estim_approve_email_sender', {
+        tid: data.id,
+        ...(data.name !== undefined ? { edited_name: data.name } : {}),
+        ...(data.email !== undefined ? { edited_email: data.email } : {}),
+        ...(data.phone !== undefined ? { edited_phone: data.phone } : {}),
+        ...(data.useCustomerId ? { use_customer_id: data.useCustomerId } : {}),
+      });
+      if (approved.error || !approved.data) {
+        throw new Error(/Nothing pending/i.test(approved.error?.message ?? '') ? 'Avsändaren är redan godkänd.' : 'Avsändaren kunde inte godkännas.');
+      }
+      return { id: data.id };
+    }
+    case 'merge-email-thread': {
+      if (data.sourceId === data.targetId) throw new Error('Välj två olika trådar.');
+      const merged = await db.rpc('estim_merge_email_thread', { source_tid: data.sourceId, target_tid: data.targetId });
+      if (merged.error || !merged.data) {
+        const msg = merged.error?.message ?? '';
+        if (/busy/i.test(msg)) throw new Error('Vänta tills AI:n är klar.');
+        if (/Has quotes/i.test(msg)) throw new Error('Tråden har en offert eller ett samtal och kan inte slås ihop.');
+        throw new Error('Trådarna kunde inte slås ihop.');
+      }
+      return { id: data.targetId };
+    }
     case 'quote': result=await db.rpc('estim_quote',{tid:data.id,payload:data.quote}); break;
     case 'approve': result=await db.rpc('estim_approve',{tid:data.id}); break;
     case 'draft': result=await db.from('drafts').update({text:data.draft.text,variant:data.draft.v,channel:data.draft.ch,attachments:data.draft.att,edited:data.draft.edited}).eq('thread_id',data.id).eq('company_id',cid); break;

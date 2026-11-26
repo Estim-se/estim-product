@@ -28,6 +28,7 @@ Unipile. The short rules for code changes are in the root `AGENTS.md` (Email par
 | `supabase/functions/_shared/nylas.ts` / `unipile.ts` | Provider clients and pure parsers (signature check, event parsing, mail parsing, `readBounded`) |
 | `supabase/functions/_shared/mail-flood.ts` | Pure flood-guard and AI-budget decisions |
 | `supabase/functions/_shared/sender-auth.ts` | Pure sender verdict from the topmost `Authentication-Results` header |
+| `supabase/functions/_shared/mail-identity.ts` | Pure Steps 8–10 decisions (`EMAIL_INBOUND_LEVEL` 0–3): form/unverified quarantine, RFC 5322 `Message-ID`/`In-Reply-To`/`References` threading |
 | `supabase/functions/_shared/notify.ts` | "Draft ready" mail to the company's members (link only, no customer text) |
 | `supabase/functions/_shared/mail-format.ts` | Escaped HTML for outgoing mail, attachment selection |
 | `src/routes/epost-klar.tsx` | Page the browser returns to after sign-in; polls `finish` |
@@ -90,6 +91,7 @@ which is stored so a bounce can mark the reply as not delivered.
 | `EMAIL_INBOUND_HOURLY_HARD_CAP`, `EMAIL_SENDER_HOURLY_CAP`, `EMAIL_SENDER_HOURLY_HARD_CAP` | 300, 10, 30 | Only with `EMAIL_FLOOD_GUARD_V2` |
 | `AI_DAILY_CAP`, `AI_UNKNOWN_SENDER_SHARE`, `AI_ENABLED` | 150, 0.6, on | AI budget per company and day (all channels count; only email checks it). The share for unknown senders applies with `EMAIL_FLOOD_GUARD_V2` |
 | `EMAIL_SENDER_CHECK` | off | Sender verification with draft warning |
+| `EMAIL_INBOUND_LEVEL` | `0` | Cumulative identity/threading level (`0` off, `1` form/unverified quarantine, `2` + Message-ID threading, `3` + no silent drops & skip audit) |
 | `NOTIFY_ENABLED`, `NOTIFY_HOURLY_CAP` | on, 20 | Notification mails |
 | `EMAIL_HOURLY_CAP` | 30 | Outgoing replies per company and hour |
 

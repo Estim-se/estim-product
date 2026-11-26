@@ -113,6 +113,8 @@ export function createEstimStore() {
       toast('Meddelandet är flyttat till ett nytt ärende.');
     },
     mergeCustomers(_keep: string, _drop: string) { toast('Sammanslagning av kunder finns i det riktiga läget.'); },
+    approveEmailSender(_id: string, _input: { name?: string; email?: string; phone?: string; useCustomerId?: string }) { toast('Godkännande av avsändare finns i det riktiga läget.'); },
+    mergeEmailThread(_sourceId: string, _targetId: string) { toast('Sammanslagning av trådar finns i det riktiga läget.'); },
     toggleAddOn(id: string) { update(s => { const q = s.threads.find(t => t.id === id)?.q; if (q) q.addOn = !q.addOn; }); actions.regen(id); },
     approveCustomer() {
       const modal = state.modal; if (!modal || state.cust.step !== 'view') return;

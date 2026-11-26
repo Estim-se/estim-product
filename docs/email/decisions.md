@@ -4,7 +4,7 @@ Why the email code looks the way it does. Each entry: the decision, why, what wa
 Dennis (owner of email and channels) in November 2026, after three external security reviews that were each checked
 against the code. Architecture: [architecture.md](architecture.md).
 
-Status: **done** = on `feature/unipile-email` with tests; **planned** = steps 8–10 of the round-2 plan, not built.
+Status: **done** = built with tests (new features behind flags, off / `0` by default).
 
 ## Ground rules
 
@@ -20,7 +20,7 @@ Behaviour that changes existing mail handling sits behind a flag that is off by 
 At most three flags: `EMAIL_FLOOD_GUARD_V2`, `EMAIL_SENDER_CHECK` and a level flag `EMAIL_INBOUND_LEVEL` (0–3, each level
 includes the ones below) for the planned identity work. Old code paths and flags are removed after two stable weeks.
 Rejected: one flag per feature (2^n combinations; two flags already interacted badly in review) and one on/off flag for
-everything (no gradual rollout). **Status:** two flags done; level flag planned.
+everything (no gradual rollout). **Status:** all three flags done (default off / `0`).
 
 ### D3. No secrets or personal data in logs
 Logs carry short error codes only: never mail content, addresses, subjects, header values, keys or provider response
@@ -104,7 +104,7 @@ SPF cannot be re-checked without the SMTP connection). **Status:** done (flag of
 At most `NOTIFY_HOURLY_CAP` (20) notification mails per company and hour, never to the connected mailbox itself. Why:
 they are sent from the company's own mailbox, and a flood could get it blocked. **Status:** done.
 
-## Identity and threads (planned)
+## Identity and threads (Steps 8–10)
 
 ### D17. The sender address only suggests who it is
 `From:` is text the sender writes. It may suggest the customer, but joining an existing thread must be proven by
@@ -112,16 +112,14 @@ they are sent from the company's own mailbox, and a flood could get it blocked. 
 Message-ID joins only if `From:` also matches and the sender check is not `fail` (it may have reached others via CC).
 The provider's `thread_id` is never used (Outlook groups by subject, which anyone can write). A new mail from a known
 address becomes a new thread with a one-click merge suggestion, never an automatic join. Rejected: a separate "5c"
-quarantine first (it would be rebuilt within weeks), and joining automatically when DMARC passes. **Status:** planned
-(steps 8–9).
+quarantine first (it would be rebuilt within weeks), and joining automatically when DMARC passes. **Status:** done behind `EMAIL_INBOUND_LEVEL >= 2` (`mail-identity.ts`, `estim_receive_email`, `estim_merge_email_thread`, Inbox `EmailIdentityCard`).
 
 ### D18. Form mail is never trusted
 The content of every form mail is untrusted, also from the company's own website: anyone can fill in a form with someone
 else's details. Form mail and unverified senders get their own thread and a customer row without contact details; the
 extracted details are a suggestion that a person approves ("Godkänn avsändare"). An existing customer's email or phone
 is never changed automatically. Rejected: trusting forms from the company's own domain with DMARC pass, plus a blocklist
-of public mail domains (it would not stop the attack). **Status:** planned (step 8). Known risk until then: a form-like
-mail can replace a customer's stored address.
+of public mail domains (it would not stop the attack). **Status:** done behind `EMAIL_INBOUND_LEVEL >= 1` (`mail-identity.ts`, `estim_receive_email`, `estim_approve_email_sender`, Inbox `EmailIdentityCard`). Known risk until turned on: a form-like mail can replace a customer's stored address.
 
 ### D19. Rejected: replacing the code with a helpdesk product
 Chatwoot, Zammad and similar solve threading and quarantine, but would be a separate product to run and integrate with

@@ -6,6 +6,7 @@ import { Icon } from './icon';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
 import { CustomerMerge } from './customer-merge';
+import { EmailIdentityCard } from './email-identity-card';
 
 export function qStatus(t: Thread) {
   if (t.status === 'vunnen') return ['Godkänd', 'chip-sage'];
@@ -30,6 +31,7 @@ export function ContextPanel({ thread: t }: { thread: Thread }) {
     {c && t.q && <div className="card mini-q"><div className="row between"><h3>Offert #{t.q.nr}</h3><span className={`chip ${status[1]}`}>{status[0]}</span></div><div className="mt8"><div className="r"><span>Totalt inkl. moms</span><span>{kr(c.inkl)}</span></div><div className="r av"><span>ROT-avdrag</span><span>−{kr(c.av)}</span></div><div className="r tot"><span>Kunden betalar</span><span>{kr(c.betala)}</span></div></div>
       {a && <div className="flag ok"><Icon name="plus" /><span>Tillval: {a.name?.replace('Tillval: ', '').replace(', material', '')} · +{kr(a.betala)} efter ROT{t.q.addOn ? ' · valt' : ''}</span></div>}
       <div className="row mt12 quote-actions"><Button variant="prototype" className="btn btn-ghost btn-xs" onClick={() => actions.openDrawer(t.id)}><Icon name="edit" />Redigera</Button>{!real&&<Button variant="prototype" className="btn btn-ghost btn-xs" onClick={() => actions.openCustomer(t.id, t.status === 'svar')}><Icon name="eye" />Se som kund</Button>}</div></div>}
+    <EmailIdentityCard thread={t} />
     <CustomerCard thread={t} />
     <div className="card"><h3>Händelser</h3><div className="tline">{t.events.map((e, i) => <div className="tli done" key={i}><i /><span className="t">{e[0]}</span><span>{e[1]}</span></div>)}</div></div>
   </div>;
