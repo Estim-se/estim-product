@@ -26,9 +26,17 @@ describe('text guard', () => {
 
   it('fails a NUL byte in a .ts file, which git would show as "Binary files differ"', () => {
     expect(run(dir => writeFiles(dir, { 'src/a.ts': '// \0\nexport const allow = () => true;\n' }))).toEqual([
-      'src/a.ts:1: Binary content in a text path: the file contains a NUL byte, so git and GitHub show "Binary files differ" instead of the change. Fix: Remove the NUL byte. A real binary file needs one of these extensions: png, jpg, jpeg, gif, webp, ico, woff2, pdf.',
+      expect.stringMatching(/^src\/a\.ts:1: Binary content in a text path: the file, or the file it was renamed from, contains a NUL byte/),
     ]);
     expect(run(dir => writeFiles(dir, { 'scripts/run': '#!/bin/sh\0\n' }))).toEqual([expect.stringMatching(/^scripts\/run:1: Binary content in a text path/)]);
+  });
+
+  it('fails a text file renamed from a binary one, which GitHub diffs as binary', () => {
+    const code = 'export const allow = () => true;\n'.repeat(20);
+    expect(run(dir => {
+      git(dir, 'mv', 'public/x.png', 'src/x.ts');
+      writeFiles(dir, { 'src/x.ts': code });
+    }, { before: { 'public/x.png': `${code}\0` } })).toEqual([expect.stringMatching(/^src\/x\.ts:1: Binary content in a text path: the file, or the file it was renamed from/)]);
   });
 
   it('ignores deletions and symbolic links', () => {

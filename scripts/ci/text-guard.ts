@@ -1,7 +1,8 @@
 // Text guard. Two ways to show reviewers less than what runs:
 // - one NUL byte makes git (and GitHub) print "Binary files differ" for a .ts file, while bun, esbuild and tsc still
 //   run it. So a file the change adds or modifies may contain a NUL byte only when its extension is a binary format
-//   on the list below;
+//   on the list below. A text file renamed from a file with a NUL byte fails too: GitHub diffs it against the old,
+//   binary content;
 // - a .gitattributes file can hide a file from diffs (-diff, binary), from `git archive` (export-ignore) or rewrite it
 //   (export-subst, filters). The repository has none and needs none, so any .gitattributes in the commit fails, at any
 //   depth.
@@ -25,16 +26,18 @@ export function checkText(root: string, base: string | null): Finding[] {
   } catch {
     return [...findings, { file: '.', line: 1, problem: `The base commit ${base} is not in this clone, so the change cannot be checked.`, fix: 'Check out with full history (fetch-depth: 0) and run again.' }];
   }
-  const out = git(['diff', '--raw', '-z', '--no-renames', '--no-abbrev', '--no-ext-diff', base, 'HEAD'], root).split('\0');
-  for (let i = 0; i < out.length - 1; i += 2) {
-    // :<old mode> <new mode> <old sha> <new sha> <status>, then the path.
-    const [, mode = '', , sha = '', status = ''] = (out[i] ?? '').split(' ');
-    const path = out[i + 1] ?? '';
+  // Renames on, as GitHub shows them: a .png renamed to .ts is diffed against its binary old content.
+  const out = git(['diff', '--raw', '-z', '-M', '--no-abbrev', '--no-ext-diff', base, 'HEAD'], root).split('\0');
+  for (let i = 0; i < out.length - 1;) {
+    // :<old mode> <new mode> <old sha> <new sha> <status>, then the path (two paths for a rename or copy).
+    const [, mode = '', oldSha = '', sha = '', status = ''] = (out[i++] ?? '').split(' ');
+    const path = /^[RC]/.test(status) ? (i++, out[i++] ?? '') : (out[i++] ?? '');
     if (status === 'D' || !/^100[67]/.test(mode)) continue;
     const extension = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase() ?? '';
     if (BINARY_EXTENSIONS.includes(extension)) continue;
-    if (git(['cat-file', 'blob', sha], root).includes('\0')) {
-      findings.push({ file: path, line: 1, problem: 'Binary content in a text path: the file contains a NUL byte, so git and GitHub show "Binary files differ" instead of the change.', fix: `Remove the NUL byte. A real binary file needs one of these extensions: ${BINARY_EXTENSIONS.join(', ')}.` });
+    const blobs = /^[RC]/.test(status) ? [sha, oldSha] : [sha];
+    if (blobs.some(blob => git(['cat-file', 'blob', blob], root).includes('\0'))) {
+      findings.push({ file: path, line: 1, problem: 'Binary content in a text path: the file, or the file it was renamed from, contains a NUL byte, so git and GitHub show "Binary files differ" instead of the change.', fix: `Remove the NUL byte, and add the file under a new name rather than renaming a binary one. A real binary file needs one of these extensions: ${BINARY_EXTENSIONS.join(', ')}.` });
     }
   }
   return findings;

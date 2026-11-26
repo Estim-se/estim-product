@@ -7,7 +7,13 @@
 // - the package in its first element is the package its key names, unless that key is an npm: alias declared in the
 //   root package.json or listed in scripts/ci/lockfile-allowlist.json (an alias a dependency declares; the lockfile's
 //   own dependency lists can't vouch for it, because they are part of the change);
-// - a name@version that the base commit's bun.lock also has keeps the base's integrity hash.
+// - a name@version that the base commit's bun.lock also has keeps the base's integrity hash and its dependency and
+//   command lists exactly;
+// - any other entry says no more than the npm registry's document for that version: the same integrity hash, no
+//   dependency it doesn't declare and no command it doesn't ship. bun checks downloads against the lockfile's hash, so
+//   that hash must be npm's, whichever registry a .env or bunfig.toml points bun at. The registry is asked over the
+//   network, and an unanswered question fails;
+// - something in the root package.json reaches it through the entries' dependency lists.
 // Against the base it also fails on any added, changed or deleted .npmrc at any depth (a registry or token setting for
 // every install), and on a bun.lockb or a missing bun.lock in the commit. The file is parsed strictly: trailing commas
 // are accepted, comments and duplicate keys are not.
@@ -20,7 +26,7 @@ import { type Finding, git, isMain, lineAt, readAllowlist, report, resolveBase }
 
 export const ALLOWLIST = 'scripts/ci/lockfile-allowlist.json';
 const LOCK = 'bun.lock';
-const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const DEPENDENCY_GROUPS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides', 'resolutions'];
 
 /**
@@ -143,7 +149,78 @@ function show(root: string, rev: string, path: string): string | null {
   }
 }
 
-export function checkLockfile(root: string, base: string | null): Finding[] {
+const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** JSON with object keys sorted, so two parsed values compare by content. */
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_key, x: unknown) => (typeof x === 'object' && x !== null && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+
+/** Fetches the registry's document for one published version; throws when it can't. */
+export type Registry = (name: string, version: string) => Promise<unknown>;
+
+export const npmRegistry: Registry = async (name, version) => {
+  const url = `https://registry.npmjs.org/${name.replace('/', '%2f')}/${encodeURIComponent(version)}`;
+  const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  return (await response.json()) as unknown;
+};
+
+/**
+ * What a new entry claims beyond the registry's document for that version: another hash, a dependency the version
+ * doesn't declare, or a command it doesn't ship. null when the entry is no more than the registry says.
+ */
+export function registryMismatch(name: string, version: string, integrity: string, meta: Record<string, unknown>, doc: unknown): string | null {
+  const d = record(doc);
+  if (d['name'] !== name || d['version'] !== version) return `the npm registry has no ${name}@${version}.`;
+  if (record(d['dist'])['integrity'] !== integrity) return `its integrity hash isn't the npm registry's for ${name}@${version}.`;
+  const declared: Record<string, Record<string, unknown>> = {
+    dependencies: { ...record(d['dependencies']), ...record(d['optionalDependencies']) },
+    optionalDependencies: { ...record(d['dependencies']), ...record(d['optionalDependencies']) },
+    // bun lists a peer that only peerDependenciesMeta names as "*".
+    peerDependencies: { ...Object.fromEntries(Object.keys(record(d['peerDependenciesMeta'])).map(peer => [peer, '*'])), ...record(d['peerDependencies']) },
+  };
+  for (const [group, allowed] of Object.entries(declared)) {
+    for (const [dep, range] of Object.entries(record(meta[group]))) {
+      if (allowed[dep] !== range) return `it lists ${group} "${dep}": ${JSON.stringify(range)}, which the npm registry's ${name}@${version} doesn't declare.`;
+    }
+  }
+  const bin = d['bin'];
+  const commands = new Set(typeof bin === 'string' ? [name.slice(name.lastIndexOf('/') + 1)] : Object.keys(record(bin)));
+  for (const command of Object.keys(record(meta['bin']))) {
+    if (!commands.has(command)) return `it links a command "${command}" that the npm registry's ${name}@${version} doesn't ship.`;
+  }
+  if (meta['binDir'] !== undefined && record(d['directories'])['bin'] === undefined) return `it links a bin directory that the npm registry's ${name}@${version} doesn't declare.`;
+  return null;
+}
+
+/** Package names bun can reach from the root package.json through the entries' dependency lists. */
+function reachable(packageJson: string, entries: LockEntry[]): Set<string> {
+  let pkg: Record<string, unknown> = {};
+  try {
+    pkg = record(parseLockText(packageJson));
+  } catch {
+    // An unreadable package.json reaches nothing, so every entry fails below.
+  }
+  const names = new Set<string>();
+  const queue: string[] = [];
+  const add = (name: string) => {
+    if (!names.has(name)) {
+      names.add(name);
+      queue.push(name);
+    }
+  };
+  for (const group of DEPENDENCY_GROUPS) for (const name of Object.keys(record(pkg[group]))) add(name);
+  const byName = new Map<string, Record<string, unknown>[]>();
+  for (const { key, value } of entries) byName.set(packageOfKey(key), [...(byName.get(packageOfKey(key)) ?? []), record(value[2])]);
+  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+    for (const meta of byName.get(name) ?? []) {
+      for (const group of ['dependencies', 'optionalDependencies', 'peerDependencies']) for (const dep of Object.keys(record(meta[group]))) add(dep);
+    }
+  }
+  return names;
+}
+
+export async function checkLockfile(root: string, base: string | null, registry: Registry = npmRegistry): Promise<Finding[]> {
   const allow = readAllowlist(join(root, ALLOWLIST), ALLOWLIST, ['alias', 'package'] as const);
   const findings: Finding[] = [...allow.findings];
   if (base !== null) {
@@ -169,22 +246,30 @@ export function checkLockfile(root: string, base: string | null): Finding[] {
   const head = readLock(text);
   if (head.error) return [...findings, { file: LOCK, line: 1, problem: `bun.lock can't be read strictly: ${head.error}`, fix: 'Regenerate it with bun install and commit it unedited.' }];
 
-  const baseHashes = new Map<string, string>();
+  // What main's bun.lock pins for each name@version: its hash and its dependency and command lists (a version can
+  // appear under several keys, bundled in one place and not in another, so every list main has counts).
+  const pinned = new Map<string, { integrity: unknown; metas: Set<string> }>();
   const baseText = base === null ? null : show(root, base, LOCK);
   if (baseText !== null) {
     for (const { value } of readLock(baseText).entries) {
-      if (typeof value[0] === 'string' && typeof value[3] === 'string' && !baseHashes.has(value[0])) baseHashes.set(value[0], value[3]);
+      if (typeof value[0] !== 'string') continue;
+      const known = pinned.get(value[0]) ?? { integrity: value[3], metas: new Set<string>() };
+      known.metas.add(canonical(record(value[2])));
+      pinned.set(value[0], known);
     }
   }
-  const aliases = declaredAliases(show(root, 'HEAD', 'package.json') ?? '');
+  const packageJson = show(root, 'HEAD', 'package.json') ?? '';
+  const aliases = declaredAliases(packageJson);
+  const names = reachable(packageJson, head.entries);
   const packagesAt = text.indexOf('"packages"');
+  const lookups: { at: (problem: string, fix: string) => void; name: string; version: string; integrity: string; meta: Record<string, unknown> }[] = [];
 
   for (const { key, value } of head.entries) {
     // bun writes each entry on its own line, indented four spaces; nested dependency lists can repeat the key earlier.
     const index = text.indexOf(`\n    ${JSON.stringify(key)}: [`, Math.max(packagesAt, 0));
     const line = index < 0 ? 1 : lineAt(text, index + 1);
     const at = (problem: string, fix: string) => findings.push({ file: LOCK, line, problem: `${JSON.stringify(key)}: ${problem}`, fix });
-    const [resolved, url, , integrity] = value;
+    const [resolved, url, info, integrity] = value;
     if (typeof resolved !== 'string') {
       at('the entry is not a list that starts with "name@version".', 'Regenerate bun.lock with bun install and commit it unedited.');
       continue;
@@ -194,17 +279,39 @@ export function checkLockfile(root: string, base: string | null): Finding[] {
       at(`resolves to ${JSON.stringify(resolved)}${typeof url === 'string' && url !== '' ? ` from ${JSON.stringify(url)}` : ''}, not a plain version from the npm registry.`, 'Use a published registry version. Another source needs a reviewed change to scripts/ci/lockfile-guard.ts.');
       continue;
     }
-    if (typeof integrity !== 'string' || !integrity.startsWith('sha512-')) at('has no sha512 integrity hash, so bun would not check what it downloads.', 'Regenerate bun.lock with bun install and commit it unedited.');
+    if (typeof integrity !== 'string' || !integrity.startsWith('sha512-')) {
+      at('has no sha512 integrity hash, so bun would not check what it downloads.', 'Regenerate bun.lock with bun install and commit it unedited.');
+      continue;
+    }
     const expected = packageOfKey(key);
     if (name !== expected && aliases.get(expected) !== name && !allow.entries.some(e => e.alias === expected && e.package === name)) {
       at(`installs ${name} under the name ${expected}.`, `If ${expected} is a real npm: alias, declare it in package.json ("${expected}": "npm:${name}@..."), or for an alias a dependency declares, add {"alias": "${expected}", "package": "${name}", "reason": "..."} to ${ALLOWLIST}. Otherwise regenerate bun.lock with bun install.`);
     }
-    const before = baseHashes.get(resolved);
-    if (before !== undefined && typeof integrity === 'string' && integrity !== before) at(`changes the integrity hash of ${resolved}, which main's bun.lock already pins.`, 'A published version never changes; restore the hash from main.');
+    if (!names.has(expected)) at('nothing in package.json reaches it through the lockfile\'s dependency lists.', 'Regenerate bun.lock with bun install, which drops entries nothing uses.');
+    const before = pinned.get(resolved);
+    if (before === undefined) {
+      lookups.push({ at, name, version: spec, integrity, meta: record(info) });
+    } else if (integrity !== before.integrity) {
+      at(`changes the integrity hash of ${resolved}, which main's bun.lock already pins.`, 'A published version never changes; restore the hash from main.');
+    } else if (!before.metas.has(canonical(record(info)))) {
+      at(`changes the dependency or command lists of ${resolved}, which main's bun.lock already pins.`, 'A published version never changes; restore the entry from main.');
+    }
+  }
+
+  // Entries main doesn't pin must say no more than the npm registry does for that version (a few at a time).
+  for (let i = 0; i < lookups.length; i += 8) {
+    await Promise.all(lookups.slice(i, i + 8).map(async l => {
+      try {
+        const mismatch = registryMismatch(l.name, l.version, l.integrity, l.meta, await registry(l.name, l.version));
+        if (mismatch) l.at(mismatch, 'Regenerate bun.lock with bun install from the npm registry and commit it unedited.');
+      } catch (error) {
+        l.at(`the npm registry could not be asked about ${l.name}@${l.version} (${(error as Error).message}).`, 'Run ci again. A version that isn\'t on npm needs a reviewed change to scripts/ci/lockfile-guard.ts.');
+      }
+    }));
   }
   return findings;
 }
 
 if (isMain(import.meta.url)) {
-  process.exit(report('lockfile-guard', checkLockfile(process.cwd(), resolveBase(process.argv.slice(2), process.env))));
+  void checkLockfile(process.cwd(), resolveBase(process.argv.slice(2), process.env)).then(findings => process.exit(report('lockfile-guard', findings)));
 }
