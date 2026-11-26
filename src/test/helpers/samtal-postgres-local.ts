@@ -23,7 +23,7 @@ export async function scalar<T>(db: LocalSession, statement: string, params: unk
   return row.v;
 }
 
-export async function disposableSamtalPostgres() {
+export async function disposableSamtalPostgres(candidate = 'priority-1-safety-draft.sql') {
   const directory = mkdtempSync(join(tmpdir(), 'samtal-pg-'));
   const data = join(directory, 'data'), socket = join(directory, 'socket');
   mkdirSync(socket);
@@ -75,11 +75,14 @@ export async function disposableSamtalPostgres() {
       ALTER TABLE company_members ENABLE ROW LEVEL SECURITY; CREATE POLICY member_read ON company_members FOR SELECT TO authenticated USING(user_id=auth.uid());
       ALTER TABLE threads DROP CONSTRAINT threads_channel_check; ALTER TABLE threads ADD CONSTRAINT threads_channel_check CHECK(channel IN ('email','sms','wa','form','samtal'));`);
     await admin.exec(normPhone); await admin.exec(newReceive);
-    for (const file of ['samtal.sql','samtal-indekser.sql','samtal-sletting.sql','priority-1-safety-draft.sql']) await admin.exec(docSql(file));
+    for (const file of ['samtal.sql','samtal-indekser.sql','samtal-sletting.sql']) await admin.exec(docSql(file));
+    const policyQuery = "SELECT jsonb_agg(to_jsonb(p) ORDER BY tablename,policyname) AS policies FROM pg_policies p WHERE schemaname='public' AND tablename IN('samtal_settings','samtal_numbers','samtal_calls','samtal_jobs','samtal_tasks')";
+    const originalPolicies = (await admin.query<{policies:unknown[]}>(policyQuery)).rows[0]?.policies ?? [];
+    await admin.exec(docSql(candidate));
     await admin.exec(`INSERT INTO companies(id) VALUES ('${LOCAL_A}'),('${LOCAL_B}');
       INSERT INTO company_members(company_id,user_id,role) VALUES ('${LOCAL_A}','${LOCAL_OWNER}','ägare'),('${LOCAL_A}','${LOCAL_STAFF}','användare'),('${LOCAL_B}','${LOCAL_OTHER}','ägare');
       INSERT INTO samtal_settings(company_id,auto_process) VALUES ('${LOCAL_A}',true),('${LOCAL_B}',true);
       INSERT INTO samtal_numbers(company_id,user_id,phone_e164) VALUES ('${LOCAL_A}','${LOCAL_STAFF}','+46701111111'),('${LOCAL_B}','${LOCAL_OTHER}','+46702222222');`);
-    return { admin, connect, close };
+    return { admin, connect, close, originalPolicies, policyQuery };
   } catch (error) { await close(); throw error; }
 }
