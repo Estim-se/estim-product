@@ -4,6 +4,8 @@ import { parseMutation } from "@/lib/real.schemas";
 import { emptyRealState, workspaceState } from "@/lib/real-store";
 import type { WorkspaceData } from "@/lib/real.functions";
 import type { Thread } from "@/data/inbox";
+import { Composer } from "@/components/estim/composer";
+import { ContextPanel } from "@/components/estim/context-panel";
 import { EmailIdentityCard } from "@/components/estim/email-identity-card";
 import { EstimContext } from "@/components/estim/estim-context";
 import { WorkspaceContext } from "@/components/estim/workspace-context";
@@ -223,5 +225,140 @@ describe("EmailIdentityCard UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Slå ihop med befintlig tråd" }));
     fireEvent.click(screen.getByRole("button", { name: "Slå ihop" }));
     expect(mergeEmailThread).toHaveBeenCalledWith(UUID1, UUID3);
+  });
+
+  it("places EmailIdentityCard at the top of ContextPanel before Uppgifter, Offert and Kund", () => {
+    const thread = sampleThread({
+      asks: [["Pris på laddbox", 1]],
+      facts: [["info", "Villa i Täby"]],
+      pendingSender: { name: "Kalle", email: "kalle@kund.se", phone: "070111", source: "form" },
+    });
+    const state = { ...emptyRealState(), threads: [thread] };
+    const fakeStore = {
+      subscribe: () => () => {},
+      getSnapshot: () => state,
+      actions: {
+        approveEmailSender: vi.fn(),
+        mergeEmailThread: vi.fn(),
+        openDrawer: vi.fn(),
+      } as never,
+    };
+    const workspace = {
+      mode: "real",
+      realStore: fakeStore,
+      data: { customers: [], drafts: [] } as never,
+    } as never;
+
+    render(
+      <WorkspaceContext.Provider value={workspace}>
+        <EstimContext.Provider value={fakeStore as never}>
+          <ContextPanel thread={thread} />
+        </EstimContext.Provider>
+      </WorkspaceContext.Provider>,
+    );
+
+    const cardHeading = screen.getByText("Godkänn avsändare (formulärmejl)");
+    const asksHeading = screen.getByText("Kundens frågor");
+    const factsHeading = screen.getByText("Uppgifter");
+    const customerHeading = screen.getByText("Kund");
+
+    expect(
+      cardHeading.compareDocumentPosition(asksHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      cardHeading.compareDocumentPosition(factsHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      cardHeading.compareDocumentPosition(customerHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("disables email sending in Composer while pendingSender awaits approval and re-enables once approved", () => {
+    if (typeof globalThis.ResizeObserver === "undefined") {
+      globalThis.ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver;
+    }
+
+    const baseDraft = {
+      text: "Hej, här kommer svar.",
+      ch: "email" as const,
+      v: "std" as const,
+      att: [],
+      review: true,
+      edited: true,
+      busy: false,
+      warn: ["Formulärmejl: kontrollera och godkänn avsändarens uppgifter innan du svarar."],
+    };
+
+    const pendingThread = sampleThread({
+      pendingSender: { name: "Kalle", email: "kalle@kund.se", phone: null, source: "form" },
+    });
+    const pendingState = {
+      ...emptyRealState(),
+      threads: [pendingThread],
+      drafts: { [pendingThread.id]: baseDraft },
+    };
+    const pendingStore = {
+      subscribe: () => () => {},
+      getSnapshot: () => pendingState,
+      actions: {
+        send: vi.fn(),
+        editDraft: vi.fn(),
+        setDraft: vi.fn(),
+        setCh: vi.fn(),
+        addAtt: vi.fn(),
+        delAtt: vi.fn(),
+        openDrawer: vi.fn(),
+      } as never,
+    };
+    const workspace = {
+      mode: "real",
+      realStore: pendingStore,
+      data: { customers: [], drafts: [] } as never,
+    } as never;
+
+    const { rerender } = render(
+      <WorkspaceContext.Provider value={workspace}>
+        <EstimContext.Provider value={pendingStore as never}>
+          <Composer thread={pendingThread} />
+        </EstimContext.Provider>
+      </WorkspaceContext.Provider>,
+    );
+
+    const sendBtn = screen.getByRole("button", { name: "Godkänn och skicka" }) as HTMLButtonElement;
+    expect(sendBtn.disabled).toBe(true);
+    expect(screen.getByText("Godkänn avsändaren till höger innan du skickar.")).toBeTruthy();
+
+    const approvedThread = sampleThread({
+      email: "kalle@kund.se",
+      pendingSender: null,
+    });
+    const approvedState = {
+      ...emptyRealState(),
+      threads: [approvedThread],
+      drafts: { [approvedThread.id]: baseDraft },
+    };
+    const approvedStore = {
+      ...pendingStore,
+      getSnapshot: () => approvedState,
+    };
+
+    rerender(
+      <WorkspaceContext.Provider
+        value={{ ...(workspace as object), realStore: approvedStore } as never}
+      >
+        <EstimContext.Provider value={approvedStore as never}>
+          <Composer thread={approvedThread} />
+        </EstimContext.Provider>
+      </WorkspaceContext.Provider>,
+    );
+
+    expect(
+      (screen.getByRole("button", { name: "Godkänn och skicka" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(screen.queryByText("Godkänn avsändaren till höger innan du skickar.")).toBeNull();
   });
 });

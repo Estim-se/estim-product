@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Thread } from "@/data/inbox";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "./confirm-dialog";
+import { Icon } from "./icon";
 import { useEstim } from "./store-provider";
 import { useWorkspace } from "./workspace-provider";
 
@@ -60,12 +61,24 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
   return (
     <>
       {pending && (
-        <div className="card">
-          <h3>{HEADINGS[pending.source]}</h3>
+        <div
+          className="card"
+          style={{
+            borderColor: "var(--prototype-tone-23)",
+            background: "var(--thread-tone-6)",
+          }}
+        >
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span style={{ color: "var(--thread-tone-24)", display: "inline-flex" }}>
+              <Icon name="warn" />
+            </span>
+            <h3>{HEADINGS[pending.source]}</h3>
+          </div>
           <p className="small muted mt8">{DESCRIPTIONS[pending.source]}</p>
           <div className="mt8" style={{ display: "grid", gap: 8 }}>
             <input
               className="input"
+              style={{ background: "var(--card)" }}
               aria-label="Föreslaget namn"
               placeholder="Namn"
               value={name}
@@ -73,6 +86,7 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
             />
             <input
               className="input"
+              style={{ background: "var(--card)" }}
               aria-label="Föreslagen e-post"
               type="email"
               placeholder="E-post"
@@ -81,6 +95,7 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
             />
             <input
               className="input"
+              style={{ background: "var(--card)" }}
               aria-label="Föreslaget telefonnummer"
               placeholder="Telefon"
               value={phone}
@@ -116,7 +131,13 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
       )}
 
       {mergeTarget && (
-        <div className="card">
+        <div
+          className="card"
+          style={{
+            borderColor: "var(--prototype-tone-23)",
+            background: "var(--thread-tone-6)",
+          }}
+        >
           <h3>Möjlig fortsättning</h3>
           <p className="small muted mt8">
             Samma avsändare har redan en öppen tråd: <b>{mergeTarget.job}</b>
