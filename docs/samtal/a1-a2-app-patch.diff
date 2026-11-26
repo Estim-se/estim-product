@@ -1,0 +1,301 @@
+diff --git a/src/lib/samtal/call.ts b/src/lib/samtal/call.ts
+index 88816e9..1ecc200 100644
+--- a/src/lib/samtal/call.ts
++++ b/src/lib/samtal/call.ts
+@@ -4,6 +4,7 @@
+ // The call names the receiving number, never a company or an employee: those are resolved from that number in our
+ // own database (samtal_register_call), so an adapter or a provider payload can never place a call in another company.
+ import { z } from 'zod';
++import { providerTranscriptInputSchema } from './provider-transcript';
+ 
+ export const SAMTAL_AUDIO_TYPES: Record<string, string> = {
+   mp3: 'audio/mpeg', m4a: 'audio/x-m4a', mp4: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', webm: 'audio/webm', flac: 'audio/flac', aac: 'audio/aac',
+@@ -43,10 +44,13 @@ export const samtalCallSchema = z.object({
+   started_at: z.string().datetime({ offset: true }),
+   ended_at: z.string().datetime({ offset: true }).nullable(),
+   duration_seconds: z.number().int().min(0).max(SAMTAL_MAX_DURATION_SECONDS).nullable(),
+-  audio: audioSchema,
++  // A1 (unapplied): audio, a provider transcript, or both. The transcript is validated again before use.
++  audio: audioSchema.optional(),
++  transcript: providerTranscriptInputSchema.optional(),
+ }).strict().superRefine((c, ctx) => {
++  if (!c.audio && !c.transcript) ctx.addIssue({ code: 'custom', path: ['audio'], message: 'audio or transcript required' });
+   if (c.ended_at && Date.parse(c.ended_at) < Date.parse(c.started_at)) ctx.addIssue({ code: 'custom', path: ['ended_at'], message: 'ends before it starts' });
+-  if (!SAMTAL_AUDIO_TYPES[c.audio.extension]) ctx.addIssue({ code: 'custom', path: ['audio', 'extension'], message: 'unsupported audio type' });
++  if (c.audio && !SAMTAL_AUDIO_TYPES[c.audio.extension]) ctx.addIssue({ code: 'custom', path: ['audio', 'extension'], message: 'unsupported audio type' });
+ });
+ export type SamtalCall = z.infer<typeof samtalCallSchema>;
+ 
+@@ -54,7 +58,7 @@ export type SamtalCall = z.infer<typeof samtalCallSchema>;
+ // the provider gives only those (and the end from the duration in the other case). Throws on invalid input.
+ export function standardCall(input: {
+   provider: string; provider_call_id: string; to_phone: string; from_phone?: string | null; started_at: string;
+-  ended_at?: string | null; duration_seconds?: number | null; audio: SamtalCall['audio'];
++  ended_at?: string | null; duration_seconds?: number | null; audio?: SamtalCall['audio']; transcript?: SamtalCall['transcript'];
+ }): SamtalCall {
+   const to = normalisePhone(input.to_phone);
+   if (!to) throw new Error('invalid_receiver_number');
+@@ -66,7 +70,8 @@ export function standardCall(input: {
+     provider: input.provider, provider_call_id: input.provider_call_id, to_phone: to, from_phone: normalisePhone(input.from_phone),
+     started_at: started.toISOString(),
+     ended_at: ended ? ended.toISOString() : duration !== null ? new Date(started.getTime() + duration * 1000).toISOString() : null,
+-    duration_seconds: duration, audio: input.audio,
++    duration_seconds: duration,
++    ...(input.audio ? { audio: input.audio } : {}), ...(input.transcript ? { transcript: input.transcript } : {}),
+   });
+ }
+ 
+diff --git a/src/lib/samtal/ingest.server.ts b/src/lib/samtal/ingest.server.ts
+index 63e15d2..e4b03b4 100644
+--- a/src/lib/samtal/ingest.server.ts
++++ b/src/lib/samtal/ingest.server.ts
+@@ -10,17 +10,18 @@
+ //
+ // Logging: only stage and structural codes, never phone numbers, names, audio or text.
+ import type { SupabaseClient } from '@supabase/supabase-js';
+-import type { Database } from '@/integrations/supabase/types';
++import type { Database, Json } from '@/integrations/supabase/types';
+ import type { SamtalAdapter } from './adapter';
+ import type { SamtalCall } from './call';
+ import { samtalEnabled } from './flag';
++import { validateProviderTranscript } from './provider-transcript';
+ 
+ export type IngestResult =
+   | { status: 'disabled' | 'ignored' | 'duplicate' }
+   | { status: 'retry' | 'backpressure' }
+   | { status: 'registered'; callId: string; companyId: string; autoProcess: boolean }
+   | { status: 'cleanup_pending'; callId: string; companyId: string }
+-  | { status: 'failed'; stage: 'register' | 'audio' | 'upload' | 'save'; code: string; callId?: string };
++  | { status: 'failed'; stage: 'register' | 'audio' | 'upload' | 'save' | 'transcript'; code: string; callId?: string };
+ 
+ type Reserved = { id: string; audio_path: string; upload_token: string; state: string };
+ type Recovered = { status?: string; call_id?: string; company_id?: string; auto_process?: boolean; audio?: Reserved | { id: string; state: string } };
+@@ -33,10 +34,45 @@ const code = (error: unknown) => {
+ export async function ingestCall(db: SupabaseClient<Database>, adapter: SamtalAdapter, call: SamtalCall, requestId: string = crypto.randomUUID()): Promise<IngestResult> {
+   if (!samtalEnabled()) return { status: 'disabled' };
+   // The payload names the receiving number only; company and employee are never taken from the adapter.
+-  const reg = await db.rpc('samtal_ingest_recover', { payload: {
++  const payload = {
+     provider: adapter.id, provider_call_id: call.provider_call_id, to_phone: call.to_phone, from_phone: call.from_phone,
+     started_at: call.started_at, ended_at: call.ended_at, duration_seconds: call.duration_seconds,
+-  }, p_request: requestId, p_extension: call.audio.extension });
++  };
++  // A1: the provider transcript is checked against the adapter's own identity for this call. An invalid one is never
++  // trusted; with audio the call falls back to speech to text, without audio it is refused safely.
++  const checked = call.transcript ? validateProviderTranscript(call.transcript, { provider: adapter.id, provider_call_id: call.provider_call_id, duration_seconds: call.duration_seconds }) : null;
++  if (!call.audio) {
++    if (!checked) return { status: 'failed', stage: 'register', code: 'no_content' };
++    if (!checked.ok) return { status: 'failed', stage: 'transcript', code: checked.code };
++    return attachTranscript(db, payload, checked.transcript as unknown as Json);
++  }
++  const result = await ingestAudio(db, adapter, call, payload, call.audio.extension, requestId);
++  // Both: the validated transcript is preferred (processing then skips speech to text); the recording follows the
++  // normal retention. Attaching is idempotent, so a redelivered event attaches nothing twice.
++  if (checked?.ok && (result.status === 'registered' || result.status === 'duplicate')) {
++    const attached = await attachTranscript(db, payload, checked.transcript as unknown as Json);
++    if (attached.status === 'failed') return attached;
++  }
++  return result;
++}
++
++type Payload = Record<string, string | number | null>;
++// Registers (or finds) the call and stores the validated provider transcript in one database step
++// (samtal_ingest_transcript, candidate SQL). The database checks the provenance again and never accepts a transcript
++// for a deleted, private, erased or already transcribed call, or one whose job is running.
++async function attachTranscript(db: SupabaseClient<Database>, payload: Payload, transcript: Json): Promise<IngestResult> {
++  const reg = await db.rpc('samtal_ingest_transcript', { payload, p_transcript: transcript });
++  if (reg.error) return { status: 'failed', stage: 'transcript', code: code(reg.error) };
++  const r = (reg.data ?? {}) as Recovered;
++  if (r.status === 'rejected') return { status: 'ignored' };
++  if (r.status === 'retry' || r.status === 'backpressure') return { status: r.status };
++  if (!r.call_id || !r.company_id) return { status: 'failed', stage: 'transcript', code: 'register_invalid_response' };
++  if (r.status !== 'attached') return { status: 'duplicate' };
++  return { status: 'registered', callId: r.call_id, companyId: r.company_id, autoProcess: Boolean(r.auto_process) };
++}
++
++async function ingestAudio(db: SupabaseClient<Database>, adapter: SamtalAdapter, call: SamtalCall, payload: Payload, extension: string, requestId: string): Promise<IngestResult> {
++  const reg = await db.rpc('samtal_ingest_recover', { payload, p_request: requestId, p_extension: extension });
+   if (reg.error) return { status: 'failed', stage: 'register', code: code(reg.error) };
+   const r = (reg.data ?? {}) as Recovered;
+   if (r.status === 'rejected') return { status: 'ignored' };
+diff --git a/src/lib/samtal/process.server.ts b/src/lib/samtal/process.server.ts
+index 85bce7a..9d0ff6e 100644
+--- a/src/lib/samtal/process.server.ts
++++ b/src/lib/samtal/process.server.ts
+@@ -1,7 +1,8 @@
+ // estim Samtal: the background processing of received calls (processing steps 3–6), the same for every adapter.
+ // Workers claim jobs under a lease (samtal_claim_jobs, SKIP LOCKED), so many calls run at the same time and no call is
+ // processed twice; each job is processed on its own, so one failing call never stops the others. A job resumes at the
+-// step it reached: transkribera → tolka → inkorg.
++// step it reached: transkribera → tolka → inkorg. A call with a validated provider transcript (A1, unapplied) is
++// registered directly at tolka, so speech to text is skipped and no speech-to-text key is needed.
+ //
+ // Priority 1 V2 (unapplied patch): every write goes through a lease-fenced database function (samtal_write_stage,
+ // samtal_commit_private, samtal_retry_guarded, samtal_release_job and, in the inbox step, samtal_inbox_guarded). The
+@@ -70,6 +71,7 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
+     if (step === 'transkribera' || !transcript && step !== 'inkorg') {
+       step = 'transkribera';
+       const path = call.audio_path;
++      // A1: a call with neither a usable recording nor a validated provider transcript fails safely here.
+       if (!path || !path.startsWith(`${company}/`)) throw new StepError('audio_missing');
+       const extension = path.split('.').pop() ?? '';
+       const file = await db.storage.from('samtal-audio').download(path);
+@@ -115,7 +117,8 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
+   } catch (error) {
+     const code = codeOf(error);
+     // Without the speech-to-text or AI key the call waits (hourly) instead of failing; the code shows in settings.
+-    const missingKey = code === 'stt_not_configured' || code === 'ai_not_configured';
++    // A2: an unknown or disabled speech-to-text service also waits; nothing is sent anywhere.
++    const missingKey = code === 'stt_not_configured' || code === 'stt_unsupported_provider' || code === 'ai_not_configured';
+     const again = missingKey || privateIntent || code === 'ai_invalid_output' && job.attempts < 2 || retryable(error) && job.attempts < SAMTAL_MAX_ATTEMPTS;
+     if (again) {
+       const r = await db.rpc('samtal_retry_guarded', { p_call: job.call_id, p_company: company, p_job: job.id, p_token: token, p_error: code, p_retry_seconds: missingKey ? 3600 : backoff(job.attempts) });
+diff --git a/src/lib/samtal/provider-transcript.ts b/src/lib/samtal/provider-transcript.ts
+new file mode 100644
+index 0000000..9f2d883
+--- /dev/null
++++ b/src/lib/samtal/provider-transcript.ts
+@@ -0,0 +1,63 @@
++// estim Samtal A1 (unapplied patch): a complete transcript delivered by the telephony provider instead of, or next to,
++// the recording. Browser-safe and pure: strict validation only.
++//
++// The provider transcript is untrusted input. It is accepted only when it is complete, well formed, bounded and bound
++// to the same provider and provider call id as the call it arrives with. It never carries a company, an employee or
++// any other identity: the strict schema rejects such fields, and the company always comes from the receiving number
++// in our database. Its text is data for the interpretation step only, never instructions.
++import { z } from 'zod';
++import type { Transcript, TranscriptSegment } from './transcript';
++
++export const PROVIDER_TRANSCRIPT_MAX_SEGMENTS = 5000;
++export const PROVIDER_TRANSCRIPT_MAX_TEXT = 200_000;
++// Tolerance between the last segment end and the call duration reported by the provider.
++const DURATION_SLACK_SECONDS = 5;
++
++const segmentSchema = z.object({
++  start: z.number().finite().min(0),
++  end: z.number().finite().min(0),
++  speaker: z.string().trim().min(1).max(40).nullable().optional(),
++  text: z.string().max(20_000),
++}).strict();
++
++// What an adapter puts on the standard call. `complete` must be stated explicitly by the provider.
++export const providerTranscriptInputSchema = z.object({
++  provider: z.string().regex(/^[a-z0-9_]{1,40}$/),
++  provider_call_id: z.string().trim().min(1).max(200),
++  complete: z.boolean(),
++  language: z.string().regex(/^[a-z]{2,3}(-[A-Z]{2})?$/),
++  model: z.string().regex(/^[A-Za-z0-9._:/-]{1,80}$/).optional(),
++  segments: z.array(segmentSchema).max(PROVIDER_TRANSCRIPT_MAX_SEGMENTS),
++}).strict();
++export type ProviderTranscriptInput = z.infer<typeof providerTranscriptInputSchema>;
++
++export type ProviderTranscriptCheck =
++  | { ok: true; transcript: Transcript }
++  | { ok: false; code: 'transcript_invalid' | 'transcript_incomplete' | 'transcript_mismatch' | 'transcript_empty' | 'transcript_too_large' | 'transcript_out_of_range' };
++
++// Validates a provider transcript against the identity of the call it arrived with (provider + provider call id from
++// the authenticated adapter, never from the transcript alone). Returns a structural code only, never content.
++export function validateProviderTranscript(raw: unknown, call: { provider: string; provider_call_id: string; duration_seconds: number | null }): ProviderTranscriptCheck {
++  const parsed = providerTranscriptInputSchema.safeParse(raw);
++  if (!parsed.success) return { ok: false, code: 'transcript_invalid' };
++  const t = parsed.data;
++  if (t.provider !== call.provider || t.provider_call_id !== call.provider_call_id) return { ok: false, code: 'transcript_mismatch' };
++  if (t.complete !== true) return { ok: false, code: 'transcript_incomplete' };
++  const segments: TranscriptSegment[] = [];
++  let size = 0, previousStart = 0;
++  for (const s of t.segments) {
++    const text = s.text.trim();
++    if (s.end < s.start || s.start < previousStart) return { ok: false, code: 'transcript_out_of_range' };
++    if (call.duration_seconds !== null && s.end > call.duration_seconds + DURATION_SLACK_SECONDS) return { ok: false, code: 'transcript_out_of_range' };
++    previousStart = s.start;
++    if (!text) continue;
++    size += text.length;
++    if (size > PROVIDER_TRANSCRIPT_MAX_TEXT) return { ok: false, code: 'transcript_too_large' };
++    segments.push({ start: s.start, end: s.end, speaker: s.speaker ?? null, text });
++  }
++  if (!segments.length) return { ok: false, code: 'transcript_empty' };
++  return { ok: true, transcript: {
++    service: `provider:${t.provider}`, model: t.model ?? 'provider', language: t.language, segments,
++    provenance: { kind: 'provider', provider: t.provider, provider_call_id: t.provider_call_id },
++  } };
++}
+diff --git a/src/lib/samtal/stt-config.server.ts b/src/lib/samtal/stt-config.server.ts
+new file mode 100644
+index 0000000..48e8f8b
+--- /dev/null
++++ b/src/lib/samtal/stt-config.server.ts
+@@ -0,0 +1,26 @@
++// estim Samtal A2 (unapplied patch): server-side choice of the speech-to-text service behind the existing
++// SpeechToText interface. SAMTAL_STT_PROVIDER selects it (default "berget"; "none" turns speech to text off).
++//
++// The service is resolved lazily: nothing reads a key until a recording actually needs transcribing, so a call with a
++// valid provider transcript never requires Berget credentials. A missing key or an unknown/disabled service never fails
++// a call: it answers a structural code the worker treats as "wait and retry later" (see process.server.ts).
++import { bergetSpeechToText, SttError, type SpeechToText } from './stt.server';
++
++export type SpeechToTextFactory = () => SpeechToText;
++export const SAMTAL_STT_PROVIDERS: Record<string, SpeechToTextFactory> = {
++  berget: () => bergetSpeechToText(),
++};
++
++const unavailable = (id: string, code: 'stt_not_configured' | 'stt_unsupported_provider'): SpeechToText => ({
++  id, async transcribe() { throw new SttError(code, true); },
++});
++
++export function selectSpeechToText(
++  env: Record<string, string | undefined> = process.env,
++  registry: Record<string, SpeechToTextFactory> = SAMTAL_STT_PROVIDERS,
++): SpeechToText {
++  const raw = (env['SAMTAL_STT_PROVIDER'] ?? 'berget').trim().toLowerCase();
++  if (raw === 'none' || raw === 'off') return unavailable('none', 'stt_not_configured');
++  if (!/^[a-z0-9_]{1,40}$/.test(raw) || !Object.prototype.hasOwnProperty.call(registry, raw)) return unavailable('unsupported', 'stt_unsupported_provider');
++  return registry[raw]!();
++}
+diff --git a/src/lib/samtal/test-adapter.server.ts b/src/lib/samtal/test-adapter.server.ts
+index ac887b1..5e14741 100644
+--- a/src/lib/samtal/test-adapter.server.ts
++++ b/src/lib/samtal/test-adapter.server.ts
+@@ -43,7 +43,7 @@ export function folderAdapter(folder: string): SamtalAdapter {
+       return { calls, rejected };
+     },
+     async openAudio(call) {
+-      if (call.provider !== 'test' || call.audio.kind !== 'file') throw new Error('not_a_test_call');
++      if (call.provider !== 'test' || !call.audio || call.audio.kind !== 'file') throw new Error('not_a_test_call');
+       const path = inside(call.audio.path);
+       if ((await stat(path)).size > SAMTAL_MAX_AUDIO_BYTES) throw new Error('audio_too_large');
+       return { bytes: new Uint8Array(await readFile(path)), contentType: SAMTAL_AUDIO_TYPES[call.audio.extension]!, extension: call.audio.extension };
+diff --git a/src/lib/samtal/transcript.ts b/src/lib/samtal/transcript.ts
+index 32571ba..9d25405 100644
+--- a/src/lib/samtal/transcript.ts
++++ b/src/lib/samtal/transcript.ts
+@@ -1,7 +1,9 @@
+ // estim Samtal: the transcript every speech-to-text service delivers (Berget now, local KB-Whisper in the test
+ // script, others later). Browser-safe and pure.
+ export type TranscriptSegment = { start: number; end: number; speaker: string | null; text: string };
+-export type Transcript = { service: string; model: string; language: string; segments: TranscriptSegment[] };
++// provenance (A1, unapplied): set only for a validated provider-delivered transcript; absent means speech to text.
++export type TranscriptProvenance = { kind: 'provider'; provider: string; provider_call_id: string };
++export type Transcript = { service: string; model: string; language: string; segments: TranscriptSegment[]; provenance?: TranscriptProvenance };
+ 
+ const MAX_SEGMENTS = 5000, MAX_TEXT = 200_000;
+ const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+diff --git a/src/routes/api/public/samtal-worker.ts b/src/routes/api/public/samtal-worker.ts
+index f775b02..b821428 100644
+--- a/src/routes/api/public/samtal-worker.ts
++++ b/src/routes/api/public/samtal-worker.ts
+@@ -8,13 +8,13 @@ export const Route = createFileRoute('/api/public/samtal-worker')({
+     const { purgeSecretValid } = await import('@/lib/samtal/purge.server');
+     if (!await purgeSecretValid(db, request.headers.get('x-estim-secret'))) return Response.json({ error: 'Åtkomst nekad.' }, { status: 401 });
+     const { runSamtalJobs } = await import('@/lib/samtal/process.server');
+-    const { bergetSpeechToText } = await import('@/lib/samtal/stt.server');
++    const { selectSpeechToText } = await import('@/lib/samtal/stt-config.server');
+     const { gatewaySamtalAi } = await import('@/lib/samtal/ai.server');
+     const { samtalInboxStep, drainSamtalDispatch } = await import('@/lib/samtal/inbox.server');
+     const { dispatchAiJob } = await import('@/lib/channel.server');
+     try {
+       // Processing writes the handoff to Samtal's outbox; the outbox then starts the existing AI jobs (V2, unapplied).
+-      const { claimed, results } = await runSamtalJobs(db, { stt: bergetSpeechToText(), ai: gatewaySamtalAi(), inbox: samtalInboxStep() });
++      const { claimed, results } = await runSamtalJobs(db, { stt: selectSpeechToText(), ai: gatewaySamtalAi(), inbox: samtalInboxStep() });
+       const dispatch = await drainSamtalDispatch(db, dispatchAiJob);
+       return Response.json({ ok: true, claimed, results, dispatch });
+     }
