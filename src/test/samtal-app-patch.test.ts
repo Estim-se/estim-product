@@ -40,7 +40,11 @@ const owner = { my_company: A, samtal_is_owner: true }, employee = { my_company:
 const visible = (company = A, audio: string | null = `${A}/${CALL}.mp3`) => fake(() => ({ data: { id: CALL, company_id: company, audio_path: audio } }), owner);
 
 let dir = '';
-let page: typeof import('@/lib/samtal/page.server') & { reviewSamtalCall: (u: never, a: never, actor: string, i: { call_id: string; request_id: string; decision: 'business' | 'private' }) => Promise<{ decision: string; deletion_pending: boolean }> };
+type Active = typeof import('@/lib/samtal/page.server');
+let page: Pick<Active, 'loadSamtalPage'> & {
+  samtalAudioLink: (u: never, a: never, callId: string, actor: string) => Promise<{ url: string; expires_in: number }>;
+  startSamtalCall: (u: never, a: never, callId: string, actor: string) => Promise<{ started: boolean }>;
+  reviewSamtalCall: (u: never, a: never, actor: string, i: { call_id: string; request_id: string; decision: 'business' | 'private' }) => Promise<{ decision: string; deletion_pending: boolean }> };
 let labels: typeof import('@/lib/samtal/labels');
 
 beforeAll(async () => {
