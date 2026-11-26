@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatFinding } from './lib';
-import { type Registry, checkLockfile, packageOfKey, parseLockText, registryMismatch, splitSpec } from './lockfile-guard';
+import { type Registry, checkLockfile, packageOfKey, parseLockText, registryMismatch, registryUrl, splitSpec } from './lockfile-guard';
 import { commitAll, git, tempDir, writeFiles } from './test-helpers';
 
 let cleanup = () => {};
@@ -118,6 +118,7 @@ describe('lockfile guard', () => {
     expect(await run(withEntries({ 'is-odd': `["is-odd@github:evil/is-odd#abc", {}, "abc"]` }))).toEqual([expect.stringMatching(/"is-odd": resolves to "is-odd@github:evil\/is-odd#abc", not a plain version/)]);
     expect(await run(withEntries({ 'is-odd': `["is-odd@03.0.1", "", {}, "${HASH.odd}"]` }))).toEqual([expect.stringMatching(/"is-odd": resolves to "is-odd@03\.0\.1", not a plain version/)]);
     expect(await run(withEntries({ 'is-odd': `["is-odd@3.0.1", "", {}]` }))).toEqual([expect.stringMatching(/"is-odd": has no integrity hash/)]);
+    expect(await run(withEntries({ 'is-odd': `["@evil/x/../../is-odd@3.0.1", "", {}, "${HASH.odd}"]` }))).toEqual([expect.stringMatching(/"is-odd": resolves to "@evil\/x\/\.\.\/\.\.\/is-odd@3\.0\.1", not a plain version/)]);
     expect(await run(withEntries({ 'left-pad': `["left-pad@1.3.0", "", {}, "sha512-LEFT"]` }))).toEqual([expect.stringMatching(/"left-pad": nothing in package\.json reaches it/)]);
   });
 
@@ -137,6 +138,11 @@ describe('lockfile guard', () => {
   it('fails a lockfile it can\'t read strictly: duplicate keys could make bun install another entry than the one checked', async () => {
     const text = lock(BASE_ENTRIES).replace('"is-odd": [', `"is-odd": ["is-odd@3.0.1", "", {}, "${HASH.odd}"],\n    "is-odd": [`);
     expect(await run({ 'bun.lock': text })).toEqual([expect.stringMatching(/^bun\.lock:1: bun\.lock can't be read strictly: Duplicate key "is-odd"/)]);
+  });
+
+  it('asks the registry for exactly the named package and version', () => {
+    expect(registryUrl('@types/node', '20.11.0')).toBe('https://registry.npmjs.org/@types%2Fnode/20.11.0');
+    expect(registryUrl('h3', '2.0.1-rc.20')).toBe('https://registry.npmjs.org/h3/2.0.1-rc.20');
   });
 
   it('compares what an entry claims with the registry\'s document', () => {

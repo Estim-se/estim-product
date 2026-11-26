@@ -27,6 +27,9 @@ import { type Finding, git, isMain, lineAt, readAllowlist, report, resolveBase }
 export const ALLOWLIST = 'scripts/ci/lockfile-allowlist.json';
 const LOCK = 'bun.lock';
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// npm's package names: an optional @scope/, URL-safe characters, not starting with a dot or underscore. Anything else
+// (a second slash, a ..) could make the registry lookup below fetch another package's document.
+const NAME = /^(?:@[A-Za-z0-9~-][A-Za-z0-9._~-]*\/)?[A-Za-z0-9~-][A-Za-z0-9._~-]*$/;
 const DEPENDENCY_GROUPS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides', 'resolutions'];
 
 /**
@@ -162,8 +165,11 @@ const canonical = (v: unknown): string =>
 /** Fetches the registry's document for one published version; throws when it can't. */
 export type Registry = (name: string, version: string) => Promise<unknown>;
 
+/** The npm registry's URL for one version's document; the scope's slash is encoded, as npm itself sends it. */
+export const registryUrl = (name: string, version: string) => `https://registry.npmjs.org/${encodeURIComponent(name).replace(/^%40/, '@')}/${encodeURIComponent(version)}`;
+
 export const npmRegistry: Registry = async (name, version) => {
-  const url = `https://registry.npmjs.org/${name.replace('/', '%2f')}/${encodeURIComponent(version)}`;
+  const url = registryUrl(name, version);
   const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
   return (await response.json()) as unknown;
@@ -282,7 +288,7 @@ export async function checkLockfile(root: string, base: string | null, registry:
       continue;
     }
     const { name, spec } = splitSpec(resolved);
-    if (url !== '' || !SEMVER.test(spec)) {
+    if (url !== '' || !SEMVER.test(spec) || !NAME.test(name)) {
       at(`resolves to ${JSON.stringify(resolved)}${typeof url === 'string' && url !== '' ? ` from ${JSON.stringify(url)}` : ''}, not a plain version from the npm registry.`, 'Use a published registry version. Another source needs a reviewed change to scripts/ci/lockfile-guard.ts.');
       continue;
     }
