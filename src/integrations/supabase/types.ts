@@ -3781,6 +3781,10 @@ export type Database = {
         Args: { p_company: string; p_metric: string; p_n?: number }
         Returns: undefined
       }
+      samtal_monitor_bump_safe: {
+        Args: { p_company: string; p_metric: string }
+        Returns: undefined
+      }
       samtal_monitor_company: {
         Args: { p_actor: string; p_company: string }
         Returns: Json
