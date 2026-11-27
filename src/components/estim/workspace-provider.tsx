@@ -18,6 +18,7 @@ import { parseMutation } from "@/lib/real.schemas";
 import { WorkspaceContext } from "./workspace-context";
 import { interpretRequest, writeReply } from "@/lib/ai-client";
 import { sendMessage } from "@/lib/channel.functions";
+import { isSessionRecovery } from "@/lib/auth-events";
 import {
   createRealtimeRefreshScheduler,
   pollIntervalMs,
@@ -76,6 +77,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const lastFingerprint = useRef("");
   const hasDataRef = useRef(false);
   const lastHydrate = useRef(0);
+  // The user whose workspace is loaded; a SIGNED_IN event for the same user is a session recovery, not a sign-in.
+  const sessionUser = useRef<string | null>(null);
   const read = useServerFn(loadWorkspace);
   const write = useServerFn(mutateWorkspace);
   const send = useServerFn(sendMessage);
@@ -142,6 +145,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     let alive = true;
     let generation = 0;
     function signedOutState() {
+      sessionUser.current = null;
       hasDataRef.current = false;
       lastFingerprint.current = "";
       setSignedIn(false);
@@ -161,6 +165,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         signedOutState();
         return;
       }
+      sessionUser.current = sessionData.session.user.id;
       setSignedIn(true);
       setMode("real");
       try {
@@ -180,9 +185,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (alive && generation === own) setLoading(false);
     }
     void resolve(true);
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      // supabase-js re-emits SIGNED_IN for the same user whenever the tab regains focus. The visibility catch-up
+      // poll and react-query's focus refetch already refresh then, so a second read and a full invalidate are skipped.
+      if (isSessionRecovery(event, session?.user.id, sessionUser.current)) return;
       if (event === "SIGNED_OUT") {
+        sessionUser.current = null;
         generation++;
         identityEpoch.current++;
         hasDataRef.current = false;
