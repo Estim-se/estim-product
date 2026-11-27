@@ -15,7 +15,8 @@ Klassificera samtalet:
 - jobb: en kund eller möjlig kund som vill ha arbete utfört, en offert, ett besök eller har frågor om ett jobb.
 - privat: privat samtal (familj, vänner, ärenden som inte gäller företagets kunder). Lämna då alla fält null, uncertain och next_steps tomma.
 - osaker: går inte att avgöra.
-Fält (bara det som sägs i samtalet, gissa aldrig): kundens namn, telefon, adress, ort, typ av jobb (${SAMTAL_JOB_TYPES.join(', ')}), en kort beskrivning av jobbet, önskad tid med kundens ord, om det brådskar.
+Fält (bara det som sägs i samtalet, gissa aldrig): kundens namn, telefon, adress, ort, typ av jobb (${SAMTAL_JOB_TYPES.join(', ')}), en fullständig beskrivning av jobbet (alla moment med antal och specifikationer), önskad tid med kundens ord, om det brådskar.
+title: en kort rubrik för uppdraget, högst 60 tecken, utan namn, adress eller antal (t.ex. "Elinstallation i villa" eller "Byte av elcentral"); null om det inte är ett jobb.
 Varje fält med ett värde ska ha source = tidsintervallet [start, end] i sekunder ur utskriftens rader där det sägs. Saknas källa: lämna fältet null.
 uncertain: det som är oklart eller motsägelsefullt (otydlig adress, osäker tid, oklart vem som är kund), med källa när den finns.
 next_steps: högst tre förslag som den anställde bekräftar: ring_tillbaka, platsbesok (datum YYYY-MM-DD och adress bara om de sägs; räkna relativa dagar från dagens datum) eller offert. Varje förslag har en källa.

@@ -1,5 +1,7 @@
 // estim Samtal: Swedish labels for statuses, task kinds and error codes. Browser-safe.
 export const CALL_STATUS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', klar: 'Klar', privat: 'Privat – raderas', fel: 'Fel' };
+// List labels for the actual processing state (see page.server progress).
+export const CALL_PROGRESS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', kund: 'Väntar på kundbekräftelse', uppdrag: 'Väntar på uppdragsbekräftelse', retry: 'Försöker igen automatiskt', klar: 'Klar', misslyckad: 'Bearbetningen misslyckades', privat: 'Privat – raderas' };
 export const CLASSIFICATION: Record<string, string> = { jobb: 'Jobb', privat: 'Privat', osaker: 'Osäker' };
 export const TASK_KIND: Record<string, string> = { ring_tillbaka: 'Ring tillbaka', platsbesok: 'Platsbesök', offert: 'Offert' };
 export const TASK_STATE: Record<string, string> = { forslag: 'Förslag', bekraftad: 'Bekräftad', avvisad: 'Avvisad', klar: 'Klar' };

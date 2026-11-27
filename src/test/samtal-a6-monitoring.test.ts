@@ -1,8 +1,5 @@
-// estim Samtal A4/A5 integration preparation + A6 monitoring: synthetic tests of the UNAPPLIED patch
-// docs/samtal/a6-monitoring.diff and the SQL candidate docs/samtal/a6-monitoring.sql in a disposable local PostgreSQL 17.
-// No preview/production database, Storage, secret, flag, provider, AI model or notification channel is touched.
-// The 'referens' provider is synthetic. All names, numbers and accounts are invented.
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,8 +7,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
-  'v1-migration-app-fix.diff', 'v1-test-migration.diff', 'a3-a4-ring-estim.diff', 'a5-draft-management.diff', 'a6-monitoring.diff'];
 const STAFF2 = 'a0000000-0000-4000-8000-000000000003';
 const ADMIN = 'd0000000-0000-4000-8000-000000000001';
 const KUND = 'cccccccc-0000-4000-8000-00000000000a';
@@ -20,7 +15,7 @@ type J = Record<string, unknown> & { status: string; reason?: string; id?: strin
 type Fn = (...a: never[]) => unknown;
 type Mod = Record<string, Fn>;
 
-describe('Samtal A6 monitoring + A4/A5 integration preparation (unapplied patch + SQL candidate)', () => {
+describe('Samtal A6 monitoring + A4/A5 integration preparation (current implementation + local SQL fixture)', () => {
   let dir = '', ver: Mod, hand: Mod, rec: Mod, st: Mod;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
   const q = <T,>(s: string, p: unknown[] = []) => pg.admin.query<T>(s, p);
@@ -45,7 +40,7 @@ describe('Samtal A6 monitoring + A4/A5 integration preparation (unapplied patch 
       'src/test/samtal-adapter.test.ts', 'src/test/samtal-behandling.test.ts', 'src/test/samtal-inkorg-steg.test.ts', 'src/test/samtal-sida.test.ts', 'src/test/samtal-retention.test.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [ver, hand, rec, st] = await Promise.all(['ring/verification.ts', 'ring/handoff.ts', 'monitor/recovery.ts', 'monitor/status.ts'].map(load)) as [Mod, Mod, Mod, Mod];
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');

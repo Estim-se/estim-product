@@ -5,12 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { SamtalMonitor } from './samtal-monitor';
 import { prepareApprovedRingQuote } from '@/lib/samtal/a10/review.functions';
-import { SamtalA10ReviewPanel } from './samtal-a10-review';
 import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraftFn, enrollRingEmployeeFn, revokeRingEnrollmentFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
 import { CALL_KIND } from '@/lib/samtal/ring/labels';
 import { SamtalRingSection } from './samtal-ring';
 import { SamtalTestCall } from './samtal-test-call';
-import { CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
+import { CALL_PROGRESS, CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
 import { Icon } from './icon';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
@@ -77,6 +76,7 @@ export function SamtalPage() {
 
     <SamtalTestCall />
 
+
     {d.owner && d.monitor && <div className="card mt16"><SamtalMonitor snapshot={d.monitor.snapshot} alerts={d.monitor.alerts} connected={d.settings.provider_status === 'ansluten'} /></div>}
 
     {d.owner && <div className="card mt16"><h3>Inställningar</h3>
@@ -126,8 +126,6 @@ export function SamtalPage() {
       </div>)}
     </div>
 
-    {d.a10 && <SamtalA10ReviewPanel />}
-
     <SamtalRingSection data={d.ring} busy={busy}
       onChooseContext={company_id => void run(() => ringContext({ data: { company_id } }), 'Företaget är valt för din nästa röstanteckning.')}
       onAssign={(pending_id, company_id) => void run(() => ringAssign({ data: { pending_id, company_id } }), 'Anteckningen är kopplad och bearbetas.')}
@@ -146,7 +144,8 @@ export function SamtalPage() {
       {d.calls.filter(c => kind === 'alla' || c.kind === kind).map(c => <div key={c.id} className="mt12">
         <div className="row between">
           <span><b>{c.title ?? (c.classification ? CLASSIFICATION[c.classification] : 'Samtal')}</b> · {when(c.started_at)} {minutes(c.duration_seconds)}{d.owner ? ` · ${name(c.user_id)}` : ''}{c.caller_phone ? ` · från ${c.caller_phone}` : ''}</span>
-          <span className="xs muted">{CALL_KIND[c.kind] ?? 'Telefonsamtal'} · {c.needs_review ? 'Behöver granskas' : CALL_STATUS[c.status] ?? c.status}</span>
+          <span className="xs muted">{CALL_KIND[c.kind] ?? 'Telefonsamtal'} · {c.needs_review ? 'Behöver granskas' : CALL_PROGRESS[c.progress] ?? CALL_STATUS[c.status] ?? 'Väntar'}</span>
+          {(c.progress === 'kund' || c.progress === 'uppdrag') && d.a10 && <a className="xs" href="/" onClick={e => { e.preventDefault(); void navigate({ to: '/' }); }}>Bekräfta i Inkorgen</a>}
         </div>
         {c.error_code && <div className="xs muted">{errorLabel(c.error_code)}</div>}
         <div className="row mt4">

@@ -12,6 +12,7 @@ const RESULT: Record<string, string> = {
   osaker: 'Samtalet behöver granskas.',
   retry: 'AI svarade inte – försöker igen automatiskt.',
   stopped: 'Bearbetningen stoppades.',
+  matching_needs_review: 'Kunden behöver bekräftas. Välj kund och uppdrag nedan, så hamnar samtalet i Inkorgen med ett offertutkast.',
 };
 
 export function SamtalTestCall() {
@@ -19,15 +20,16 @@ export function SamtalTestCall() {
   const queryClient = useQueryClient();
   const q = useQuery({ queryKey: ['samtal-test-access'], queryFn: () => access() });
   const [numberId, setNumberId] = useState(''), [phone, setPhone] = useState(''), [text, setText] = useState('');
-  const [busy, setBusy] = useState(false), [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false), [status, setStatus] = useState<string | null>(null), [needsMatch, setNeedsMatch] = useState(false);
   if (!q.data?.allowed) return null;
   const selected = numberId || q.data.numbers[0]?.id || '';
   const send = async () => {
-    setBusy(true); setStatus(null);
+    setBusy(true); setStatus(null); setNeedsMatch(false);
     try {
       const r = await submit({ data: { number_id: selected, customer_phone: phone, transcript: text } });
       const p = r.processed[0];
-      setStatus(r.status !== 'registered' ? `Samtalet togs inte emot (${r.status}).` : p ? RESULT[p] ?? `Resultat: ${p}` : 'Samtalet väntar på bearbetning.');
+      setStatus(r.status !== 'registered' ? `Samtalet togs inte emot (${r.status}).` : p ? RESULT[p] ?? "Samtalet är mottaget men kunde inte bearbetas helt. Se listan Samtal nedan." : 'Samtalet väntar på bearbetning.');
+      setNeedsMatch(p === 'matching_needs_review');
       await queryClient.invalidateQueries();
     } catch (e) { setStatus(e instanceof Error ? e.message : 'Något gick fel.'); }
     finally { setBusy(false); }
@@ -46,6 +48,6 @@ export function SamtalTestCall() {
       <Button variant="prototype" className="btn btn-sm" disabled={busy || !selected || !text.trim()} onClick={() => void send()}>{busy ? 'Bearbetar…' : 'Skicka in samtal'}</Button>
       <Button variant="prototype" className="btn btn-sm" disabled={busy} onClick={() => { setPhone(''); setText(''); setStatus(null); }}>Rensa</Button>
     </div>
-    {status && <div role="status" className="flag mt8">{status}</div>}
+    {status && <div role="status" className="flag mt8">{status}{needsMatch && <> <Button variant="prototype" className="btn btn-sm" onClick={() => document.getElementById('samtal-bekrafta')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Bekräfta kund</Button></>}</div>}
   </div>;
 }
