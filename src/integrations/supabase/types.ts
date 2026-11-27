@@ -984,6 +984,130 @@ export type Database = {
           },
         ]
       }
+      samtal_a9_matches: {
+        Row: {
+          assignment_candidates: string[]
+          assignment_id: string | null
+          assignment_truncated: boolean
+          call_id: string
+          company_id: string
+          created_at: string
+          customer_candidates: string[]
+          customer_id: string | null
+          customer_truncated: boolean
+          intent: string | null
+          quote_id: string | null
+          quote_requested: boolean
+          request_id: string | null
+          state: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          assignment_candidates?: string[]
+          assignment_id?: string | null
+          assignment_truncated?: boolean
+          call_id: string
+          company_id: string
+          created_at?: string
+          customer_candidates?: string[]
+          customer_id?: string | null
+          customer_truncated?: boolean
+          intent?: string | null
+          quote_id?: string | null
+          quote_requested?: boolean
+          request_id?: string | null
+          state?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          assignment_candidates?: string[]
+          assignment_id?: string | null
+          assignment_truncated?: boolean
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          customer_candidates?: string[]
+          customer_id?: string | null
+          customer_truncated?: boolean
+          intent?: string | null
+          quote_id?: string | null
+          quote_requested?: boolean
+          request_id?: string | null
+          state?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_a9_matches_company_id_assignment_id_fkey"
+            columns: ["company_id", "assignment_id"]
+            isOneToOne: false
+            referencedRelation: "threads"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_a9_matches_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: true
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_a9_matches_company_id_customer_id_fkey"
+            columns: ["company_id", "customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_a9_matches_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_a9_quote_receipts: {
+        Row: {
+          call_id: string
+          company_id: string
+          created_at: string
+          match_version: number
+          quote_id: string
+          quote_version: number
+          updated_at: string
+        }
+        Insert: {
+          call_id: string
+          company_id: string
+          created_at?: string
+          match_version: number
+          quote_id: string
+          quote_version: number
+          updated_at?: string
+        }
+        Update: {
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          match_version?: number
+          quote_id?: string
+          quote_version?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_a9_quote_receipts_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: true
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+        ]
+      }
       samtal_alert_notifications: {
         Row: {
           company_id: string
@@ -3512,6 +3636,73 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_a9_assignments: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_customer: string
+          p_job: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_a9_candidates: {
+        Args: {
+          p_address: string
+          p_call: string
+          p_company: string
+          p_job: string
+          p_name: string
+          p_phone: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_a9_confirm: {
+        Args: {
+          p_actor: string
+          p_assignment: string
+          p_call: string
+          p_company: string
+          p_customer: string
+          p_expected_version: number
+          p_request: string
+        }
+        Returns: Json
+      }
+      samtal_a9_phone: { Args: { v: string }; Returns: string }
+      samtal_a9_review_options: {
+        Args: {
+          p_actor: string
+          p_call: string
+          p_company: string
+          p_customer?: string
+        }
+        Returns: Json
+      }
+      samtal_a9_ring_stage: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_extraction: Json
+          p_job: string
+          p_token: string
+          p_transcript: Json
+        }
+        Returns: boolean
+      }
+      samtal_a9_save: {
+        Args: {
+          p_assignment: Json
+          p_call: string
+          p_company: string
+          p_customer: Json
+          p_job: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_a9_text: { Args: { v: string }; Returns: string }
       samtal_alert_evaluate: {
         Args: { p_company: string; p_cooldown_minutes?: number }
         Returns: number
