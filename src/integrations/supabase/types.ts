@@ -984,6 +984,113 @@ export type Database = {
           },
         ]
       }
+      samtal_alert_notifications: {
+        Row: {
+          company_id: string
+          created_at: string
+          destination: string
+          id: number
+          level: string
+          rule: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          destination?: string
+          id?: number
+          level: string
+          rule: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          destination?: string
+          id?: number
+          level?: string
+          rule?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_alert_notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_alert_rules: {
+        Row: {
+          critical: number
+          enabled: boolean
+          metric: string
+          rule: string
+          warning: number
+        }
+        Insert: {
+          critical: number
+          enabled?: boolean
+          metric: string
+          rule: string
+          warning: number
+        }
+        Update: {
+          critical?: number
+          enabled?: boolean
+          metric?: string
+          rule?: string
+          warning?: number
+        }
+        Relationships: []
+      }
+      samtal_alerts: {
+        Row: {
+          company_id: string
+          first_at: string
+          last_at: string
+          level: string
+          notified_at: string | null
+          notified_level: string | null
+          rule: string
+          value: number
+        }
+        Insert: {
+          company_id: string
+          first_at?: string
+          last_at?: string
+          level: string
+          notified_at?: string | null
+          notified_level?: string | null
+          rule: string
+          value: number
+        }
+        Update: {
+          company_id?: string
+          first_at?: string
+          last_at?: string
+          level?: string
+          notified_at?: string | null
+          notified_level?: string | null
+          rule?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_alerts_rule_fkey"
+            columns: ["rule"]
+            isOneToOne: false
+            referencedRelation: "samtal_alert_rules"
+            referencedColumns: ["rule"]
+          },
+        ]
+      }
       samtal_audio_ledger: {
         Row: {
           attempts: number
@@ -1466,6 +1573,53 @@ export type Database = {
           },
         ]
       }
+      samtal_monitor_counters: {
+        Row: {
+          company_id: string
+          hour: string
+          metric: string
+          n: number
+        }
+        Insert: {
+          company_id: string
+          hour: string
+          metric: string
+          n?: number
+        }
+        Update: {
+          company_id?: string
+          hour?: string
+          metric?: string
+          n?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_monitor_counters_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_monitor_platform_counters: {
+        Row: {
+          hour: string
+          metric: string
+          n: number
+        }
+        Insert: {
+          hour: string
+          metric: string
+          n?: number
+        }
+        Update: {
+          hour?: string
+          metric?: string
+          n?: number
+        }
+        Relationships: []
+      }
       samtal_numbers: {
         Row: {
           active: boolean
@@ -1887,11 +2041,82 @@ export type Database = {
           },
         ]
       }
+      samtal_ring_handoffs: {
+        Row: {
+          attempts: number
+          company_id: string
+          completed_at: string | null
+          customer_id: string
+          draft_id: string
+          draft_version: number
+          error_code: string | null
+          id: string
+          project_ref: string | null
+          quote_ref: string | null
+          requested_at: string
+          requested_by: string
+          state: string
+        }
+        Insert: {
+          attempts?: number
+          company_id: string
+          completed_at?: string | null
+          customer_id: string
+          draft_id: string
+          draft_version: number
+          error_code?: string | null
+          id?: string
+          project_ref?: string | null
+          quote_ref?: string | null
+          requested_at?: string
+          requested_by: string
+          state?: string
+        }
+        Update: {
+          attempts?: number
+          company_id?: string
+          completed_at?: string | null
+          customer_id?: string
+          draft_id?: string
+          draft_version?: number
+          error_code?: string | null
+          id?: string
+          project_ref?: string | null
+          quote_ref?: string | null
+          requested_at?: string
+          requested_by?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_ring_handoffs_company_id_customer_id_fkey"
+            columns: ["company_id", "customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_ring_handoffs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_ring_handoffs_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: true
+            referencedRelation: "samtal_ring_drafts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       samtal_ring_identities: {
         Row: {
           account_ref: string
           company_id: string
           created_at: string
+          evidence_kind: string
           id: string
           provider: string
           revoked_at: string | null
@@ -1903,6 +2128,7 @@ export type Database = {
           account_ref: string
           company_id: string
           created_at?: string
+          evidence_kind?: string
           id?: string
           provider: string
           revoked_at?: string | null
@@ -1914,6 +2140,7 @@ export type Database = {
           account_ref?: string
           company_id?: string
           created_at?: string
+          evidence_kind?: string
           id?: string
           provider?: string
           revoked_at?: string | null
@@ -1997,6 +2224,81 @@ export type Database = {
           received_at?: string
         }
         Relationships: []
+      }
+      samtal_ring_verification_events: {
+        Row: {
+          event_id: string
+          provider: string
+          received_at: string
+          result: string
+        }
+        Insert: {
+          event_id: string
+          provider: string
+          received_at?: string
+          result: string
+        }
+        Update: {
+          event_id?: string
+          provider?: string
+          received_at?: string
+          result?: string
+        }
+        Relationships: []
+      }
+      samtal_ring_verifications: {
+        Row: {
+          challenge_hash: string
+          company_id: string
+          created_at: string
+          enrollment_id: string
+          expires_at: string
+          id: string
+          provider: string
+          state: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          challenge_hash: string
+          company_id: string
+          created_at?: string
+          enrollment_id: string
+          expires_at: string
+          id?: string
+          provider: string
+          state?: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          challenge_hash?: string
+          company_id?: string
+          created_at?: string
+          enrollment_id?: string
+          expires_at?: string
+          id?: string
+          provider?: string
+          state?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_ring_verifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_ring_verifications_enrollment_id_fkey"
+            columns: ["enrollment_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_ring_enrollments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       samtal_runtime_limits: {
         Row: {
@@ -3210,6 +3512,10 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_alert_evaluate: {
+        Args: { p_company: string; p_cooldown_minutes?: number }
+        Returns: number
+      }
       samtal_audio_access_guarded: {
         Args: { p_actor: string; p_call: string; p_company: string }
         Returns: string
@@ -3471,6 +3777,24 @@ export type Database = {
         Args: { p_call: string; p_company: string }
         Returns: boolean
       }
+      samtal_monitor_bump: {
+        Args: { p_company: string; p_metric: string; p_n?: number }
+        Returns: undefined
+      }
+      samtal_monitor_company: {
+        Args: { p_actor: string; p_company: string }
+        Returns: Json
+      }
+      samtal_monitor_completion: {
+        Args: { p_call: string; p_company: string }
+        Returns: string
+      }
+      samtal_monitor_platform: { Args: { p_actor: string }; Returns: Json }
+      samtal_monitor_prune: { Args: { p_batch?: number }; Returns: Json }
+      samtal_monitor_snapshot: {
+        Args: { p_cap?: number; p_company: string }
+        Returns: Json
+      }
       samtal_observe_dispatch: {
         Args: { p_company: string; p_limit: number }
         Returns: number
@@ -3478,6 +3802,14 @@ export type Database = {
       samtal_purge_secret_valid: {
         Args: { p_secret: string }
         Returns: boolean
+      }
+      samtal_recover_expired: {
+        Args: {
+          p_limit?: number
+          p_max_attempts?: number
+          p_per_company?: number
+        }
+        Returns: Json
       }
       samtal_register_call: { Args: { payload: Json }; Returns: Json }
       samtal_release_job: {
@@ -3555,10 +3887,21 @@ export type Database = {
         }
         Returns: boolean
       }
+      samtal_ring_apply_verification: {
+        Args: {
+          p_account_ref: string
+          p_challenge_hash: string
+          p_event_id: string
+          p_evidence_kind: string
+          p_provider: string
+        }
+        Returns: Json
+      }
       samtal_ring_assign: {
         Args: { p_actor: string; p_company: string; p_pending: string }
         Returns: Json
       }
+      samtal_ring_claim_handoff: { Args: { p_handoff: string }; Returns: Json }
       samtal_ring_commit: {
         Args: {
           p_call: string
@@ -3642,6 +3985,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      samtal_ring_finish_handoff: {
+        Args: { p_error: string; p_handoff: string; p_quote_ref: string }
+        Returns: Json
+      }
       samtal_ring_ingest: {
         Args: {
           p_account_verified: boolean
@@ -3676,6 +4023,10 @@ export type Database = {
         Args: { p_digest: string; p_reason: string }
         Returns: Json
       }
+      samtal_ring_request_handoff: {
+        Args: { p_actor: string; p_draft: string; p_expected_version: number }
+        Returns: Json
+      }
       samtal_ring_resolve: {
         Args: {
           p_account_ref: string
@@ -3691,6 +4042,15 @@ export type Database = {
       samtal_ring_set_context: {
         Args: { p_actor: string; p_company: string }
         Returns: boolean
+      }
+      samtal_ring_start_verification: {
+        Args: {
+          p_actor: string
+          p_challenge_hash: string
+          p_enrollment: string
+          p_ttl_minutes?: number
+        }
+        Returns: Json
       }
       samtal_ring_title_hash: { Args: { t: string }; Returns: string }
       samtal_ring_valid_patch: {

@@ -1,22 +1,8 @@
--- estim Samtal staged migration 6/13 from docs/samtal/a6-monitoring.sql (approved for Bygg Demo AB test, 2026-11-27).
--- estim Samtal A4/A5 integration preparation + A6 monitoring. SQL CANDIDATE ONLY: documentation, never a migration.
--- Applies after priority-1-coordinated-v2.sql, a1-provider-transcript.sql, a7-durable-webhook.sql, a3-a4-ring-estim.sql
--- and a5-draft-management.sql. Validated only in a disposable local PostgreSQL 17 (src/test/samtal-a6-monitoring.test.ts).
--- Every object is service-role only; signed-in users reach it only through server functions that pass a verified actor.
--- Stores no recordings, transcripts, phone numbers, names, provider credentials or free-text errors.
-
--- ============================================================================================================
--- 1. Provider-side employee verification (provider independent)
--- ============================================================================================================
--- An identity created from the synthetic reference provider is marked 'referens' and can only ever match calls whose
--- provider is 'referens', so test identities can never resolve a real provider's calls.
 ALTER TABLE public.samtal_ring_identities ADD COLUMN evidence_kind text NOT NULL DEFAULT 'leverantor'
   CHECK (evidence_kind IN ('leverantor','referens'));
 ALTER TABLE public.samtal_ring_identities ADD CONSTRAINT samtal_ring_identities_reference_only
   CHECK ((evidence_kind = 'referens') = (provider = 'referens'));
 
--- One open verification challenge per enrollment. Only the SHA-256 of the nonce is stored; the nonce itself travels to
--- the provider and must come back inside the provider's authenticated evidence.
 CREATE TABLE public.samtal_ring_verifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   enrollment_id uuid NOT NULL REFERENCES public.samtal_ring_enrollments(id) ON DELETE CASCADE,
@@ -31,7 +17,6 @@ CREATE TABLE public.samtal_ring_verifications (
 );
 CREATE UNIQUE INDEX samtal_ring_verifications_open ON public.samtal_ring_verifications(enrollment_id) WHERE state = 'vantar';
 CREATE INDEX samtal_ring_verifications_company ON public.samtal_ring_verifications(company_id, created_at);
--- Provider verification event ids already applied (duplicate deliveries). Content-free, bounded retention.
 CREATE TABLE public.samtal_ring_verification_events (
   provider text NOT NULL, event_id text NOT NULL CHECK (length(event_id) BETWEEN 1 AND 200),
   result text NOT NULL CHECK (result ~ '^[a-z_]{1,40}$'),
@@ -40,7 +25,6 @@ CREATE TABLE public.samtal_ring_verification_events (
 );
 CREATE INDEX samtal_ring_verification_events_age ON public.samtal_ring_verification_events(received_at);
 
--- Owner starts verification. Returns the challenge id only; the caller supplies the hash of a server-generated nonce.
 CREATE FUNCTION public.samtal_ring_start_verification(p_actor uuid, p_enrollment uuid, p_challenge_hash text, p_ttl_minutes integer DEFAULT 30) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE e samtal_ring_enrollments; v uuid;
@@ -56,10 +40,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok','id',v);
 END $$;
 
--- Applies authenticated provider evidence. The server calls this only after the provider adapter has verified the
--- provider's own signature over (event id, challenge, account reference). The webhook signature proves the message came
--- from the provider; the echoed challenge binds it to this enrollment, company, employee and provider. Caller ID or
--- the typed number are not inputs at all.
 CREATE FUNCTION public.samtal_ring_apply_verification(p_provider text, p_event_id text, p_challenge_hash text, p_account_ref text, p_evidence_kind text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE c samtal_ring_verifications; e samtal_ring_enrollments; prior text; holder samtal_ring_identities; i uuid; r text;
@@ -87,8 +67,6 @@ BEGIN
     END IF;
   END IF;
   IF r = 'ok' THEN
-    -- Another live identity for this provider account (any company) means conflict. A revoked identity of the same
-    -- account may be reassigned to a new employee, which keeps the old revocation and starts a fresh row.
     SELECT * INTO holder FROM samtal_ring_identities WHERE provider = p_provider AND account_ref = p_account_ref AND revoked_at IS NULL LIMIT 1;
     IF FOUND THEN r := 'conflict';
     ELSE
@@ -107,9 +85,6 @@ BEGIN
   RETURN jsonb_build_object('status', CASE WHEN r = 'ok' THEN 'ok' ELSE 'rejected' END, 'reason', r);
 END $$;
 
--- ============================================================================================================
--- 2. Approved quotation draft handoff (to the existing estim quote workflow; no Samtal quote engine)
--- ============================================================================================================
 CREATE TABLE public.samtal_ring_handoffs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -128,8 +103,6 @@ CREATE TABLE public.samtal_ring_handoffs (
 );
 CREATE INDEX samtal_ring_handoffs_open ON public.samtal_ring_handoffs(company_id, requested_at) WHERE state = 'vantar';
 
--- Owner only. The draft must be an approved quotation draft of this company, at the expected version, with a linked
--- customer. A second request for the same draft returns the existing handoff (UNIQUE draft_id), never a second quote.
 CREATE FUNCTION public.samtal_ring_request_handoff(p_actor uuid, p_draft uuid, p_expected_version integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE d samtal_ring_drafts; h samtal_ring_handoffs;
@@ -147,7 +120,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok','id',h.id,'state',h.state);
 END $$;
 
--- Server-side worker step: claims one waiting handoff for the shared quote adapter. Returns the approved content only.
 CREATE FUNCTION public.samtal_ring_claim_handoff(p_handoff uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE h samtal_ring_handoffs; d samtal_ring_drafts;
@@ -155,7 +127,6 @@ BEGIN
   SELECT * INTO h FROM samtal_ring_handoffs WHERE id = p_handoff AND state = 'vantar' FOR UPDATE SKIP LOCKED;
   IF NOT FOUND THEN RETURN jsonb_build_object('status','busy');END IF;
   SELECT * INTO d FROM samtal_ring_drafts WHERE id = h.draft_id;
-  -- An edit after the request, or a reversed decision, stops the handoff instead of sending stale content.
   IF NOT FOUND OR d.state <> 'godkand' OR d.version <> h.draft_version THEN
     UPDATE samtal_ring_handoffs SET state = 'misslyckad', error_code = 'draft_changed' WHERE id = h.id;
     RETURN jsonb_build_object('status','invalid','reason','draft_changed');
@@ -164,7 +135,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok','id',h.id,'company_id',h.company_id,'customer_id',h.customer_id,'project_ref',h.project_ref,'title',d.title,'body',d.body);
 END $$;
 
--- Records the outcome reported by the shared quote adapter. Idempotent; a finished handoff never changes again.
 CREATE FUNCTION public.samtal_ring_finish_handoff(p_handoff uuid, p_quote_ref text, p_error text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE h samtal_ring_handoffs;
@@ -183,10 +153,6 @@ BEGIN
   RETURN jsonb_build_object('status','retry','attempts',h.attempts);
 END $$;
 
--- ============================================================================================================
--- 3. Monitoring: bounded hourly counters + bounded live snapshots
--- ============================================================================================================
--- Counters are per company per hour; no per-event rows, no content. Retention: 30 days (samtal_monitor_prune).
 CREATE TABLE public.samtal_monitor_counters (
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
   hour timestamptz NOT NULL,
@@ -196,7 +162,6 @@ CREATE TABLE public.samtal_monitor_counters (
   PRIMARY KEY (company_id, hour, metric)
 );
 CREATE INDEX samtal_monitor_counters_hour ON public.samtal_monitor_counters(hour);
--- Platform-level counters for events that have no trusted company yet (rejected or unbound webhooks).
 CREATE TABLE public.samtal_monitor_platform_counters (
   hour timestamptz NOT NULL, metric text NOT NULL CHECK (metric ~ '^[a-z_]{1,40}$'), n integer NOT NULL DEFAULT 0 CHECK (n >= 0),
   PRIMARY KEY (hour, metric)
@@ -215,8 +180,6 @@ BEGIN
   END IF;
 END $$;
 
--- Marks a call completed for monitoring only when nothing downstream is still open: its Samtal job is done, it has no
--- open dispatch outbox row, no waiting quote handoff, and no open shared AI job. Otherwise returns the blocking stage.
 CREATE FUNCTION public.samtal_monitor_completion(p_company uuid, p_call uuid) RETURNS text
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -226,8 +189,6 @@ BEGIN
   RETURN 'slutford';
 END $$;
 
--- Counts with an upper bound so a huge backlog never turns a status read into a full scan. Values above the cap
--- are reported as the cap with a "more" flag.
 CREATE FUNCTION public.samtal_monitor_snapshot(p_company uuid, p_cap integer DEFAULT 1000) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE cap integer := least(greatest(p_cap, 10), 10000); now_ timestamptz := clock_timestamp(); res jsonb;
@@ -249,13 +210,11 @@ BEGIN
     'overlamningar_vantar', (SELECT count(*) FROM (SELECT 1 FROM samtal_ring_handoffs WHERE company_id = p_company AND state = 'vantar' LIMIT cap) s),
     'ej_verifierade', (SELECT count(*) FROM (SELECT 1 FROM samtal_ring_enrollments WHERE company_id = p_company AND state = 'vantar' LIMIT cap) s),
     'tak', cap) INTO res;
-  -- Last 24 hours of counters: at most 24 x 15 rows per company.
   SELECT res || jsonb_build_object('senaste_dygnet', coalesce(jsonb_object_agg(metric, total), '{}'::jsonb)) INTO res
   FROM (SELECT metric, sum(n)::bigint AS total FROM samtal_monitor_counters WHERE company_id = p_company AND hour > date_trunc('hour', now_) - interval '24 hours' GROUP BY metric) s;
   RETURN res;
 END $$;
 
--- Company owner view. Same company only; anyone else gets 'not_found'.
 CREATE FUNCTION public.samtal_monitor_company(p_actor uuid, p_company uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -265,8 +224,6 @@ BEGIN
       (SELECT rule, level, first_at FROM samtal_alerts WHERE company_id = p_company AND level <> 'aterstalld' ORDER BY first_at LIMIT 50) a), '[]'::jsonb));
 END $$;
 
--- Platform view: reuses the existing public.platform_admins table (no new role). Aggregates hourly counters and open
--- alerts only; never reads calls or transcripts. Top companies are returned as ids with counts, bounded to 20.
 CREATE FUNCTION public.samtal_monitor_platform(p_actor uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE since timestamptz := date_trunc('hour', clock_timestamp()) - interval '24 hours';
@@ -280,9 +237,6 @@ BEGIN
       WHERE hour > since AND metric IN ('transkribering_misslyckad','ai_misslyckad','radering_misslyckad','avvisade') GROUP BY company_id ORDER BY total DESC LIMIT 20) s), '[]'::jsonb));
 END $$;
 
--- ============================================================================================================
--- 4. Alerts: configurable rules, deduplicated state, synthetic destination only
--- ============================================================================================================
 CREATE TABLE public.samtal_alert_rules (
   rule text PRIMARY KEY CHECK (rule ~ '^[a-z_]{1,40}$'),
   metric text NOT NULL CHECK (metric ~ '^[a-z_]{1,40}(\.[a-z_]{1,40})?$'),
@@ -291,7 +245,6 @@ CREATE TABLE public.samtal_alert_rules (
   enabled boolean NOT NULL DEFAULT true,
   CHECK (critical >= warning)
 );
--- Starting assumptions only, not verified production capacity. Metrics are snapshot keys or senaste_dygnet.<counter>.
 INSERT INTO public.samtal_alert_rules(rule, metric, warning, critical) VALUES
   ('ko_alder', 'aldsta_ko_sekunder', 600, 1800),
   ('utgangna_lan', 'utgangna_lan', 3, 10),
@@ -305,7 +258,6 @@ INSERT INTO public.samtal_alert_rules(rule, metric, warning, critical) VALUES
   ('hastighetsbegransning', 'senaste_dygnet.hastighetsbegransade', 20, 100),
   ('identitetskonflikter', 'senaste_dygnet.verifiering_misslyckad', 3, 10);
 
--- One row per company and rule: repeated evaluations update it instead of creating new alerts.
 CREATE TABLE public.samtal_alerts (
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
   rule text NOT NULL REFERENCES public.samtal_alert_rules(rule) ON DELETE CASCADE,
@@ -318,7 +270,6 @@ CREATE TABLE public.samtal_alerts (
   PRIMARY KEY (company_id, rule)
 );
 CREATE INDEX samtal_alerts_open ON public.samtal_alerts(company_id) WHERE level <> 'aterstalld';
--- Notification queue. The only allowed destination is 'syntetisk'; there is no sender for it outside tests.
 CREATE TABLE public.samtal_alert_notifications (
   id bigserial PRIMARY KEY,
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -328,9 +279,6 @@ CREATE TABLE public.samtal_alert_notifications (
 );
 CREATE INDEX samtal_alert_notifications_age ON public.samtal_alert_notifications(created_at);
 
--- Evaluates every enabled rule for one company. A notification is queued only on a level change, and repeats of the
--- same level are suppressed for p_cooldown_minutes. Recovery needs the value to drop below 80 % of the warning level
--- (hysteresis), so a value hovering at the threshold cannot flood notifications.
 CREATE FUNCTION public.samtal_alert_evaluate(p_company uuid, p_cooldown_minutes integer DEFAULT 60) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE s jsonb := samtal_monitor_snapshot(p_company, 1000); r samtal_alert_rules; a samtal_alerts; v numeric; lvl text; sent integer := 0;
@@ -358,13 +306,6 @@ BEGIN
   RETURN sent;
 END $$;
 
--- ============================================================================================================
--- 5. Recovery of expired leases (existing queue, fenced; no shared AI jobs touched)
--- ============================================================================================================
--- Requeues running Samtal jobs whose lease expired, with capped exponential backoff and jitter. Clearing the lease token
--- fences out the expired worker (samtal_release_job requires the token). A job whose call content is deleted, or that
--- has used p_max_attempts, becomes failed instead of retrying forever. At most p_per_company per company per run, so one
--- company's backlog cannot consume the run. Rows already locked by a live worker are skipped.
 CREATE FUNCTION public.samtal_recover_expired(p_limit integer DEFAULT 100, p_per_company integer DEFAULT 10, p_max_attempts integer DEFAULT 5) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE j record; requeued integer := 0; failed integer := 0; delay numeric;
@@ -394,7 +335,6 @@ BEGIN
   RETURN jsonb_build_object('requeued', requeued, 'failed', failed);
 END $$;
 
--- Bounded retention for monitoring data. Deletes in batches; safe to repeat.
 CREATE FUNCTION public.samtal_monitor_prune(p_batch integer DEFAULT 5000) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE a integer; b integer; c integer; d integer; e integer;
@@ -408,9 +348,6 @@ BEGIN
   RETURN jsonb_build_object('counters', a + b, 'notifications', c, 'alerts', d, 'events', e);
 END $$;
 
--- ============================================================================================================
--- Grants: service role only
--- ============================================================================================================
 DO $$ DECLARE t text; f record; BEGIN
   FOREACH t IN ARRAY ARRAY['samtal_ring_verifications','samtal_ring_verification_events','samtal_ring_handoffs','samtal_monitor_counters',
     'samtal_monitor_platform_counters','samtal_alert_rules','samtal_alerts','samtal_alert_notifications'] LOOP
