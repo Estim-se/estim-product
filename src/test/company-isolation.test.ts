@@ -1,10 +1,11 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe,it,expect } from 'vitest';
 import { electricianMoments } from '@/data/electrician-moments';
 import { saveCompanyAutoReply } from '@/lib/company-auto-reply';
 
 // Integration test uses disposable accounts and the real RLS boundary, not admin reads.
-const configured=Boolean(process.env['SUPABASE_URL']&&process.env['SUPABASE_SERVICE_ROLE_KEY']&&process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
  it('blocks another company’s rows and preserves quote versions and approval identity',async()=>{
   const url=process.env['SUPABASE_URL']??'',key=process.env['SUPABASE_PUBLISHABLE_KEY']??'',secret=process.env['SUPABASE_SERVICE_ROLE_KEY']??'';

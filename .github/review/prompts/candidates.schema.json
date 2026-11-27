@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "path relative to head/" },
+          "line": { "type": "integer", "minimum": 1 },
+          "clause": { "type": "string", "description": "a clause id from the list, or NIT" },
+          "summary": { "type": "string" },
+          "failure_scenario": { "type": "string" },
+          "evidence": { "type": "string" },
+          "pre_existing": { "type": "boolean" }
+        },
+        "required": ["file", "line", "clause", "summary", "failure_scenario", "evidence", "pre_existing"]
+      }
+    }
+  },
+  "required": ["candidates"]
+}

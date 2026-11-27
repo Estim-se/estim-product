@@ -1,7 +1,8 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('Company-private tender quantities', () => {
   it('requires completed insights, reserves once, denies other companies and rejects stale results', async () => {
     const url = process.env['SUPABASE_URL'] ?? '';

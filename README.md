@@ -22,3 +22,9 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Tests
+
+Run required CI tests with `bun run test`. Run historical Samtal proposals explicitly with
+`bun run test:samtal-proposals`. Both commands require Linux network-namespace isolation and installed dependencies;
+see [Samtal test inventory, prerequisites and results](docs/samtal/testing.md).

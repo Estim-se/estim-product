@@ -1,0 +1,7 @@
+[
+  {
+    "alias": "h3-v2",
+    "package": "h3",
+    "reason": "@tanstack/start-server-core depends on h3 v2 under this alias (npm:h3@2.0.1-rc.20)."
+  }
+]

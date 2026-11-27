@@ -8,7 +8,7 @@ import { normalisePhone, samtalAudioPath, standardCall } from '@/lib/samtal/call
 import { folderAdapter } from '@/lib/samtal/test-adapter.server';
 import { ingestAll, ingestCall } from '@/lib/samtal/ingest.server';
 
-const A = '0000000a-0000-4000-8000-000000000000', CALL = 'c0000000-0000-4000-8000-000000000001';
+const A = '0000000a-0000-4000-8000-000000000000', B = '0000000b-0000-4000-8000-000000000000', CALL = 'c0000000-0000-4000-8000-000000000001';
 
 describe('standard call object', () => {
   it.each([
@@ -52,7 +52,7 @@ describe('folder test adapter', () => {
   afterAll(() => rm(folder, { recursive: true, force: true }));
   it('reads each metadata file with its recording into a standard call; invalid entries are reported by code only', async () => {
     const { calls, rejected } = await folderAdapter(folder).receive(null);
-    expect(calls.map(c => [c.provider_call_id, c.to_phone, c.from_phone, c.duration_seconds, c.audio.extension])).toEqual([
+    expect(calls.map(c => [c.provider_call_id, c.to_phone, c.from_phone, c.duration_seconds, c.audio?.extension])).toEqual([
       ['rollspel-01', '+46701111111', '+46709999999', 60, 'mp3'], ['rollspel-02', '+46702222222', null, 42, 'wav']]);
     expect(rejected).toEqual([{ ref: 'fel-nummer', code: 'invalid_receiver_number' }, { ref: 'trasig', code: 'invalid_json' }, { ref: 'utan-ljud', code: 'audio_missing' }]);
   });
@@ -64,58 +64,83 @@ describe('folder test adapter', () => {
   });
 });
 
-// A recording fake of the Supabase client: rpc, storage upload and table updates with their filters.
-function fakeDb(registered: Record<string, unknown> | { error: object }) {
-  const log: { rpc: unknown[]; uploads: { bucket: string; path: string; upsert: unknown }[]; updates: { table: string; values: unknown; filters: [string, unknown][] }[] } = { rpc: [], uploads: [], updates: [] };
+// A recording fake of the Supabase client (V2): rpc answers by name, storage upload. V2 ingestion has no direct table
+// writes; any table access is recorded so a test can prove there was none.
+type Answers = Record<string, unknown>;
+function fakeDb(answers: Answers, o: { upload?: 'ok' | 'error' } = {}) {
+  const log: { rpc: { name: string; args: Record<string, unknown> }[]; uploads: { bucket: string; path: string; upsert: unknown }[]; tables: string[] } = { rpc: [], uploads: [], tables: [] };
   const db = {
-    rpc: async (name: string, args: unknown) => { log.rpc.push({ name, args }); return 'error' in registered ? { data: null, error: registered.error } : { data: registered, error: null }; },
-    storage: { from: (bucket: string) => ({ upload: async (path: string, _bytes: Uint8Array, o: { upsert?: unknown }) => { log.uploads.push({ bucket, path, upsert: o.upsert }); return { data: {}, error: null }; } }) },
-    from: (table: string) => ({ update: (values: unknown) => { const entry = { table, values, filters: [] as [string, unknown][] }; log.updates.push(entry);
-      const chain = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return chain; }, then: (ok: (v: unknown) => void) => ok({ error: null }) }; return chain; } }),
+    rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args }); return name in answers ? { data: answers[name], error: null } : { data: null, error: { code: 'unexpected_rpc' } }; },
+    storage: { from: (bucket: string) => ({ upload: async (path: string, _bytes: Uint8Array, opt: { upsert?: unknown }) => { log.uploads.push({ bucket, path, upsert: opt.upsert });
+      return o.upload === 'error' ? { data: null, error: { message: 'synthetic' } } : { data: {}, error: null }; } }) },
+    from: (table: string) => { log.tables.push(table); throw new Error('no_direct_table_access'); },
   };
   return { db: db as never, log };
 }
+const reserved = (auto = true) => ({ samtal_ingest_recover: { status: 'upload', call_id: CALL, company_id: A, auto_process: auto, audio: { id: 'a1', audio_path: `${A}/${CALL}.mp3`, upload_token: 'tok', state: 'reserved' } }, samtal_finish_audio: true });
+const finished = (log: ReturnType<typeof fakeDb>['log']) => log.rpc.filter(r => r.name === 'samtal_finish_audio').map(r => r.args);
 const call = standardCall({ provider: 'test', provider_call_id: 'rollspel-01', to_phone: '0701111111', from_phone: '0709999999', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, audio: { kind: 'file', path: '/x.mp3', extension: 'mp3' } });
 const adapter = (open = vi.fn(async () => ({ bytes: new Uint8Array([1]), contentType: 'audio/mpeg', extension: 'mp3' }))) => ({ id: 'test', receive: vi.fn(), openAudio: open });
 
 describe('receiving a call', () => {
   afterEach(() => vi.unstubAllEnvs());
   it('does nothing without the flag', async () => {
+    vi.stubEnv('SAMTAL', '');
     const { db, log } = fakeDb({});
     expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'disabled' });
     expect(log.rpc).toEqual([]);
   });
-  it('registers by the receiving number only, stores the audio in the company folder and binds every write to that company', async () => {
+  it('registers by the receiving number only, stores the audio in the reserved company path and confirms it under the upload token', async () => {
     vi.stubEnv('SAMTAL', '1');
-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: true });
-    expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'registered', callId: CALL, companyId: A, autoProcess: true });
-    const payload = (log.rpc[0] as { args: { payload: Record<string, unknown> } }).args.payload;
-    expect(payload).toEqual({ provider: 'test', provider_call_id: 'rollspel-01', to_phone: '+46701111111', from_phone: '+46709999999', started_at: '2026-11-25T08:00:00.000Z', ended_at: '2026-11-25T08:01:00.000Z', duration_seconds: 60 });
-    expect(Object.keys(payload)).not.toContain('company_id');
+    const { db, log } = fakeDb(reserved());
+    expect(await ingestCall(db, adapter(), call, 'req-1')).toEqual({ status: 'registered', callId: CALL, companyId: A, autoProcess: true });
+    const register = log.rpc[0]!;
+    expect(register.name).toBe('samtal_ingest_recover');
+    expect(register.args).toEqual({ payload: { provider: 'test', provider_call_id: 'rollspel-01', to_phone: '+46701111111', from_phone: '+46709999999', started_at: '2026-11-25T08:00:00.000Z', ended_at: '2026-11-25T08:01:00.000Z', duration_seconds: 60 }, p_request: 'req-1', p_extension: 'mp3' });
+    expect(Object.keys(register.args['payload'] as object)).not.toContain('company_id');
     expect(log.uploads).toEqual([{ bucket: 'samtal-audio', path: `${A}/${CALL}.mp3`, upsert: false }]);
-    expect(log.updates).toEqual([{ table: 'samtal_calls', values: { audio_path: `${A}/${CALL}.mp3` }, filters: [['id', CALL], ['company_id', A]] }]);
+    expect(finished(log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: true }]);
+    expect(log.tables).toEqual([]);
   });
-  it('an unknown number or a duplicate never reads or stores audio', async () => {
+  it('a reserved path outside the company folder is never uploaded to', async () => {
     vi.stubEnv('SAMTAL', '1');
-    for (const [registered, status] of [[{ ignored: 'unknown_number' }, 'ignored'], [{ duplicate: true }, 'duplicate']] as const) {
-      const open = vi.fn(), { db, log } = fakeDb(registered);
+    const bad = reserved(); bad.samtal_ingest_recover.audio.audio_path = `${B}/${CALL}.mp3`;
+    const open = vi.fn(), { db, log } = fakeDb(bad);
+    expect(await ingestCall(db, adapter(open as never), call)).toEqual({ status: 'failed', stage: 'register', code: 'audio_path_invalid', callId: CALL });
+    expect(open).not.toHaveBeenCalled();
+    expect(log.uploads).toEqual([]);
+  });
+  it('an unknown number, a duplicate or a live reservation by another delivery never reads or stores audio', async () => {
+    vi.stubEnv('SAMTAL', '1');
+    for (const [answer, status] of [[{ status: 'rejected' }, 'ignored'], [{ status: 'attached', call_id: CALL, company_id: A }, 'duplicate'],
+      [{ status: 'upload', call_id: CALL, company_id: A, audio: { id: 'a1', state: 'reserved' } }, 'duplicate'], [{ status: 'retry' }, 'retry'], [{ status: 'backpressure' }, 'backpressure']] as const) {
+      const open = vi.fn(), { db, log } = fakeDb({ samtal_ingest_recover: answer });
       expect(await ingestCall(db, adapter(open as never), call)).toEqual({ status });
       expect(open).not.toHaveBeenCalled();
       expect(log.uploads).toEqual([]);
+      expect(finished(log)).toEqual([]);
     }
   });
-  it('an unreadable recording marks the call with an error code, in its own company only', async () => {
+  it('an unreadable recording or a failed upload hands the reserved path to cleanup, in its own company only', async () => {
     vi.stubEnv('SAMTAL', '1');
-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: false });
-    const result = await ingestCall(db, adapter(vi.fn(async () => { throw new Error('audio_too_large'); })), call);
-    expect(result).toEqual({ status: 'failed', stage: 'audio', code: 'audio_too_large', callId: CALL });
-    expect(log.updates).toEqual([{ table: 'samtal_calls', values: { status: 'fel', error_code: 'audio_too_large' }, filters: [['id', CALL], ['company_id', A]] }]);
+    const unreadable = fakeDb(reserved(false));
+    expect(await ingestCall(unreadable.db, adapter(vi.fn(async () => { throw new Error('audio_too_large'); })), call)).toEqual({ status: 'failed', stage: 'audio', code: 'audio_too_large', callId: CALL });
+    expect(finished(unreadable.log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: false }]);
+    const upload = fakeDb(reserved(), { upload: 'error' });
+    expect(await ingestCall(upload.db, adapter(), call)).toEqual({ status: 'failed', stage: 'upload', code: 'audio_upload_failed', callId: CALL });
+    expect(finished(upload.log)).toEqual([{ p_call: CALL, p_company: A, p_audio: 'a1', p_token: 'tok', p_uploaded: false }]);
+    expect([...unreadable.log.tables, ...upload.log.tables]).toEqual([]);
+  });
+  it('an upload the database does not confirm is reported as cleanup pending, never as registered', async () => {
+    vi.stubEnv('SAMTAL', '1');
+    const { db } = fakeDb({ ...reserved(), samtal_finish_audio: false });
+    expect(await ingestCall(db, adapter(), call)).toEqual({ status: 'cleanup_pending', callId: CALL, companyId: A });
   });
   it('one failing call does not stop the others, and the log holds codes only', async () => {
     vi.stubEnv('SAMTAL', '1');
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const second = { ...call, provider_call_id: 'rollspel-02' };
-    const { db, log } = fakeDb({ duplicate: false, call_id: CALL, company_id: A, auto_process: true });
+    const { db, log } = fakeDb(reserved());
     const open = vi.fn().mockRejectedValueOnce(new Error('Kunden Anna Svensson på Storgatan 1')).mockResolvedValueOnce({ bytes: new Uint8Array([1]), contentType: 'audio/mpeg', extension: 'mp3' });
     const { results } = await ingestAll(db, { id: 'test', receive: async () => ({ calls: [call, second], rejected: [] }), openAudio: open }, null);
     expect(results.map(r => r.status)).toEqual(['failed', 'registered']);

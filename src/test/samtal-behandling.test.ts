@@ -123,95 +123,133 @@ describe('finding the customer', () => {
   });
 });
 
-// A recording fake of the Supabase client for the processing: rpc, storage download/remove and samtal_calls/customers.
-function fakeDb(o: { call?: Record<string, unknown> | null; customers?: unknown[]; download?: 'ok' | 'error'; remove?: 'ok' | 'error'; jobs?: unknown[]; due?: unknown[]; marked?: boolean } = {}) {
-  const log = { rpc: [] as { name: string; args: Record<string, unknown> }[], updates: [] as { values: Record<string, unknown>; filters: [string, unknown][] }[], selects: [] as { table: string; filters: [string, unknown][] }[], downloads: [] as string[], removes: [] as string[][] };
+// A recording fake of the Supabase client for V2 processing: lease-fenced RPCs answer by name (default true), storage
+// download/remove, and reads of samtal_calls/customers/samtal_erasure_requests. V2 has no direct table writes; any
+// update or insert is recorded so a test can prove there was none.
+type Rpc = { name: string; args: Record<string, unknown> };
+function fakeDb(o: { call?: Record<string, unknown> | null; customers?: unknown[]; download?: 'ok' | 'error'; remove?: 'ok' | 'error' | 'throw'; jobs?: unknown[];
+  rpc?: Record<string, unknown | ((args: Record<string, unknown>) => unknown)>; errors?: string[] } = {}) {
+  const log = { rpc: [] as Rpc[], writes: [] as string[], selects: [] as { table: string; filters: [string, unknown][] }[], downloads: [] as string[], removes: [] as string[][] };
   const db = {
     rpc: async (name: string, args: Record<string, unknown>) => { log.rpc.push({ name, args });
+      if (o.errors?.includes(name)) return { data: null, error: { code: 'synthetic' } };
+      const a = o.rpc?.[name];
+      if (a !== undefined) return { data: typeof a === 'function' ? (a as (x: Record<string, unknown>) => unknown)(args) : a, error: null };
       if (name === 'samtal_claim_jobs') return { data: o.jobs ?? [], error: null };
-      if (name === 'samtal_due_for_deletion') return { data: o.due ?? [], error: null };
-      if (name === 'samtal_mark_deleted') return { data: o.marked ?? true, error: null };
+      if (name === 'samtal_claim_cleanup_class') return { data: [], error: null };
       if (name === 'samtal_purge_secret_valid') return { data: args['p_secret'] === 'rätt', error: null };
       return { data: true, error: null }; },
     storage: { from: () => ({
       download: async (path: string) => { log.downloads.push(path); return o.download === 'error' ? { data: null, error: {} } : { data: { arrayBuffer: async () => new Uint8Array([1]).buffer }, error: null }; },
-      remove: async (paths: string[]) => { log.removes.push(paths); return { error: o.remove === 'error' ? {} : null }; } }) },
+      remove: async (paths: string[]) => { log.removes.push(paths); if (o.remove === 'throw') throw new Error('Anna Berg'); return { error: o.remove === 'error' ? {} : null }; } }) },
     from: (table: string) => {
       const filters: [string, unknown][] = [];
       const chain: Record<string, unknown> = {
-        select: () => chain, order: () => chain, limit: async () => ({ data: o.customers ?? [], error: null }),
+        select: () => chain, order: () => chain,
+        limit: async () => { log.selects.push({ table, filters }); return { data: table === 'customers' ? o.customers ?? [] : [], error: null }; },
         eq: (c: string, v: unknown) => { filters.push([c, v]); return chain; },
         maybeSingle: async () => { log.selects.push({ table, filters }); return { data: o.call === undefined ? null : o.call, error: null }; },
-        update: (values: Record<string, unknown>) => { const entry = { values, filters: [] as [string, unknown][] }; log.updates.push(entry);
-          const u = { eq: (c: string, v: unknown) => { entry.filters.push([c, v]); return u; }, select: () => u,
-            maybeSingle: async () => ({ data: o.call ? { id: o.call['id'] } : null, error: null }),
-            then: (ok: (v: unknown) => void) => ok({ error: null }) }; return u; },
+        update: () => { log.writes.push(`update ${table}`); throw new Error('no_direct_write'); },
+        insert: () => { log.writes.push(`insert ${table}`); throw new Error('no_direct_write'); },
       };
-      if (table === 'customers') log.selects.push({ table, filters });
       return chain;
     },
   };
   return { db: db as never, log };
 }
 const job = (over: Record<string, unknown> = {}) => ({ id: 'j1', call_id: CALL, company_id: A, step: 'transkribera', attempts: 1, lease_token: 't1', state: 'running', ...over }) as never;
-const call = (over: Record<string, unknown> = {}) => ({ id: CALL, company_id: A, user_id: 'u1', audio_path: `${A}/${CALL}.mp3`, caller_phone: '+46701234567', transcript: null, ...over });
+const call = (over: Record<string, unknown> = {}) => ({ id: CALL, company_id: A, user_id: 'u1', audio_path: `${A}/${CALL}.mp3`, caller_phone: '+46701234567', transcript: null, extraction: null, ...over });
 const deps = (o: { stt?: () => Promise<Transcript>; ai?: () => Promise<unknown> } = {}) => ({
   stt: { id: 'fake', transcribe: vi.fn(o.stt ?? (async () => transcript)) }, ai: { id: 'fake', interpret: vi.fn(o.ai ?? (async () => answer())) }, today: () => '2026-11-25' });
-const released = (log: ReturnType<typeof fakeDb>['log']) => log.rpc.filter(r => r.name === 'samtal_release_job').map(r => [r.args['p_state'], r.args['p_step'], r.args['p_error'], r.args['p_retry_seconds']]);
+const named = (log: ReturnType<typeof fakeDb>['log'], name: string) => log.rpc.filter(r => r.name === name).map(r => r.args);
+const released = (log: ReturnType<typeof fakeDb>['log']) => named(log, 'samtal_release_job').map(a => [a['p_state'], a['p_step'], a['p_error'], a['p_retry_seconds']]);
+const retried = (log: ReturnType<typeof fakeDb>['log']) => named(log, 'samtal_retry_guarded').map(a => [a['p_error'], a['p_retry_seconds']]);
+const lease = { p_call: CALL, p_company: A, p_job: 'j1', p_token: 't1' };
+const privateAnswer = () => answer({ classification: 'privat', fields: Object.fromEntries(Object.keys(answer().fields).map(k => [k, none])) as never, next_steps: [] });
 
 describe('processing a call job', () => {
   afterEach(() => vi.unstubAllEnvs());
-  it('transcribes the company\'s own audio, interprets, matches the customer and finishes; every write is bound to the company', async () => {
+  it('transcribes the company\'s own audio, interprets, matches the customer and finishes; every write is lease-fenced and bound to the company', async () => {
     const { db, log } = fakeDb({ call: call(), customers: [{ id: 'k1', name: 'Anna Berg', phone: '0701234567', address: 'Storgatan 5', place: 'Solna' }] });
     expect(await processJob(db, deps(), job())).toBe('done');
     expect(log.downloads).toEqual([`${A}/${CALL}.mp3`]);
-    expect(log.updates.every(u => JSON.stringify(u.filters) === JSON.stringify([['id', CALL], ['company_id', A]]))).toBe(true);
+    expect(log.writes).toEqual([]);
     expect(log.selects.map(s => s.filters.find(f => f[0] === 'company_id'))).toEqual([['company_id', A], ['company_id', A]]);
-    const last = log.updates.at(-1)!.values;
-    expect(last).toMatchObject({ classification: 'jobb', customer_id: 'k1', status: 'klar' });
-    expect((last['extraction'] as { customer_match: unknown }).customer_match).toEqual({ kind: 'befintlig', customer_id: 'k1', by: 'telefon' });
+    const stages = named(log, 'samtal_write_stage');
+    expect(stages.map(s => s['p_stage'])).toEqual(['transkribera', 'tolka']);
+    expect(stages.every(s => s['p_company'] === A && s['p_job'] === 'j1' && s['p_token'] === 't1' && s['p_call'] === CALL)).toBe(true);
+    const extraction = stages[1]!['p_value'] as { interpretation: { classification: string }; customer_match: unknown };
+    expect(extraction.interpretation.classification).toBe('jobb');
+    expect(extraction.customer_match).toEqual({ kind: 'befintlig', customer_id: 'k1', by: 'telefon' });
+    expect(named(log, 'samtal_safety_live').every(a => JSON.stringify(a) === JSON.stringify(lease))).toBe(true);
     expect(released(log)).toEqual([['done', 'klar', null, 0]]);
   });
-  it('a private call: audio and text are deleted at once, only that a call took place remains', async () => {
+  it('a private call: text and extraction are removed in one fenced transaction and the recording goes to the urgent cleanup queue', async () => {
     const { db, log } = fakeDb({ call: call() });
-    expect(await processJob(db, deps({ ai: async () => answer({ classification: 'privat', fields: Object.fromEntries(Object.keys(answer().fields).map(k => [k, none])) as never, next_steps: [] }) }), job())).toBe('privat');
-    expect(log.removes).toEqual([[`${A}/${CALL}.mp3`]]);
-    expect(log.updates.at(-1)!.values).toMatchObject({ classification: 'privat', status: 'privat', transcript: null, extraction: null, caller_phone: null, audio_path: null });
-    expect(log.rpc.some(r => r.name === 'samtal_mark_deleted')).toBe(false);
-    expect(released(log)).toEqual([['done', 'klar', null, 0]]);
+    expect(await processJob(db, deps({ ai: async () => privateAnswer() }), job())).toBe('privat');
+    expect(named(log, 'samtal_commit_private')).toEqual([lease]);
+    // Nothing private is saved first, no customer is read and the worker never deletes files itself.
+    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
+    expect(log.selects.some(s => s.table === 'customers')).toBe(false);
+    expect(log.removes).toEqual([]);
+    expect(log.writes).toEqual([]);
   });
-  it('if the private audio cannot be removed now, the text is still deleted and the call is made due for the hourly purge', async () => {
-    const { db, log } = fakeDb({ call: call(), remove: 'error' });
-    await processJob(db, deps({ ai: async () => answer({ classification: 'privat', next_steps: [] }) }), job());
-    expect(log.updates.at(-1)!.values).toMatchObject({ transcript: null, extraction: null, delete_after: expect.any(String) });
-    expect(log.updates.at(-1)!.values).not.toHaveProperty('audio_path');
+  it('if the private commit cannot be saved, the job is retried and nothing private is kept by the worker', async () => {
+    const { db, log } = fakeDb({ call: call(), errors: ['samtal_commit_private'] });
+    expect(await processJob(db, deps({ ai: async () => privateAnswer() }), job({ attempts: 9 }))).toBe('retry');
+    expect(retried(log)).toEqual([['private_cleanup_not_saved', 3600]]);
+    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
+    expect(released(log)).toEqual([]);
+  });
+  it('a call deleted or made private meanwhile (lease no longer live) stops without writing', async () => {
+    let n = 0;
+    const { db, log } = fakeDb({ call: call(), rpc: { samtal_safety_live: () => n++ === 0 } });
+    expect(await processJob(db, deps(), job())).toBe('stopped');
+    expect(named(log, 'samtal_write_stage')).toEqual([]);
+    expect(released(log)).toEqual([]);
+    const refused = fakeDb({ call: call(), rpc: { samtal_write_stage: false } });
+    expect(await processJob(refused.db, deps(), job())).toBe('stopped');
+    expect(named(refused.log, 'samtal_write_stage')).toHaveLength(1);
   });
   it('never reads audio outside the job\'s company folder', async () => {
     const { db, log } = fakeDb({ call: call({ audio_path: `${B}/${CALL}.mp3` }) });
     expect(await processJob(db, deps(), job())).toBe('audio_missing');
     expect(log.downloads).toEqual([]);
-    expect(log.updates.at(-1)!.values).toEqual({ status: 'fel', error_code: 'audio_missing' });
+    expect(released(log)).toEqual([['failed', 'transkribera', 'audio_missing', 0]]);
   });
   it('without the speech-to-text key the call waits an hour instead of failing', async () => {
     const { db, log } = fakeDb({ call: call() });
     expect(await processJob(db, deps({ stt: async () => { throw new SttError('stt_not_configured', true); } }), job({ attempts: 9 }))).toBe('retry');
-    expect(released(log)).toEqual([['queued', 'transkribera', 'stt_not_configured', 3600]]);
+    expect(retried(log)).toEqual([['stt_not_configured', 3600]]);
+    expect(named(log, 'samtal_retry_guarded')[0]).toMatchObject(lease);
   });
   it('a transient AI failure after transcription resumes at the interpretation, without transcribing again', async () => {
     const first = fakeDb({ call: call() });
     const d = deps({ ai: async () => { throw Object.assign(new Error('ai_http_503'), { retryable: true }); } });
     expect(await processJob(first.db, d, job({ attempts: 2 }))).toBe('retry');
-    expect(released(first.log)).toEqual([['queued', 'tolka', 'ai_http_503', 120]]);
+    expect(retried(first.log)).toEqual([['ai_http_503', 120]]);
+    expect(named(first.log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera']);
     const second = fakeDb({ call: call({ transcript }) });
     const again = deps();
     expect(await processJob(second.db, again, job({ step: 'tolka', attempts: 3 }))).toBe('done');
     expect(again.stt.transcribe).not.toHaveBeenCalled();
   });
-  it('after the last attempt, or on a permanent error, the call is marked with its code and the job fails', async () => {
+  it('after the last attempt, or on a permanent error, the job fails with its code under the lease', async () => {
     const { db, log } = fakeDb({ call: call() });
     expect(await processJob(db, deps({ stt: async () => { throw new SttError('stt_http_503', true); } }), job({ attempts: 5 }))).toBe('stt_http_503');
-    expect(log.updates.at(-1)!.values).toEqual({ status: 'fel', error_code: 'stt_http_503' });
+    expect(retried(log)).toEqual([]);
     expect(released(log)).toEqual([['failed', 'transkribera', 'stt_http_503', 0]]);
+    expect(named(log, 'samtal_release_job')[0]).toMatchObject({ p_job: 'j1', p_token: 't1' });
+    const lost = fakeDb({ call: call(), rpc: { samtal_release_job: false } });
+    expect(await processJob(lost.db, deps({ stt: async () => { throw new SttError('stt_http_400', false); } }), job())).toBe('stopped');
+  });
+  it('an uncertain call is held for review: its extraction is saved, nothing goes to the inbox', async () => {
+    const inbox = vi.fn(async () => true);
+    const { db, log } = fakeDb({ call: call() });
+    expect(await processJob(db, { ...deps({ ai: async () => answer({ classification: 'osaker' }) }), inbox }, job())).toBe('osaker');
+    expect(named(log, 'samtal_write_stage').map(s => s['p_stage'])).toEqual(['transkribera', 'tolka']);
+    expect(inbox).not.toHaveBeenCalled();
+    expect(released(log)).toEqual([]);
   });
   it('many jobs run together and one failing job does not stop the others; the log holds codes only', async () => {
     vi.stubEnv('SAMTAL', '1');
@@ -228,16 +266,20 @@ describe('processing a call job', () => {
   it('a retried inbox step runs the inbox again from the saved extraction, without speech to text or AI', async () => {
     const saved = { interpretation: validateInterpretation(answer(), transcript), customer_match: { kind: 'befintlig', customer_id: 'k1', by: 'telefon' } };
     const { db, log } = fakeDb({ call: call({ transcript, extraction: saved }) });
-    const inbox = vi.fn(async () => {}), d = { ...deps(), inbox };
+    const inbox = vi.fn(async () => true), d = { ...deps(), inbox };
     expect(await processJob(db, d, job({ step: 'inkorg', attempts: 2 }))).toBe('done');
-    expect(inbox).toHaveBeenCalledWith(expect.objectContaining({ interpretation: saved.interpretation, match: saved.customer_match }));
+    expect(inbox).toHaveBeenCalledWith(expect.objectContaining({ interpretation: saved.interpretation, match: saved.customer_match, lease: { job: 'j1', token: 't1' } }));
     expect(d.stt.transcribe).not.toHaveBeenCalled();
     expect(d.ai.interpret).not.toHaveBeenCalled();
-    expect(log.updates.at(-1)!.values).toEqual({ status: 'klar' });
+    expect(log.writes).toEqual([]);
+    // A refused handoff (lost lease, deleted call) is not reported as done.
+    const refused = fakeDb({ call: call({ transcript, extraction: saved }) });
+    expect(await processJob(refused.db, { ...deps(), inbox: vi.fn(async () => false) }, job({ step: 'inkorg' }))).toBe('stopped');
     const missing = fakeDb({ call: call({ transcript }) });
     expect(await processJob(missing.db, { ...deps(), inbox }, job({ step: 'inkorg' }))).toBe('extraction_missing');
   });
   it('does nothing without the flag', async () => {
+    vi.stubEnv('SAMTAL', '');
     const { db, log } = fakeDb({ jobs: [job()] });
     expect(await runSamtalJobs(db, deps())).toEqual({ claimed: 0, results: [] });
     expect(log.rpc).toEqual([]);
@@ -253,16 +295,27 @@ describe('deletion after retention', () => {
     expect(await purgeSecretValid(db, 'x'.repeat(501))).toBe(false);
     expect(log.rpc).toHaveLength(2);
   });
-  it('deletes each due file in its own company folder, then the call\'s content with that company; failures are kept for the next run', async () => {
-    const { db, log } = fakeDb({ due: [
-      { call_id: 'c1', company_id: A, audio_path: `${A}/c1.mp3` }, { call_id: 'c2', company_id: A, audio_path: `${B}/c2.mp3` }, { call_id: 'c3', company_id: B, audio_path: null }] });
-    expect(await purgeDueCalls(db)).toEqual({ due: 3, deleted: 2, kept: 1 });
-    expect(log.removes).toEqual([[`${A}/c1.mp3`]]);
-    expect(log.rpc.filter(r => r.name === 'samtal_mark_deleted').map(r => r.args)).toEqual([{ p_call: 'c1', p_company: A }, { p_call: 'c3', p_company: B }]);
+  it('removes each claimed file in its own company folder and confirms it with its token; a foreign path is never touched and stays pending', async () => {
+    const rows: Record<string, unknown[]> = { urgent: [{ id: 'a1', company_id: A, audio_path: `${A}/c1.mp3`, cleanup_token: 'k1' }, { id: 'a2', company_id: A, audio_path: `${B}/c2.mp3`, cleanup_token: 'k2' }],
+      retry: [{ id: 'a3', company_id: B, audio_path: `${B}/c3.mp3`, cleanup_token: 'k3' }], verify: [] };
+    const { db, log } = fakeDb({ rpc: { samtal_claim_cleanup_class: (a: Record<string, unknown>) => rows[a['p_queue'] as string] } });
+    expect(await purgeDueCalls(db)).toEqual({ claimed: 3, removed: 2, pending: 1, erased: 0 });
+    expect(log.removes).toEqual([[`${A}/c1.mp3`], [`${B}/c3.mp3`]]);
+    expect(named(log, 'samtal_claim_cleanup_class').map(a => a['p_queue'])).toEqual(['urgent', 'retry', 'verify']);
+    expect(named(log, 'samtal_finish_cleanup')).toEqual([{ p_audio: 'a1', p_company: A, p_token: 'k1', p_removed: true }, { p_audio: 'a2', p_company: A, p_token: 'k2', p_removed: false }, { p_audio: 'a3', p_company: B, p_token: 'k3', p_removed: true }]);
   });
-  it('a file that cannot be deleted keeps its call (content and all) for the next run', async () => {
-    const { db, log } = fakeDb({ remove: 'error', due: [{ call_id: 'c1', company_id: A, audio_path: `${A}/c1.mp3` }] });
-    expect(await purgeDueCalls(db)).toEqual({ due: 1, deleted: 0, kept: 1 });
-    expect(log.rpc.some(r => r.name === 'samtal_mark_deleted')).toBe(false);
+  it('a file that cannot be deleted, or whose removal the database does not accept, stays pending and is never reported as removed', async () => {
+    const one = { samtal_claim_cleanup_class: (a: Record<string, unknown>) => a['p_queue'] === 'urgent' ? [{ id: 'a1', company_id: A, audio_path: `${A}/c1.mp3`, cleanup_token: 'k1' }] : [] };
+    for (const o of [{ remove: 'error' as const }, { remove: 'throw' as const }]) {
+      const { db, log } = fakeDb({ ...o, rpc: one });
+      expect(await purgeDueCalls(db)).toEqual({ claimed: 1, removed: 0, pending: 1, erased: 0 });
+      expect(named(log, 'samtal_finish_cleanup')).toEqual([{ p_audio: 'a1', p_company: A, p_token: 'k1', p_removed: false }]);
+    }
+    const stale = fakeDb({ rpc: { ...one, samtal_finish_cleanup: false } });
+    expect(await purgeDueCalls(stale.db)).toEqual({ claimed: 1, removed: 0, pending: 1, erased: 0 });
+  });
+  it('fails loudly when no cleanup queue can be claimed', async () => {
+    const { db } = fakeDb({ errors: ['samtal_claim_cleanup_class'] });
+    await expect(purgeDueCalls(db)).rejects.toThrow('cleanup_claim_failed');
   });
 });

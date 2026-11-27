@@ -1,0 +1,4 @@
+{
+  "note": "Numeric GitHub user ids that may accept a paused or failed review with review-accept.yml.",
+  "accepters": [358280687]
+}

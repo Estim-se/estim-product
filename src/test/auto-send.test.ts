@@ -1,7 +1,8 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, it, expect } from 'vitest';
 
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('automatic WhatsApp database safeguards', () => {
   it('defaults to human approval, reserves once per provider message, excludes duplicates and keeps failed drafts', async () => {
     const db = createClient(process.env['SUPABASE_URL'] ?? '', process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '', { auth: { persistSession: false } });

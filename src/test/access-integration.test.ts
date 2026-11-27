@@ -1,7 +1,8 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 import { requireManager } from '@/lib/access.server';
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('R1b live access boundaries', () => {
   it('enforces invitations, role boundaries, expiry, revocation, single use and last owner', async () => {
     const url = process.env['SUPABASE_URL'] ?? '', options = { auth: { persistSession: false, autoRefreshToken: false } };

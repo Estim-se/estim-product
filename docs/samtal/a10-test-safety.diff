@@ -1,0 +1,179 @@
+--- a/src/test/access-integration.test.ts
++++ b/src/test/access-integration.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, expect, it } from 'vitest';
+ import { requireManager } from '@/lib/access.server';
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('R1b live access boundaries', () => {
+   it('enforces invitations, role boundaries, expiry, revocation, single use and last owner', async () => {
+     const url = process.env['SUPABASE_URL'] ?? '', options = { auth: { persistSession: false, autoRefreshToken: false } };
+--- a/src/test/auto-send.test.ts
++++ b/src/test/auto-send.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, it, expect } from 'vitest';
+ 
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('automatic WhatsApp database safeguards', () => {
+   it('defaults to human approval, reserves once per provider message, excludes duplicates and keeps failed drafts', async () => {
+     const db = createClient(process.env['SUPABASE_URL'] ?? '', process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? '', { auth: { persistSession: false } });
+--- a/src/test/company-isolation.test.ts
++++ b/src/test/company-isolation.test.ts
+@@ -1,10 +1,11 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe,it,expect } from 'vitest';
+ import { electricianMoments } from '@/data/electrician-moments';
+ import { saveCompanyAutoReply } from '@/lib/company-auto-reply';
+ 
+ // Integration test uses disposable accounts and the real RLS boundary, not admin reads.
+-const configured=Boolean(process.env['SUPABASE_URL']&&process.env['SUPABASE_SERVICE_ROLE_KEY']&&process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('R1 company isolation against Supabase',()=>{
+  it('blocks another company’s rows and preserves quote versions and approval identity',async()=>{
+   const url=process.env['SUPABASE_URL']??'',key=process.env['SUPABASE_PUBLISHABLE_KEY']??'',secret=process.env['SUPABASE_SERVICE_ROLE_KEY']??'';
+--- a/src/test/document-delivery-integration.test.ts
++++ b/src/test/document-delivery-integration.test.ts
+@@ -1,8 +1,9 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, expect, it, vi } from 'vitest';
+ import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
+ 
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('company document delivery persistence', () => {
+   it('uploads privately, reserves once, delivers and reads back the document through tenant RLS', async () => {
+     const url = process.env['SUPABASE_URL'] ?? '', key = process.env['SUPABASE_PUBLISHABLE_KEY'] ?? '';
+--- /dev/null
++++ b/src/test/helpers/test-target.ts
+@@ -0,0 +1,19 @@
++// Shared-test safety proposal. A credential is never consent to use the application database.
++export const SHARED_APPLICATION_REF = 'tjlbqmwwuifvjqdbwehx';
++export type TestTarget = { mode: string | undefined; isolated: string | undefined; optIn: string | undefined; approvedRef: string | undefined; url: string | undefined };
++export function approvedIntegrationTarget(target: TestTarget): boolean {
++  if (target.mode !== 'remote') return false;
++  if (target.optIn !== 'I_APPROVE_DISPOSABLE_TEST_PROJECT') throw new Error('remote_test_opt_in_required');
++  if (!target.url || !target.approvedRef || target.approvedRef === SHARED_APPLICATION_REF) throw new Error('disposable_test_project_required');
++  const url = new URL(target.url);
++  if (url.protocol !== 'https:' || url.hostname !== `${target.approvedRef}.supabase.co` || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('unapproved_test_target');
++  // Remote execution requires a separately provisioned target-only network sandbox; this local launcher never enables it.
++  if (target.isolated !== 'target-only') throw new Error('remote_test_network_policy_required');
++  return true;
++}
++export function requireLocalIsolation(env: Record<string, string | undefined>) {
++  if (env['ESTIM_TEST_MODE'] !== 'local' || env['ESTIM_TEST_NET_ISOLATED'] !== '1') throw new Error('use_isolated_test_launcher');
++}
++export function integrationConfigured() {
++  return approvedIntegrationTarget({ mode: process.env['ESTIM_TEST_MODE'], isolated: process.env['ESTIM_TEST_NET_ISOLATED'], optIn: process.env['ESTIM_REMOTE_TEST_OPT_IN'], approvedRef: process.env['ESTIM_DISPOSABLE_PROJECT_REF'], url: process.env['SUPABASE_URL'] });
++}
+--- /dev/null
++++ b/src/test/samtal-a10-safety.test.ts
+@@ -0,0 +1,11 @@
++import { describe,it,expect } from 'vitest';
++import { approvedIntegrationTarget,requireLocalIsolation,SHARED_APPLICATION_REF } from './helpers/test-target';
++describe('A10 permanent test safety proposal',()=>{
++ it('inherited credentials cannot opt ordinary tests into any remote project',()=>{expect(approvedIntegrationTarget({mode:'local',isolated:'1',optIn:undefined,approvedRef:SHARED_APPLICATION_REF,url:`https://${SHARED_APPLICATION_REF}.supabase.co`})).toBe(false);});
++ it('explicit opt-in still rejects the shared application database',()=>expect(()=>approvedIntegrationTarget({mode:'remote',isolated:'target-only',optIn:'I_APPROVE_DISPOSABLE_TEST_PROJECT',approvedRef:SHARED_APPLICATION_REF,url:`https://${SHARED_APPLICATION_REF}.supabase.co`})).toThrow('disposable_test_project_required'));
++ it('remote execution requires explicit opt-in',()=>expect(()=>approvedIntegrationTarget({mode:'remote',isolated:'target-only',optIn:undefined,approvedRef:'disposableonly',url:'https://disposableonly.supabase.co'})).toThrow('remote_test_opt_in_required'));
++ it('a disposable declaration cannot point at a different host',()=>expect(()=>approvedIntegrationTarget({mode:'remote',isolated:'target-only',optIn:'I_APPROVE_DISPOSABLE_TEST_PROJECT',approvedRef:'disposableonly',url:`https://${SHARED_APPLICATION_REF}.supabase.co`})).toThrow('unapproved_test_target'));
++ it('remote opt-in alone cannot bypass network policy',()=>expect(()=>approvedIntegrationTarget({mode:'remote',isolated:'1',optIn:'I_APPROVE_DISPOSABLE_TEST_PROJECT',approvedRef:'disposableonly',url:'https://disposableonly.supabase.co'})).toThrow('remote_test_network_policy_required'));
++ it('local test setup fails without the namespace launcher attestation',()=>expect(()=>requireLocalIsolation({ESTIM_TEST_MODE:'local'})).toThrow('use_isolated_test_launcher'));
++ it('the actual local test process has no app credentials',()=>{expect(process.env['ESTIM_TEST_MODE']).toBe('local');expect(process.env['ESTIM_TEST_NET_ISOLATED']).toBe('1');expect(process.env['SUPABASE_SERVICE_ROLE_KEY']).toBeUndefined();expect(process.env['SUPABASE_URL']).toBeUndefined();});
++});
+--- a/src/test/setup.ts
++++ b/src/test/setup.ts
+@@ -1,3 +1,5 @@
++import { requireLocalIsolation } from "./helpers/test-target";
++requireLocalIsolation(process.env);
+ import "@testing-library/jest-dom/vitest";
+ 
+ Object.defineProperty(window, "scrollTo", {
+--- a/src/test/tender-analysis-isolation.test.ts
++++ b/src/test/tender-analysis-isolation.test.ts
+@@ -1,8 +1,9 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, it, expect } from 'vitest';
+ import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
+ 
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('Tender analysis persistence and isolation', () => {
+   it('reserves one document per run, saves results, skips large PDFs, records failures and resets on reanalysis', async () => {
+     const url=process.env['SUPABASE_URL'] ?? '';
+--- a/src/test/tender-baggen-catalog.test.ts
++++ b/src/test/tender-baggen-catalog.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { expect, it } from 'vitest';
+ const url=process.env['SUPABASE_URL'], key=process.env['SUPABASE_SERVICE_ROLE_KEY'];
+-const client=url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const headers=new Headers(init?.headers);if(key.startsWith('sb_')&&headers.get('Authorization')===`Bearer ${key}`)headers.delete('Authorization');headers.set('apikey',key);return fetch(input,{...init,headers});}}}):null;
++const client=integrationConfigured()&&url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const headers=new Headers(init?.headers);if(key.startsWith('sb_')&&headers.get('Authorization')===`Bearer ${key}`)headers.delete('Authorization');headers.set('apikey',key);return fetch(input,{...init,headers});}}}):null;
+ const examples=[['Perilexuttag',1,250],['Vägguttag 16A',0.8,150],['Gruppcentral lägenhet',4,2500],['Gruppcentral lokal',6,4000],['Elmätare',2,1500],['Brandvarnare',0.3,250],['Handdukstork anslutning',1,80],['Dimmer',0.5,300],['Lamputtag',0.6,60],['Armatur badrum',0.8,600],['Armatur kök',0.8,700],['Spegelskåp anslutning',0.8,80],['Laddplats ledningsinstallation',4,1500],['Utomhusuttag',1,300]] as const;
+ const newExamples=[['Huvudledning lägenhet',3,1200],['Huvudledning lokal',5,2500],['Fastighetscentral',24,25000],['Armatur trapphus',1,900]] as const;
+ for(const [name,hours,list_price] of newExamples) it.skipIf(!client)(`stores the requested ${name} example`,async()=>{
+--- a/src/test/tender-calculation-isolation.test.ts
++++ b/src/test/tender-calculation-isolation.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, expect, it } from 'vitest';
+ import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('Company-private tender calculations', () => {
+   it('requires completed insights, reserves once, denies other companies and rejects stale results', async () => {
+     const url = process.env['SUPABASE_URL'] ?? '';
+--- a/src/test/tender-quantities-isolation.test.ts
++++ b/src/test/tender-quantities-isolation.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, expect, it } from 'vitest';
+ import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('Company-private tender quantities', () => {
+   it('requires completed insights, reserves once, denies other companies and rejects stale results', async () => {
+     const url = process.env['SUPABASE_URL'] ?? '';
+--- a/src/test/tenders-isolation.test.ts
++++ b/src/test/tenders-isolation.test.ts
+@@ -1,7 +1,8 @@
++import { integrationConfigured } from "./helpers/test-target";
+ import { createClient } from '@supabase/supabase-js';
+ import { describe, expect, it } from 'vitest';
+ 
+-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
++const configured = integrationConfigured();
+ describe.skipIf(!configured)('Tender private storage and company isolation', () => {
+   it('stores separate files, opens only own-company files and validates actual stored sizes', async () => {
+     const url = process.env['SUPABASE_URL'] ?? '';
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -1,16 +1,18 @@
+ import { defineConfig } from "vitest/config";
+ import react from "@vitejs/plugin-react";
+ import path from "node:path";
++import { fileURLToPath } from "node:url";
+ 
+ // On Windows a working directory with a lower-case drive letter ("c:\…", as some terminals give it) makes Vitest
+ // register vi.mock modules under another id than the one imports resolve to, so mocks silently do not apply. Use the
+ // upper-case drive letter everywhere so the tests behave the same in every terminal.
+ const upperDrive = (p: string) => (process.platform === "win32" ? p.replace(/^[a-z]:/, (d) => d.toUpperCase()) : p);
+ if (upperDrive(process.cwd()) !== process.cwd()) process.chdir(upperDrive(process.cwd()));
+-const root = upperDrive(__dirname);
++const root = upperDrive(path.dirname(fileURLToPath(import.meta.url)));
+ 
+ export default defineConfig({
+   root,
++  cacheDir: path.resolve(root, ".test-cache"),
+   plugins: [react()],
+   test: {
+     environment: "jsdom",
