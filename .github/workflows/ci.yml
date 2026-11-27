@@ -198,6 +198,12 @@ jobs:
         # Ubuntu runners provide passwordless sudo; avoid Ubuntu's unprivileged-userns restriction.
         run: sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py
 
+      - name: No root-owned files left by the isolated tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          leftover="$(find . -path ./.git -prune -o -user 0 -print | head -20)"
+          if [ -n "$leftover" ]; then echo "Root-owned files after tests:"; echo "$leftover"; exit 1; fi
+
       # The review gate's engine (.github/review/): Python's standard library only, nothing to install.
       - name: Review gate tests
         if: ${{ !cancelled() }}

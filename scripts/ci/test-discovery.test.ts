@@ -34,3 +34,13 @@ describe('required and opt-in Samtal test discovery', () => {
     expect(tests).not.toContain('--samtal-proposals');
   });
 });
+describe('isolated runner dependencies', () => {
+  it('never links the checkout node_modules directory itself, so caches stay in the copy', async () => {
+    const { readFileSync } = await import('node:fs');
+    const runner = readFileSync('scripts/run-tests-isolated.py', 'utf8');
+    expect(runner).not.toMatch(/\(target \/ "node_modules"\)\.symlink_to/);
+    expect(runner).toContain('".vite-temp"');
+    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(ci).toContain('No root-owned files left by the isolated tests');
+  });
+});

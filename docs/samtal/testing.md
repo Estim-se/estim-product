@@ -15,7 +15,7 @@ bun run test src/test/samtal         # Focused current Samtal regressions
 bun run test:samtal-proposals        # Explicit historical proposal/harness tests only
 ```
 
-CI's required Tests step runs `sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py`.
+CI's required Tests step runs `sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py`. The launcher gives the disposable copy its own `node_modules` directory (per-package links, no shared cache directories), so Vite/Vitest caches such as `node_modules/.vite-temp` are written in the copy and the following Build step never meets root-owned files; a CI step fails if any root-owned file remains in the checkout. Running Vitest directly or setting isolation variables by hand is not valid test evidence.
 It does not run the proposal configuration. No required discovery glob was changed.
 The opt-in configuration replaces (not concatenates) discovery with `docs/samtal/tests/**/*.{test,spec}.{ts,tsx}`.
 
@@ -126,3 +126,9 @@ PATH=/nix/store/as4iy2k6dvylg3pv7j86432xailvp7x7-postgresql-17.12/bin:$PATH bun 
 
 The Nix path is this sandbox's existing PostgreSQL installation, not a portable requirement; on ordinary Linux use
 the installed full PostgreSQL distribution. No product module, remote database, migration, flag or deployment changed.
+## Rules for future tests
+
+- Tests for implemented, committed behaviour go in the default Vitest paths; keep them deterministic with synthetic data, fakes or existing disposable local services.
+- Tests for unimplemented proposals stay outside default discovery (`docs/samtal/tests/`) and run only with `bun run test:samtal-proposals`.
+- Never hide a failing regression by skipping or deleting it.
+- Get approval before adding tests that need new services, binaries, secrets, external network, special permissions or a separate workflow, and document their setup and exact commands in CI and here.

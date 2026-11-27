@@ -22,7 +22,18 @@ def main():
                     or (Path(parent) / name).is_symlink()]
 
         shutil.copytree(root, target, dirs_exist_ok=True, ignore=ignore)
-        (target / "node_modules").symlink_to(root / "node_modules", target_is_directory=True)
+        # Give the copy its own node_modules directory whose entries link to the
+        # installed packages. Tool caches (.vite-temp, .vite, .vitest) are then
+        # created inside the disposable copy, so a run under sudo never leaves
+        # root-owned files in the checkout's dependencies.
+        modules = target / "node_modules"
+        modules.mkdir()
+        installed = root / "node_modules"
+        caches = {".vite-temp", ".vite", ".vitest", ".cache", ".tmp"}
+        if installed.is_dir():
+            for entry in installed.iterdir():
+                if entry.name not in caches:
+                    (modules / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
         # CI guard regressions inspect HEAD. Copy only inert Git object/ref data,
         # never repository config, credentials, hooks, or the original index.
         metadata = root / ".git"
