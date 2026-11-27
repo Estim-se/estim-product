@@ -1,5 +1,7 @@
-// Samtal Test Lab: temporary internal demo. Everything runs in the browser on synthetic data; no calls leave the page.
-import { useState } from 'react';
+// Samtal Test Lab: temporary internal demo on synthetic data. The only outbound call is the optional real-AI
+// extraction through the lab's own authenticated server function; nothing is stored in the database.
+import { useEffect, useState } from 'react';
+import { useServerFn } from '@tanstack/react-start';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,10 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { calc, kr } from '@/lib/quote';
-import { analyse, matchAssignment, rotSentence, type Analysis, type CallType, type Evidence } from './analyze';
+import { analyse, analyseFromAi, applyToRegister, matchAssignment, matchAssignmentFields, rotSentence, type Analysis, type AssignmentResult, type CallType, type Evidence } from './analyze';
+import { labAnalyseWithAi } from './ai.functions';
 import { catalog, customers, employees, examples, type LabCustomer } from './data';
 
 const TYPES: [CallType, string][] = [['in', 'Inkommande samtal'], ['ut', 'Utgående samtal'], ['ring', 'Ring estim']];
+const STORE = 'samtal-lab-register-v1';
 const selectCls = 'h-9 w-full rounded-md border border-input bg-background px-3 text-sm';
 
 function EvidenceList({ items }: { items: Evidence[] }) {
@@ -24,21 +28,56 @@ export function SamtalLabPage() {
   const [text, setText] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
   const [chosen, setChosen] = useState<LabCustomer | null>(null);
+  const [useAi, setUseAi] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [usedAi, setUsedAi] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  // Session-scoped synthetic register: new customers/assignments persist across calls until "Ny demo".
+  const [register, setRegister] = useState<LabCustomer[]>(customers);
+  const [log, setLog] = useState<string[]>([]);
+  const aiFn = useServerFn(labAnalyseWithAi);
 
-  const reset = () => { setPhone(''); setType('in'); setText(''); setResult(null); setChosen(null); setEmployee(employees[0]!.id); };
-  const run = () => { setChosen(null); setResult(analyse({ text, phone, type }, { customers, catalog })); };
+  useEffect(() => { try { const r = sessionStorage.getItem(STORE); if (r) { const v = JSON.parse(r) as { register: LabCustomer[]; log: string[] }; setRegister(v.register); setLog(v.log); } } catch { /* ignore corrupt demo state */ } }, []);
+  const save = (reg: LabCustomer[], l: string[]) => { setRegister(reg); setLog(l); try { sessionStorage.setItem(STORE, JSON.stringify({ register: reg, log: l })); } catch { /* storage unavailable */ } };
+
+  const clearForm = () => { setPhone(''); setType('in'); setText(''); setResult(null); setChosen(null); setError(null); setSummary(null); setEmployee(employees[0]!.id); };
+  const newDemo = () => { clearForm(); save(customers, []); };
+
+  const commit = (a: Analysis, pick: LabCustomer | null, asg: AssignmentResult | null, reg: LabCustomer[], l: string[]) => {
+    if (a.privat) { save(reg, [...l, 'Privat samtal – inget sparat']); return; }
+    if (a.customer.kind === 'oklar' && !pick) return;
+    const next = applyToRegister(reg, a, pick, asg, Date.now());
+    const who = a.customer.kind === 'befintlig' ? a.customer.customer.name : pick?.name ?? (a.customer.kind === 'ny' ? a.customer.name ?? 'Ny kund' : '');
+    const what = asg?.kind === 'befintligt' ? `${asg.assignment.title}${asg.addOn ? ' (tillägg)' : ''}` : asg?.kind === 'nytt' ? `nytt: ${asg.title}` : '';
+    save(next, [...l, `${who} – ${what}`]);
+  };
+
+  const run = async () => {
+    setChosen(null); setError(null); setSummary(null); setResult(null);
+    if (!useAi) { const a = analyse({ text, phone, type }, { customers: register, catalog }); setUsedAi(false); setResult(a); commit(a, null, a.privat ? null : a.assignment, register, log); return; }
+    setBusy(true);
+    try {
+      const r = await aiFn({ data: { text, type, employee: employees.find(e => e.id === employee)?.name ?? '', customerHints: register.map(c => `${c.name}, ${c.address}`) } });
+      if (!r.ok) { setError(r.error); return; }
+      const a = analyseFromAi(r.data, { phone, type }, { customers: register, catalog });
+      setUsedAi(true); setSummary(r.data.summary || null); setResult(a); commit(a, null, a.privat ? null : a.assignment, register, log);
+    } catch { setError('Kunde inte nå AI-tjänsten. Är du inloggad?'); } finally { setBusy(false); }
+  };
+
+  const chooseAssignment = (c: LabCustomer) => result && !result.privat ? (result.aiFields ? matchAssignmentFields(result.aiFields, c) : matchAssignment(text, c)) : null;
+  const choose = (c: LabCustomer) => { setChosen(c); if (result) commit(result, c, chooseAssignment(c), register, log); };
 
   const customer = result && !result.privat ? (result.customer.kind === 'befintlig' ? result.customer.customer : chosen) : null;
-  const assignment = result && !result.privat ? (result.assignment ?? (chosen ? matchAssignment(text, chosen) : null)) : null;
+  const assignment = result && !result.privat ? (result.assignment ?? (chosen ? chooseAssignment(chosen) : null)) : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Samtal Test Lab</h1>
-        <Badge variant="destructive">Simulerad AI – regelbaserad analys, ingen riktig AI används</Badge>
+        {useAi ? <Badge>Riktig AI – tolkning via Lovable AI, matchning och priser i kod</Badge> : <Badge variant="destructive">Simulerad AI – regelbaserad analys, ingen riktig AI används</Badge>}
       </div>
-      <p className="text-sm text-muted-foreground">Intern demo med påhittade kunder. Inget sparas, skickas eller hämtas från servern.</p>
-
+      <p className="text-sm text-muted-foreground">Intern demo med påhittade kunder. Inget sparas i databasen och inget skickas till kunder. Nya kunder och uppdrag finns kvar i den här fliken tills du klickar på "Ny demo".</p>
       <Card><CardContent className="space-y-3 pt-6">
         <div className="grid gap-3 sm:grid-cols-3">
           <div><Label htmlFor="lab-emp">Anställd</Label><select id="lab-emp" className={selectCls} value={employee} onChange={e => setEmployee(e.target.value)}>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
@@ -47,14 +86,18 @@ export function SamtalLabPage() {
         </div>
         <div><Label htmlFor="lab-text">Transkribering</Label><Textarea id="lab-text" rows={9} value={text} onChange={e => setText(e.target.value)} placeholder="Skriv eller klistra in ett samtal…" /></div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={run} disabled={!text.trim()}>Analysera samtal</Button>
-          <Button variant="outline" onClick={reset}>Återställ</Button>
+          <Button onClick={() => void run()} disabled={!text.trim() || busy}>{busy ? 'Analyserar…' : 'Analysera samtal'}</Button>
+          <Button variant="outline" onClick={clearForm}>Återställ</Button>
+          <Button variant="outline" onClick={newDemo}>Ny demo</Button>
+          <label className="ml-auto flex items-center gap-2 text-sm"><input type="checkbox" checked={useAi} onChange={e => setUseAi(e.target.checked)} /> Använd riktig AI</label>
         </div>
         <div className="flex flex-wrap gap-2 text-sm"><span className="self-center text-muted-foreground">Exempel:</span>
           {examples.map(x => <Button key={x.label} size="sm" variant="secondary" onClick={() => { setText(x.text); setPhone(x.phone); setType(x.type); setEmployee(x.employee); setResult(null); setChosen(null); }}>{x.label}</Button>)}
         </div>
       </CardContent></Card>
 
+      {error && <Card><CardContent className="pt-6 text-sm text-destructive">{error}</CardContent></Card>}
+      {result && <p className="text-sm text-muted-foreground">Analyserad med {usedAi ? 'riktig AI (Lovable AI Gateway)' : 'regelbaserad simulering'}.{summary ? ` Sammanfattning: ${summary}` : ''}</p>}
       {result?.privat && <Card><CardHeader><CardTitle>Inget affärsunderlag</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">Samtalet ser privat ut. Ingen kund, inget uppdrag, ingen offert och inga uppgifter skapas.</CardContent></Card>}
 
       {result && !result.privat && <div className="grid gap-4 md:grid-cols-2">
@@ -62,7 +105,7 @@ export function SamtalLabPage() {
           {result.customer.kind === 'befintlig' && <p><strong>{result.customer.customer.name}</strong>, {result.customer.customer.address}, {result.customer.customer.place} <Badge variant="secondary">Befintlig kund</Badge></p>}
           {result.customer.kind === 'ny' && <p><strong>{result.customer.name ?? 'Okänt namn'}</strong>{result.customer.address ? `, ${result.customer.address}` : ''} <Badge variant="secondary">Ny kund föreslås</Badge></p>}
           {result.customer.kind === 'oklar' && <div className="space-y-2"><Badge variant="destructive">Kräver bekräftelse</Badge><p className="text-sm">Välj rätt kund:</p>
-            <div className="flex flex-wrap gap-2">{result.customer.candidates.map(c => <Button key={c.id} size="sm" variant={chosen?.id === c.id ? 'default' : 'outline'} onClick={() => setChosen(c)}>{c.name}, {c.address}</Button>)}</div></div>}
+            <div className="flex flex-wrap gap-2">{result.customer.candidates.map(c => <Button key={c.id} size="sm" variant={chosen?.id === c.id ? 'default' : 'outline'} onClick={() => choose(c)} disabled={!!chosen}>{c.name}, {c.address}</Button>)}</div></div>}
           <EvidenceList items={result.customer.evidence} />
         </CardContent></Card>
 
@@ -88,6 +131,10 @@ export function SamtalLabPage() {
             <ul className="space-y-1 text-sm">{result.tasks.map((t, i) => <li key={i}>• {t.text} {t.due && <Badge variant="outline">{t.due}</Badge>} <span className="text-muted-foreground">– {employees.find(e => e.id === employee)?.name}</span></li>)}</ul>}
         </CardContent></Card>
       </div>}
+      <Card><CardHeader><CardTitle>Demoregister (denna session)</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm md:grid-cols-2">
+        <ul className="space-y-1">{register.map(c => <li key={c.id}><strong>{c.name}</strong> · {c.phone || 'inget nummer'} · {c.address || 'ingen adress'}{c.assignments.length > 0 && <span className="text-muted-foreground"> — {c.assignments.map(a => a.title).join(', ')}</span>}</li>)}</ul>
+        <div><p className="font-medium">Händelser</p>{log.length === 0 ? <p className="text-muted-foreground">Inga analyser ännu.</p> : <ol className="list-decimal pl-5">{log.map((l, i) => <li key={i}>{l}</li>)}</ol>}</div>
+      </CardContent></Card>
     </div>
   );
 }

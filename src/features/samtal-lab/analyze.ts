@@ -55,9 +55,14 @@ export function extractAddress(text: string): string | null {
 // Phone first (never for Ring estim, where the caller is the employee), then name and address together.
 // Several customers on the same number, or a name without address, always require human confirmation.
 export function matchCustomer(text: string, phone: string, type: CallType, list: LabCustomer[]): CustomerResult {
+  return matchCustomerFields({ name: extractName(text, list), address: extractAddress(text), phone, spokenPhone: null }, type, list);
+}
+
+// Same rules for fields that came from the AI extraction; phone/name/address matching itself stays in code.
+export function matchCustomerFields(f: { name: string | null; address: string | null; phone: string; spokenPhone: string | null }, type: CallType, list: LabCustomer[]): CustomerResult {
   const evidence: Evidence[] = [];
-  const name = extractName(text, list), address = extractAddress(text);
-  const norm = type === 'ring' ? null : normalisePhone(phone);
+  const { name, address } = f;
+  const norm = type === 'ring' ? normalisePhone(f.spokenPhone) : normalisePhone(f.phone) ?? normalisePhone(f.spokenPhone);
   if (type === 'ring') evidence.push({ label: 'Ring estim: numret är den anställdes och används inte för kundmatchning', ok: true });
   else evidence.push({ label: norm ? `Telefonnummer normaliserat till ${norm}` : 'Telefonnumret kunde inte tolkas', ok: !!norm });
   const byPhone = norm ? list.filter(c => normalisePhone(c.phone) === norm) : [];
@@ -94,19 +99,23 @@ export type AssignmentResult =
   | { kind: 'nytt'; title: string; evidence: Evidence[] };
 
 export function matchAssignment(text: string, customer: LabCustomer | null): AssignmentResult {
-  const kinds = detectKinds(text), address = extractAddress(text);
+  return matchAssignmentFields({ kinds: detectKinds(text), address: extractAddress(text), addOn: ADDON.some(w => plain(text).includes(w)), title: null }, customer);
+}
+
+export function matchAssignmentFields(f: { kinds: string[]; address: string | null; addOn: boolean; title: string | null }, customer: LabCustomer | null): AssignmentResult {
+  const { kinds, address } = f;
   const evidence: Evidence[] = [{ label: kinds.length ? `Arbetstyp i samtalet: ${kinds.join(', ')}` : 'Ingen tydlig arbetstyp', ok: kinds.length > 0 }];
   const scored = (customer?.assignments ?? []).map(a => ({ a, score: (kinds[0] === a.kind ? 2 : kinds.includes(a.kind) ? 1 : 0) + (address && plain(address) === plain(a.address) && kinds.includes(a.kind) ? 1 : 0) }))
     .filter(s => s.score > 0).sort((x, y) => y.score - x.score);
   const best = scored[0];
   if (best && (scored.length === 1 || scored[1]!.score < best.score)) {
-    const addOn = ADDON.some(w => plain(text).includes(w));
+    const addOn = f.addOn;
     evidence.push({ label: `Matchar befintligt uppdrag "${best.a.title}" (${best.a.address})`, ok: true });
     if (addOn) evidence.push({ label: 'Ord som "också/tillägg" – tolkas som tilläggsarbete', ok: true });
     return { kind: 'befintligt', assignment: best.a, addOn, evidence };
   }
   evidence.push({ label: customer?.assignments.length ? 'Inget av kundens uppdrag matchar – nytt föreslås' : 'Kunden har inga uppdrag – nytt föreslås', ok: true });
-  return { kind: 'nytt', title: KIND_TITLE[kinds[0] ?? ''] ?? 'Nytt uppdrag', evidence };
+  return { kind: 'nytt', title: f.title?.trim() || (KIND_TITLE[kinds[0] ?? ''] ?? 'Nytt uppdrag'), evidence };
 }
 
 // Quantity = the first number followed by the item's unit in the same sentence; otherwise 1 for "st", else unknown.
@@ -154,7 +163,7 @@ export function extractTasks(text: string, base: Date): Task[] {
 
 export type Analysis =
   | { privat: true }
-  | { privat: false; customer: CustomerResult; assignment: AssignmentResult | null; quote: { quote: Quote; missing: string[] } | null; tasks: Task[] };
+  | { privat: false; customer: CustomerResult; assignment: AssignmentResult | null; quote: { quote: Quote; missing: string[] } | null; tasks: Task[]; aiFields?: { kinds: string[]; address: string | null; addOn: boolean; title: string | null } };
 
 export function analyse(input: { text: string; phone: string; type: CallType }, data: { customers: LabCustomer[]; catalog: LabCatalogItem[] }, base = new Date()): Analysis {
   if (isPrivate(input.text)) return { privat: true };
@@ -164,3 +173,59 @@ export function analyse(input: { text: string; phone: string; type: CallType }, 
   const assignment = customer.kind === 'oklar' ? null : matchAssignment(input.text, known);
   return { privat: false, customer, assignment, quote: buildQuote(input.text, data.catalog), tasks: extractTasks(input.text, base) };
 }
+
+// ---- Real-AI path: the model only extracts facts; matching, prices and totals stay deterministic here. ----
+export const JOB_KINDS = ['badrum', 'kök', 'målning', 'altan', 'golv', 'annat'] as const;
+export type AiExtraction = {
+  business: boolean;
+  summary: string;
+  customer_name: string | null;
+  address: string | null;
+  spoken_phone: string | null;
+  job_kind: (typeof JOB_KINDS)[number] | null;
+  new_job_title: string | null;
+  is_addon: boolean;
+  items: { catalog_id: string; quantity: number | null }[];
+  tasks: { text: string; when: string | null }[];
+};
+
+export function quoteFromItems(items: AiExtraction['items'], list: LabCatalogItem[]): { quote: Quote; missing: string[] } | null {
+  const lines: Quote['lines'] = [], missing: string[] = [];
+  for (const it of items) {
+    const item = list.find(c => c.id === it.catalog_id);
+    if (!item) continue; // Unknown ids are ignored: prices only come from the demo price list.
+    const q = it.quantity !== null && Number.isFinite(it.quantity) && it.quantity > 0 && it.quantity <= 10000 ? it.quantity : item.u === 'st' ? 1 : null;
+    if (q === null) { if (!missing.includes(item.t)) missing.push(item.t); continue; }
+    lines.push({ t: item.t, typ: item.typ, q, u: item.u, p: item.p, rot: item.rot });
+    // Standard material from the price list follows its labour line automatically.
+    const mat = list.find(c => c.typ === 'material' && c.kind === item.kind && item.typ === 'arbete' && c.u === item.u && c.keywords.some(k => item.keywords.includes(k)));
+    if (mat && !items.some(x => x.catalog_id === mat.id) && !lines.some(l => l.t === mat.t)) lines.push({ t: mat.t, typ: mat.typ, q, u: mat.u, p: mat.p, rot: mat.rot });
+  }
+  return lines.length ? { quote: { nr: 'UTKAST', owners: 1, addOn: false, prisform: 'Fast pris', lines }, missing } : null;
+}
+
+export function analyseFromAi(ai: AiExtraction, input: { phone: string; type: CallType }, data: { customers: LabCustomer[]; catalog: LabCatalogItem[] }, base = new Date()): Analysis {
+  if (!ai.business) return { privat: true };
+  const customer = matchCustomerFields({ name: ai.customer_name, address: ai.address, phone: input.phone, spokenPhone: ai.spoken_phone }, input.type, data.customers);
+  const known = customer.kind === 'befintlig' ? customer.customer : null;
+  const fields = { kinds: ai.job_kind && ai.job_kind !== 'annat' ? [ai.job_kind] : [], address: ai.address, addOn: ai.is_addon, title: ai.new_job_title };
+  const assignment = customer.kind === 'oklar' ? null : matchAssignmentFields(fields, known);
+  const tasks = ai.tasks.slice(0, 10).map(t => { const d = resolveDate(`${t.when ?? ''} ${t.text}`, base); return { text: t.text, due: d ? d.toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'short' }) : t.when }; });
+  return { privat: false, customer, assignment, quote: quoteFromItems(ai.items, data.catalog), tasks, aiFields: fields };
+}
+
+// Applies a finished analysis to the session's synthetic register so the next call sees the new context.
+export function applyToRegister(list: LabCustomer[], a: Analysis, chosen: LabCustomer | null, assignment: AssignmentResult | null, seq: number): LabCustomer[] {
+  if (a.privat) return list;
+  const target = a.customer.kind === 'befintlig' ? a.customer.customer : chosen;
+  if (a.customer.kind === 'oklar' && !chosen) return list;
+  const address = a.customer.kind === 'ny' ? a.customer.address ?? '' : target?.address ?? '';
+  const newAssignment = assignment?.kind === 'nytt' ? { id: `n-a${seq}`, title: assignment.title, kind: a.aiFields?.kinds[0] ?? detectKindsSafe(assignment.title), address, status: 'Ny' } : null;
+  if (!target && a.customer.kind === 'ny') {
+    const c: LabCustomer = { id: `n-c${seq}`, name: a.customer.name ?? 'Okänd kund', phone: a.customer.phone ?? '', address, place: '', assignments: newAssignment ? [newAssignment] : [] };
+    return [...list, c];
+  }
+  if (!target || !newAssignment) return list;
+  return list.map(c => c.id === target.id ? { ...c, assignments: [...c.assignments, newAssignment] } : c);
+}
+const detectKindsSafe = (s: string) => detectKinds(s)[0] ?? 'annat';
