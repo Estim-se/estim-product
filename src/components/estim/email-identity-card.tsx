@@ -33,11 +33,13 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
   const [email, setEmail] = useState(pending?.email ?? "");
   const [phone, setPhone] = useState(pending?.phone ?? "");
   const [confirmMerge, setConfirmMerge] = useState(false);
+  const [busyAction, setBusyAction] = useState<"approve" | "merge" | null>(null);
 
   useEffect(() => {
     setName(pending?.name ?? "");
     setEmail(pending?.email ?? "");
     setPhone(pending?.phone ?? "");
+    setBusyAction(null);
   }, [t.id, pending?.name, pending?.email, pending?.phone]);
 
   const matchingCustomer = useMemo(() => {
@@ -55,6 +57,13 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
     if (!t.suggestedMergeThreadId || t.suggestedMergeThreadId === t.id) return null;
     return state.threads.find((x) => x.id === t.suggestedMergeThreadId) ?? null;
   }, [t.suggestedMergeThreadId, t.id, state.threads]);
+
+  const runBusy = (kind: "approve" | "merge", result: unknown) => {
+    if (result && typeof (result as Promise<unknown>).finally === "function") {
+      setBusyAction(kind);
+      void (result as Promise<unknown>).finally(() => setBusyAction(null));
+    }
+  };
 
   if (mode !== "real" || (!pending && !mergeTarget)) return null;
 
@@ -106,21 +115,28 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
             <Button
               variant="prototype"
               className="btn btn-primary btn-xs"
-              onClick={() => actions.approveEmailSender(t.id, { name, email, phone })}
+              disabled={busyAction !== null}
+              onClick={() =>
+                runBusy("approve", actions.approveEmailSender(t.id, { name, email, phone }))
+              }
             >
-              Godkänn avsändare
+              {busyAction === "approve" ? "Godkänner…" : "Godkänn avsändare"}
             </Button>
             {matchingCustomer && (
               <Button
                 variant="prototype"
                 className="btn btn-ghost btn-xs"
+                disabled={busyAction !== null}
                 onClick={() =>
-                  actions.approveEmailSender(t.id, {
-                    name,
-                    email,
-                    phone,
-                    useCustomerId: matchingCustomer.id,
-                  })
+                  runBusy(
+                    "approve",
+                    actions.approveEmailSender(t.id, {
+                      name,
+                      email,
+                      phone,
+                      useCustomerId: matchingCustomer.id,
+                    }),
+                  )
                 }
               >
                 Koppla till {matchingCustomer.name}
@@ -146,9 +162,10 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
             <Button
               variant="prototype"
               className="btn btn-ghost btn-xs"
+              disabled={busyAction !== null}
               onClick={() => setConfirmMerge(true)}
             >
-              Slå ihop med befintlig tråd
+              {busyAction === "merge" ? "Slår ihop…" : "Slå ihop med befintlig tråd"}
             </Button>
           </div>
           <ConfirmDialog
@@ -159,7 +176,7 @@ export function EmailIdentityCard({ thread: t }: { thread: Thread }) {
             confirmLabel="Slå ihop"
             onConfirm={() => {
               setConfirmMerge(false);
-              actions.mergeEmailThread(t.id, mergeTarget.id);
+              runBusy("merge", actions.mergeEmailThread(t.id, mergeTarget.id));
             }}
           />
         </div>

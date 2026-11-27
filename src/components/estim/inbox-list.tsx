@@ -22,20 +22,27 @@ export function InboxList({ threads, selected, filter, onFilter, onSelect, onSim
   onSimulate: () => void;
   real?: boolean;
 }) {
-  const list = filterThreads(threads, filter);
-
   const customerGroups = useMemo(() => {
+    const list = filterThreads(threads, filter);
+    const byCustomer = new Map<string, Thread[]>();
+    for (const t of threads) {
+      const key = customerKeyOf(t);
+      let bucket = byCustomer.get(key);
+      if (!bucket) {
+        bucket = [];
+        byCustomer.set(key, bucket);
+      }
+      bucket.push(t);
+    }
     const map = new Map<string, CustomerGroupItem>();
     for (const t of list) {
       const key = customerKeyOf(t);
-      const existing = map.get(key);
-      if (!existing) {
-        const allCustomerThreads = threads.filter(other => customerKeyOf(other) === key);
-        map.set(key, { key, name: t.name, ini: t.ini, primary: t, allThreads: allCustomerThreads });
+      if (!map.has(key)) {
+        map.set(key, { key, name: t.name, ini: t.ini, primary: t, allThreads: byCustomer.get(key) ?? [t] });
       }
     }
     return Array.from(map.values());
-  }, [list, threads]);
+  }, [threads, filter]);
 
   return <div className="tl2">
     <div className="filters" aria-label="Filtrera inkorgen">{filters.map(([key, label]) =>
@@ -67,7 +74,10 @@ function CustomerThreadItem({ group, selected, onSelect, real }: {
 }) {
   const t = group.primary;
   const status = real&&t.status==='skickad'?realSentStatus(t):threadStatus(t);
-  const last = [...t.msgs].reverse().find(m => m.text);
+  let last: Thread['msgs'][number] | undefined;
+  for (let i = t.msgs.length - 1; i >= 0; i--) {
+    if (t.msgs[i]?.text) { last = t.msgs[i]; break; }
+  }
   const who = last?.from === 'kund' ? '' : last?.from === 'ai' ? 'AI: ' : 'Du: ';
   const count = group.allThreads.length;
   const hasMultiple = count > 1;

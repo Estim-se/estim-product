@@ -12,21 +12,27 @@ const bucket = () => supabase.storage.from('company-documents');
 
 // Company document library (real mode only). Files live in a private bucket under
 // <company_id>/; nothing here is used by the AI or sending yet.
-export function DocumentLibrary() {
+export function DocumentLibrary({ enabled = true }: { enabled?: boolean }) {
   const ws = useWorkspace();
   const cid = ws.data?.company?.id;
   const [list, setList] = useState<Doc[]>([]);
   const [draft, setDraft] = useState<Draft>(empty);
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const loadedForRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await docs().select('*').order('uploaded_at', { ascending: false });
     if (!r.error) setList(r.data as Doc[]);
   }, []);
-  useEffect(() => { if (cid) void load(); }, [cid, load]);
+  useEffect(() => {
+    if (!enabled || !cid || loadedForRef.current === cid) return;
+    loadedForRef.current = cid;
+    void load();
+  }, [enabled, cid, load]);
 
   const reset = () => { setDraft(empty); setEditing(null); if (fileRef.current) fileRef.current.value = ''; };
 
@@ -67,9 +73,13 @@ export function DocumentLibrary() {
   }
 
   async function open(d: Doc) {
+    if (openingId) return;
+    setOpeningId(d.id);
     const w = window.open('', '_blank');
-    const r = await bucket().createSignedUrl(d.file_path, 60);
-    if (r.data?.signedUrl && w) w.location.href = r.data.signedUrl; else { w?.close(); setMsg('Filen kunde inte öppnas.'); }
+    try {
+      const r = await bucket().createSignedUrl(d.file_path, 60);
+      if (r.data?.signedUrl && w) w.location.href = r.data.signedUrl; else { w?.close(); setMsg('Filen kunde inte öppnas.'); }
+    } finally { setOpeningId(null); }
   }
 
   const label = (t: DocType) => DOC_TYPES.find(x => x.id === t)?.label ?? t;
