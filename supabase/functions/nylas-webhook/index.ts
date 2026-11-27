@@ -264,6 +264,7 @@ async function processInbound(
     .from("messages")
     .select("id")
     .eq("company_id", companyId)
+    .eq("channel", "email")
     .eq("provider_message_id", messageId)
     .maybeSingle();
   if (dup.data) return {};
@@ -304,7 +305,11 @@ async function processInbound(
           load: () => source.download(msg.id, a.id),
         })),
       ...(senderCheckEnabled() || level >= 1
-        ? { senderCheck: senderVerdict(msg.headers, sender.email) }
+        ? {
+            // Multiple RFC 5322 From: addresses can diverge from the provider's DMARC evaluation: fail closed.
+            senderCheck:
+              msg.from.length > 1 ? "fail" : senderVerdict(msg.headers, sender.email),
+          }
         : {}),
       ...(level >= 2 ? { threadHeaders: parseThreadHeaders(msg.headers) } : {}),
     },

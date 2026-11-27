@@ -31,7 +31,7 @@ export async function unipileFetch(path: string, init: RequestInit & { timeoutMs
 /* ---------- Small validators ---------- */
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const str = (v: unknown, max: number): string | null => (typeof v === "string" ? v.slice(0, max) : null);
+const str = (v: unknown, max: number): string | null => (typeof v === "string" ? v.replace(/\0/g, "").slice(0, max) : null);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const addrs = (v: unknown, max: number): Addr[] =>
   Array.isArray(v) ? v.slice(0, max).filter(isObj).map((a) => ({ name: str(a.display_name, 200), email: (str(a.email, 320) ?? "").trim() })).filter((a) => a.email) : [];
@@ -43,13 +43,13 @@ const addrs = (v: unknown, max: number): Addr[] =>
  * Checked over the raw bytes BEFORE parsing. Old timestamps are refused so a captured request cannot be replayed later.
  */
 export async function verifyUnipileSignature(raw: Uint8Array, header: string | null, secret: string, nowSeconds = Math.floor(Date.now() / 1000), toleranceSeconds = 300): Promise<boolean> {
-  if (!header || !secret) return false;
+  if (!header || !secret || header.length > 1024) return false;
   let t = "";
   const candidates: string[] = [];
   for (const part of header.split(",")) {
     const [key, value] = part.split("=", 2).map((s) => s?.trim() ?? "");
     if (key === "t") t = value ?? "";
-    else if (key === "v0" && value) candidates.push(value.toLowerCase());
+    else if (key === "v0" && value && candidates.length < 5) candidates.push(value.toLowerCase());
   }
   if (!/^\d{9,11}$/.test(t) || Math.abs(nowSeconds - Number(t)) > toleranceSeconds) return false;
   const signed = new Uint8Array(enc.encode(`${t}.`).length + raw.length);

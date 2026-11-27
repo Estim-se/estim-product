@@ -289,14 +289,19 @@ export function decideThreadMatch(args: {
     const target = normalizeMessageId(refId);
     if (!target) continue;
 
-    // Priority 1: Message-ID that WE sent (only the customer received it).
+    // Priority 1: Message-ID that WE sent (only the customer received it). Never auto-join a spoofed (fail) sender.
     const ours = open.find(
       (c) =>
         c.from === "vv" &&
         (normalizeMessageId(c.rfcMessageId) === target ||
           normalizeMessageId(c.providerMessageId) === target),
     );
-    if (ours) return { kind: "join", threadId: ours.threadId, matchedBy: "our_message_id" };
+    if (ours) {
+      if (args.senderCheck === "fail") {
+        return { kind: "new_thread", suggestedMergeThreadId: ours.threadId };
+      }
+      return { kind: "join", threadId: ours.threadId, matchedBy: "our_message_id" };
+    }
 
     // Priority 2: Customer's own Message-ID — requires matching From: AND senderCheck !== "fail".
     if (args.senderCheck !== "fail" && from) {

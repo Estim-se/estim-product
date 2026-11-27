@@ -189,7 +189,7 @@ Deno.test(
       customerEmail: "kund@example.com",
     };
 
-    // 1. Our sent Message-ID joins even from a different alias
+    // 1. Our sent Message-ID joins even from a different alias, but never when senderCheck === "fail"
     assertEquals(
       decideThreadMatch({
         replyIds: ["sent-1@foretag.se"],
@@ -199,6 +199,16 @@ Deno.test(
         openThreadByFrom: null,
       }),
       { kind: "join", threadId: "t1", matchedBy: "our_message_id" },
+    );
+    assertEquals(
+      decideThreadMatch({
+        replyIds: ["sent-1@foretag.se"],
+        candidates: [ourReply],
+        fromEmail: "kund@example.com",
+        senderCheck: "fail",
+        openThreadByFrom: null,
+      }),
+      { kind: "new_thread", suggestedMergeThreadId: "t1" },
     );
 
     // 2. Customer's own Message-ID joins when From matches (case-insensitive) and senderCheck !== "fail"
