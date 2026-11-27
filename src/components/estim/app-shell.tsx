@@ -19,12 +19,13 @@ export function AppShell({ children, waiting, onReset }: {
   const path = useLocation().pathname;
   const workspace = useWorkspace();
   const navigate = useNavigate();
-  const unreadCount = state.threads.filter(thread => !thread.read).length;
   // App pages require a session: signed-out visitors are sent to the login page.
   useEffect(() => { if (!workspace.loading && !workspace.signedIn) void navigate({ to: '/auth', replace: true }); }, [workspace.loading, workspace.signedIn, navigate]);
   // Unread count in the tab title (flag VITE_UNREAD_TITLE, real mode only): changed only while the tab is hidden,
   // and the page's own title is restored when it becomes visible.
   const titleOn = unreadTitleEnabled(import.meta.env['VITE_UNREAD_TITLE'], workspace.mode) && workspace.signedIn;
+  // Counted only when the feature is on, so pages and tests without it never read the thread list.
+  const unreadCount = titleOn ? state.threads.filter(thread => !thread.read).length : 0;
   const unreadRef = useRef(unreadCount);
   useEffect(() => { unreadRef.current = unreadCount; }, [unreadCount]);
   useEffect(() => {
