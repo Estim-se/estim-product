@@ -1,14 +1,3 @@
--- estim Samtal staged migration 3/13 from docs/samtal/a7-durable-webhook.sql (approved for Bygg Demo AB test, 2026-11-27).
--- estim Samtal A7 hardening: durable webhook security and database-enforced provider tenancy.
--- CANDIDATE ONLY. Not a migration. Applies after priority-1-coordinated-v2.sql and a1-provider-transcript.sql and is
--- tested only in disposable local PostgreSQL (src/test/samtal-a7-hardening.test.ts).
---
--- Everything here is service-role only: RLS is enabled with no policies, and nothing is granted to anon/authenticated.
--- No raw webhook bodies are stored; events are the validated normalised form, and their content (transcript,
--- customer number, recording link) is stripped as soon as the call is ingested and deleted after a bounded retention.
-
--- 1. Providers that are wired to webhooks, with their durable limits. A provider listed here is subject to the
---    tenant-binding trigger below; the folder test adapter ('test') is never listed.
 CREATE TABLE public.samtal_webhook_providers (
   provider text PRIMARY KEY CHECK (provider ~ '^[a-z0-9_]{1,40}$' AND provider <> 'test'),
   per_minute integer NOT NULL DEFAULT 600 CHECK (per_minute BETWEEN 1 AND 100000),
@@ -17,8 +6,6 @@ CREATE TABLE public.samtal_webhook_providers (
   retention_hours integer NOT NULL DEFAULT 72 CHECK (retention_hours BETWEEN 1 AND 720),
   replay_seconds integer NOT NULL DEFAULT 900 CHECK (replay_seconds BETWEEN 60 AND 86400)
 );
-
--- 2. Trusted enrolments: one provider account per employee, created by us (never from a payload).
 CREATE TABLE public.samtal_provider_accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -31,14 +18,9 @@ CREATE TABLE public.samtal_provider_accounts (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (provider, account_ref),
   FOREIGN KEY (company_id, user_id) REFERENCES public.company_members(company_id, user_id) ON DELETE CASCADE,
-  -- The enrolled business number must be the same company's own number.
   FOREIGN KEY (company_id, number_id) REFERENCES public.samtal_numbers(company_id, id) ON DELETE CASCADE
 );
--- Numbers that never identify a tenant (e.g. the shared Ring estim number).
 CREATE TABLE public.samtal_shared_numbers (phone_e164 text PRIMARY KEY CHECK (phone_e164 ~ '^\+[1-9][0-9]{6,14}$'));
-
--- 3. Call and recording bindings: the first trusted resolution of a provider call fixes its company, employee and
---    recording. Later events can never move it.
 CREATE TABLE public.samtal_call_bindings (
   provider text NOT NULL REFERENCES public.samtal_webhook_providers(provider) ON DELETE CASCADE,
   provider_call_id text NOT NULL CHECK (length(provider_call_id) BETWEEN 1 AND 200),
@@ -52,8 +34,6 @@ CREATE TABLE public.samtal_call_bindings (
   PRIMARY KEY (provider, provider_call_id),
   UNIQUE (provider, recording_id)
 );
-
--- 4. Durable event store, replay keys, rate windows and per-call processing leases.
 CREATE TABLE public.samtal_webhook_events (
   provider text NOT NULL REFERENCES public.samtal_webhook_providers(provider) ON DELETE CASCADE,
   event_id text NOT NULL CHECK (length(event_id) BETWEEN 1 AND 200),
@@ -96,9 +76,6 @@ DO $$ DECLARE t text; BEGIN
   END LOOP;
 END $$;
 
--- 5. Database-enforced tenancy: a webhook provider's call row can only exist in the company and for the employee and
---    number its binding names. ingest_recover / ingest_transcript resolve the company from the number; if that ever
---    differs from the binding the insert fails and the whole registration rolls back.
 CREATE FUNCTION public.samtal_enforce_provider_binding() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE b samtal_call_bindings;
 BEGIN
@@ -113,8 +90,6 @@ END $$;
 CREATE TRIGGER samtal_calls_provider_binding BEFORE INSERT OR UPDATE OF company_id, user_id, number_id, provider, provider_call_id
   ON public.samtal_calls FOR EACH ROW EXECUTE FUNCTION public.samtal_enforce_provider_binding();
 
--- Resolves identity entirely from our own enrolments and binds the call (and its recording) once.
--- The customer's number is not a parameter at all.
 CREATE FUNCTION public.samtal_bind_provider_call(p_provider text, p_call text, p_direction text,
   p_account_ref text DEFAULT NULL, p_business_number text DEFAULT NULL, p_recording_id text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
@@ -160,9 +135,6 @@ BEGIN
 EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('code','recording_conflict');
 END $$;
 
--- 6. Admission: replay, durable rate limit and backpressure in one step, shared by every application instance.
---    A replay key is first 'claimed' for a short window; it becomes 'accepted' only together with the stored events,
---    so a crash between admission and storage lets the provider's identical retry through after the claim window.
 CREATE FUNCTION public.samtal_webhook_admit(p_provider text, p_replay_key text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE p samtal_webhook_providers; hits integer; pending integer; r samtal_webhook_replays; w timestamptz := date_trunc('minute', clock_timestamp());
@@ -185,7 +157,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok');
 END $$;
 
--- Stores validated normalised events (deduplicated by provider + event id) and accepts the replay key atomically.
 CREATE FUNCTION public.samtal_webhook_accept(p_provider text, p_replay_key text, p_events jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE p samtal_webhook_providers; e jsonb; stored integer := 0; dup integer := 0; k integer;
@@ -206,14 +177,11 @@ BEGIN
   RETURN jsonb_build_object('status','ok','stored',stored,'duplicates',dup);
 END $$;
 
--- Releases a claimed (not yet accepted) replay key when the delivery is answered with an error, so the provider's
--- identical retry is processed.
 CREATE FUNCTION public.samtal_webhook_release(p_provider text, p_replay_key text) RETURNS boolean
 LANGUAGE sql SECURITY DEFINER SET search_path=public AS $$
   WITH d AS (DELETE FROM samtal_webhook_replays WHERE provider = p_provider AND replay_key = p_replay_key AND state = 'claimed' RETURNING 1)
   SELECT EXISTS (SELECT 1 FROM d) $$;
 
--- 7. Processing: one lease per provider call (fencing token), crash-safe through lease expiry.
 CREATE FUNCTION public.samtal_webhook_claim(p_limit integer, p_lease_seconds integer)
 RETURNS TABLE(provider text, provider_call_id text, token uuid, events jsonb)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
@@ -240,7 +208,6 @@ BEGIN
   END LOOP;
 END $$;
 
--- The newest recording link of a bound call, only to the lease holder and only for the bound company.
 CREATE FUNCTION public.samtal_webhook_recording(p_provider text, p_call text, p_company uuid, p_token uuid) RETURNS jsonb
 LANGUAGE sql SECURITY DEFINER SET search_path=public AS $$
   SELECT e.event->'recording' FROM samtal_webhook_events e
@@ -250,11 +217,6 @@ LANGUAGE sql SECURITY DEFINER SET search_path=public AS $$
       AND e.event->'recording'->>'recording_id' = b.recording_id
     ORDER BY e.received_at DESC LIMIT 1 $$;
 
--- Finishes a lease. Only the current token can finish (a worker whose lease expired is fenced out).
---   p_outcome 'done'  : call ingested; content (transcript, customer number, link) stripped from all its events
---   p_outcome 'wait'  : not ready yet; events kept for the next fold
---   p_outcome 'reject': identity or content refused; content stripped
---   p_outcome 'retry' : transient; events back to pending with backoff, dead after max_attempts (content stripped)
 CREATE FUNCTION public.samtal_webhook_finish(p_provider text, p_call text, p_token uuid, p_outcome text, p_code text, p_retry_seconds integer DEFAULT 30) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE p samtal_webhook_providers; strip text[] := ARRAY['transcript','remote_number','recording'];
@@ -282,16 +244,13 @@ BEGIN
   RETURN true;
 END $$;
 
--- 8. Bounded retention of security metadata. Run by the existing hourly purge (separately approved wiring).
 CREATE FUNCTION public.samtal_webhook_purge() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE ev integer; rp integer; rt integer; ls integer; bd integer;
 BEGIN
-  -- Unfinished events past retention are closed and their content removed.
   DELETE FROM samtal_webhook_events WHERE purge_after <= clock_timestamp(); GET DIAGNOSTICS ev = ROW_COUNT;
   DELETE FROM samtal_webhook_replays WHERE expires_at <= clock_timestamp(); GET DIAGNOSTICS rp = ROW_COUNT;
   DELETE FROM samtal_webhook_rate WHERE window_start < clock_timestamp() - interval '1 hour'; GET DIAGNOSTICS rt = ROW_COUNT;
   DELETE FROM samtal_webhook_call_leases WHERE lease_until < clock_timestamp() - interval '1 hour'; GET DIAGNOSTICS ls = ROW_COUNT;
-  -- A binding outlives its events only while its call exists with content; it holds no customer data.
   DELETE FROM samtal_call_bindings b WHERE b.created_at < clock_timestamp() - interval '1 hour'
     AND NOT EXISTS (SELECT 1 FROM samtal_webhook_events e WHERE e.provider = b.provider AND e.provider_call_id = b.provider_call_id)
     AND NOT EXISTS (SELECT 1 FROM samtal_calls c WHERE c.provider = b.provider AND c.provider_call_id = b.provider_call_id AND c.content_deleted_at IS NULL);

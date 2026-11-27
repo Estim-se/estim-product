@@ -1068,6 +1068,64 @@ export type Database = {
           },
         ]
       }
+      samtal_call_bindings: {
+        Row: {
+          account_id: string | null
+          company_id: string
+          created_at: string
+          direction: string
+          number_id: string
+          provider: string
+          provider_call_id: string
+          recording_id: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          company_id: string
+          created_at?: string
+          direction: string
+          number_id: string
+          provider: string
+          provider_call_id: string
+          recording_id?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string | null
+          company_id?: string
+          created_at?: string
+          direction?: string
+          number_id?: string
+          provider?: string
+          provider_call_id?: string
+          recording_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_call_bindings_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_provider_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_call_bindings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_call_bindings_provider_fkey"
+            columns: ["provider"]
+            isOneToOne: false
+            referencedRelation: "samtal_webhook_providers"
+            referencedColumns: ["provider"]
+          },
+        ]
+      }
       samtal_calls: {
         Row: {
           audio_path: string | null
@@ -1450,6 +1508,71 @@ export type Database = {
           },
         ]
       }
+      samtal_provider_accounts: {
+        Row: {
+          account_ref: string
+          company_id: string
+          created_at: string
+          id: string
+          number_id: string
+          provider: string
+          revoked_at: string | null
+          user_id: string
+          verified_at: string | null
+        }
+        Insert: {
+          account_ref: string
+          company_id: string
+          created_at?: string
+          id?: string
+          number_id: string
+          provider: string
+          revoked_at?: string | null
+          user_id: string
+          verified_at?: string | null
+        }
+        Update: {
+          account_ref?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          number_id?: string
+          provider?: string
+          revoked_at?: string | null
+          user_id?: string
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_provider_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_provider_accounts_company_id_number_id_fkey"
+            columns: ["company_id", "number_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_numbers"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_provider_accounts_company_id_user_id_fkey"
+            columns: ["company_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["company_id", "user_id"]
+          },
+          {
+            foreignKeyName: "samtal_provider_accounts_provider_fkey"
+            columns: ["provider"]
+            isOneToOne: false
+            referencedRelation: "samtal_webhook_providers"
+            referencedColumns: ["provider"]
+          },
+        ]
+      }
       samtal_replay_denials: {
         Row: {
           company_id: string
@@ -1605,6 +1728,18 @@ export type Database = {
           },
         ]
       }
+      samtal_shared_numbers: {
+        Row: {
+          phone_e164: string
+        }
+        Insert: {
+          phone_e164: string
+        }
+        Update: {
+          phone_e164?: string
+        }
+        Relationships: []
+      }
       samtal_tasks: {
         Row: {
           address: string | null
@@ -1724,6 +1859,146 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      samtal_webhook_call_leases: {
+        Row: {
+          lease_until: string
+          provider: string
+          provider_call_id: string
+          token: string
+        }
+        Insert: {
+          lease_until: string
+          provider: string
+          provider_call_id: string
+          token: string
+        }
+        Update: {
+          lease_until?: string
+          provider?: string
+          provider_call_id?: string
+          token?: string
+        }
+        Relationships: []
+      }
+      samtal_webhook_events: {
+        Row: {
+          attempts: number
+          event: Json | null
+          event_id: string
+          lease_token: string | null
+          provider: string
+          provider_call_id: string
+          purge_after: string
+          received_at: string
+          result_code: string | null
+          run_after: string
+          state: string
+        }
+        Insert: {
+          attempts?: number
+          event?: Json | null
+          event_id: string
+          lease_token?: string | null
+          provider: string
+          provider_call_id: string
+          purge_after: string
+          received_at?: string
+          result_code?: string | null
+          run_after?: string
+          state?: string
+        }
+        Update: {
+          attempts?: number
+          event?: Json | null
+          event_id?: string
+          lease_token?: string | null
+          provider?: string
+          provider_call_id?: string
+          purge_after?: string
+          received_at?: string
+          result_code?: string | null
+          run_after?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_webhook_events_provider_fkey"
+            columns: ["provider"]
+            isOneToOne: false
+            referencedRelation: "samtal_webhook_providers"
+            referencedColumns: ["provider"]
+          },
+        ]
+      }
+      samtal_webhook_providers: {
+        Row: {
+          max_attempts: number
+          max_pending: number
+          per_minute: number
+          provider: string
+          replay_seconds: number
+          retention_hours: number
+        }
+        Insert: {
+          max_attempts?: number
+          max_pending?: number
+          per_minute?: number
+          provider: string
+          replay_seconds?: number
+          retention_hours?: number
+        }
+        Update: {
+          max_attempts?: number
+          max_pending?: number
+          per_minute?: number
+          provider?: string
+          replay_seconds?: number
+          retention_hours?: number
+        }
+        Relationships: []
+      }
+      samtal_webhook_rate: {
+        Row: {
+          hits: number
+          provider: string
+          window_start: string
+        }
+        Insert: {
+          hits: number
+          provider: string
+          window_start: string
+        }
+        Update: {
+          hits?: number
+          provider?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
+      samtal_webhook_replays: {
+        Row: {
+          claim_until: string
+          expires_at: string
+          provider: string
+          replay_key: string
+          state: string
+        }
+        Insert: {
+          claim_until: string
+          expires_at: string
+          provider: string
+          replay_key: string
+          state: string
+        }
+        Update: {
+          claim_until?: string
+          expires_at?: string
+          provider?: string
+          replay_key?: string
+          state?: string
+        }
+        Relationships: []
       }
       tender_calculation_matches: {
         Row: {
@@ -2590,6 +2865,17 @@ export type Database = {
         Args: { p_call: string; p_company: string; p_reason: string }
         Returns: boolean
       }
+      samtal_bind_provider_call: {
+        Args: {
+          p_account_ref?: string
+          p_business_number?: string
+          p_call: string
+          p_direction: string
+          p_provider: string
+          p_recording_id?: string
+        }
+        Returns: Json
+      }
       samtal_certify_legacy_inventory: {
         Args: { p_company: string; p_evidence: string }
         Returns: boolean
@@ -2978,6 +3264,48 @@ export type Database = {
         Returns: Json
       }
       samtal_v2_try_tenant: { Args: { p_company: string }; Returns: boolean }
+      samtal_webhook_accept: {
+        Args: { p_events: Json; p_provider: string; p_replay_key: string }
+        Returns: Json
+      }
+      samtal_webhook_admit: {
+        Args: { p_provider: string; p_replay_key: string }
+        Returns: Json
+      }
+      samtal_webhook_claim: {
+        Args: { p_lease_seconds: number; p_limit: number }
+        Returns: {
+          events: Json
+          provider: string
+          provider_call_id: string
+          token: string
+        }[]
+      }
+      samtal_webhook_finish: {
+        Args: {
+          p_call: string
+          p_code: string
+          p_outcome: string
+          p_provider: string
+          p_retry_seconds?: number
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_webhook_purge: { Args: never; Returns: Json }
+      samtal_webhook_recording: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_provider: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_webhook_release: {
+        Args: { p_provider: string; p_replay_key: string }
+        Returns: boolean
+      }
       samtal_write_stage: {
         Args: {
           p_call: string
