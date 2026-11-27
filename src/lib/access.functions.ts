@@ -54,8 +54,10 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     if (saved.error) throw new Error('Kunde inte spara händelsen.');
   }
   async function invite(cid: string, email: string, role: 'ägare' | 'användare', previousId?: string) {
-    const company = await db.from('companies').select('active').eq('id', cid).single();
+    const company = await db.from('companies').select('active,name').eq('id', cid).single();
     if (!company.data?.active) throw new Error('Företaget är avaktiverat.');
+    const inviterProfile = await db.from('profiles').select('display_name').eq('id', context.userId).maybeSingle();
+    if (inviterProfile.error) throw new Error('Kunde inte läsa inbjudarens profil.');
     const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
     const token_hash = await hashInvitation(token);
     const expires_at = new Date(Date.now() + INVITATION_DAYS * 86400000).toISOString();
@@ -63,7 +65,15 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,...(previousId?{previous_id:previousId}:{})});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
     const redirectTo = `${origin}/inbjudan?token=${token}`;
-    const sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
+    const inviterName = inviterProfile.data?.display_name.trim();
+    const companyName = company.data.name.trim();
+    const sent = await db.auth.admin.inviteUserByEmail(recipient, {
+      redirectTo,
+      data: {
+        ...(inviterName ? { inviter_name: Array.from(inviterName).slice(0, 80).join('') } : {}),
+        ...(companyName ? { company_name: Array.from(companyName).slice(0, 80).join('') } : {}),
+      },
+    });
     // Existing recipients receive a sign-in email pointing to the same bound invitation.
     if (sent.error?.code === 'email_exists' || sent.error?.message.toLowerCase().includes('already')) {
       const { createClient } = await import('@supabase/supabase-js');
