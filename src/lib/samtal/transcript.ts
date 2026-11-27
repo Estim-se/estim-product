@@ -1,7 +1,9 @@
 // estim Samtal: the transcript every speech-to-text service delivers (Berget now, local KB-Whisper in the test
 // script, others later). Browser-safe and pure.
 export type TranscriptSegment = { start: number; end: number; speaker: string | null; text: string };
-export type Transcript = { service: string; model: string; language: string; segments: TranscriptSegment[] };
+// provenance (A1, unapplied): set only for a validated provider-delivered transcript; absent means speech to text.
+export type TranscriptProvenance = { kind: 'provider'; provider: string; provider_call_id: string };
+export type Transcript = { service: string; model: string; language: string; segments: TranscriptSegment[]; provenance?: TranscriptProvenance };
 
 const MAX_SEGMENTS = 5000, MAX_TEXT = 200_000;
 const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;

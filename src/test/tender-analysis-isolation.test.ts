@@ -1,8 +1,9 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, it, expect } from 'vitest';
 import { NOT_SPECIFIED, TENDER_KEY_FIELDS } from '@/lib/tender-insights';
 
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('Tender analysis persistence and isolation', () => {
   it('reserves one document per run, saves results, skips large PDFs, records failures and resets on reanalysis', async () => {
     const url=process.env['SUPABASE_URL'] ?? '';

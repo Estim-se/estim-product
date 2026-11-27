@@ -1,5 +1,5 @@
 // estim Samtal: Swedish labels for statuses, task kinds and error codes. Browser-safe.
-export const CALL_STATUS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', klar: 'Klar', privat: 'Privat (raderad)', fel: 'Fel' };
+export const CALL_STATUS: Record<string, string> = { mottagen: 'Väntar', bearbetas: 'Bearbetas', klar: 'Klar', privat: 'Privat – raderas', fel: 'Fel' };
 export const CLASSIFICATION: Record<string, string> = { jobb: 'Jobb', privat: 'Privat', osaker: 'Osäker' };
 export const TASK_KIND: Record<string, string> = { ring_tillbaka: 'Ring tillbaka', platsbesok: 'Platsbesök', offert: 'Offert' };
 export const TASK_STATE: Record<string, string> = { forslag: 'Förslag', bekraftad: 'Bekräftad', avvisad: 'Avvisad', klar: 'Klar' };
@@ -12,6 +12,7 @@ const ERRORS: Record<string, string> = {
   audio_upload_failed: 'Inspelningen kunde inte sparas.', audio_download_failed: 'Inspelningen kunde inte hämtas.',
   stt_unreachable: 'Tal till text svarar inte.', stt_invalid_response: 'Tal till text gav ett oväntat svar.',
   ai_unreachable: 'AI:n svarar inte.', ai_invalid_output: 'AI:n gav ett ogiltigt svar.',
+  uncertain_needs_review: 'Osäkert samtal – bekräfta om det gäller jobb eller är privat.',
   inbox_failed: 'Förfrågan kunde inte skapas i inkorgen.', tasks_not_saved: 'Uppgifterna kunde inte sparas.', extraction_missing: 'Uppgifterna ur samtalet saknas.',
 };
 export function errorLabel(code: string | null | undefined) {

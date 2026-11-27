@@ -1,0 +1,155 @@
+--- /dev/null
++++ b/src/test/helpers/a10-local-db.ts
+@@ -0,0 +1,18 @@
++// A10 tests use only a disposable Unix-socket PostgreSQL created within the test network namespace.
++import { readFileSync } from 'node:fs';
++import path from 'node:path';
++import { disposableSamtalPostgres } from './samtal-postgres-local';
++const read=(file:string)=>readFileSync(path.resolve(process.cwd(),file),'utf8');
++export async function a10Database() {
++ const pg=await disposableSamtalPostgres('priority-1-coordinated-v2.sql');
++ try {
++  await pg.admin.exec('ALTER TABLE threads ADD COLUMN interpretation jsonb; ALTER TABLE audit_log ADD COLUMN "before" jsonb;');
++  const ddl=read('supabase/migrations/20261118170322_59f0ec94-a031-4a9f-9e72-2d31ee559db9.sql').match(/CREATE TABLE public\.quotes \([^;]+;/)?.[0];if(!ddl)throw new Error('quotes_schema_missing');
++  await pg.admin.exec(ddl);await pg.admin.exec('GRANT ALL ON quotes TO service_role;GRANT SELECT ON quotes TO authenticated;');
++  for(const file of ['a1-provider-transcript.sql','a7-durable-webhook.sql','a3-a4-ring-estim.sql','a5-draft-management.sql','a6-monitoring.sql','a6-integration.sql','a9-matching.sql','a9-lookup-indexes.sql'])await pg.admin.exec(read(`docs/samtal/${file}`));
++  const sql=read('supabase/migrations/20261119073634_e017b0e1-dee1-4fb4-a598-4188d621518d.sql');const start=sql.indexOf('CREATE OR REPLACE FUNCTION public.estim_quote'),end=sql.indexOf('END $function$;',start);
++  await pg.admin.exec(sql.slice(start,end+'END $function$;'.length));
++  for(const file of ['a9-quote-handoff.sql','a10-inbox-handoff.sql','a10-quote-integration.sql','a10-ring-bridge.sql'])await pg.admin.exec(read(`docs/samtal/${file}`));
++  return pg;
++ }catch(error){await pg.close();throw error;}
++}
+--- /dev/null
++++ b/src/test/samtal-a10-ai.test.ts
+@@ -0,0 +1,16 @@
++import { describe,it,expect,vi } from 'vitest';
++import { gatewayAssignmentAi } from '../lib/samtal/a10/assignment-ai.server';
++import { decideAssignment } from '../lib/samtal/a9/matching';
++import type { AssignmentAi } from '../lib/samtal/a9/orchestrate';
++const company='0000000a-0000-4000-8000-000000000000',customer='a1000000-0000-4000-8000-000000000001',thread='a1000000-0000-4000-8000-000000000002';
++const text='Köksrenovering Storgatan 12 också extra uttag';
++const input:Parameters<AssignmentAi>[0]={facts:{kind:'rostanteckning',name:'Anna',phone:null,callerPhone:null,address:'Storgatan 12',text,quoteRequested:true},segments:[{start:0,end:10,text}],assignments:[{id:thread,company_id:company,customer_id:customer,job:'Köksrenovering',address:'Storgatan 12',status:'svar',channel:'email',quotes:[],history:[]}]};
++const answer={intent:'additional_work',assignment_id:thread,quote_id:null,source:{start:0,end:10,text}};
++describe('A10 real matching adapter with injected synthetic transport only',()=>{
++ it('forces the tool and retains deterministic evidence validation',async()=>{const transport=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const sent=JSON.parse(String(init?.body));expect(sent.tool_choice).toEqual({type:'tool',name:'uppdragsval'});return Response.json({content:[{type:'tool_use',name:'uppdragsval',input:answer}]});});const raw=await gatewayAssignmentAi({key:'synthetic-test-only',fetch:transport})(input);expect(transport).toHaveBeenCalledTimes(1);expect(decideAssignment(company,customer,input.facts,input.assignments,raw,input.segments).assignment_id).toBe(thread);});
++ it('refuses oversized context before contacting the injected transport',async()=>{const transport=vi.fn();await expect(gatewayAssignmentAi({key:'synthetic-test-only',fetch:transport})({...input,segments:[{start:0,end:10,text:'x'.repeat(100000)}]})).rejects.toThrow('assignment_context_limit');expect(transport).not.toHaveBeenCalled();});
++ it('missing configuration never initializes or contacts a provider',async()=>{const transport=vi.fn();await expect(gatewayAssignmentAi({fetch:transport})(input)).rejects.toThrow('a9_not_configured');expect(transport).not.toHaveBeenCalled();});
++ it('rejects duplicate tool results',async()=>{const tool={type:'tool_use',name:'uppdragsval',input:answer};await expect(gatewayAssignmentAi({key:'synthetic-test-only',fetch:async()=>Response.json({content:[tool,tool]})})(input)).rejects.toThrow('ai_invalid_output');});
++ it('rejects overlarge responses without leaking provider text',async()=>{await expect(gatewayAssignmentAi({key:'synthetic-test-only',fetch:async()=>new Response('x'.repeat(25000))})(input)).rejects.toThrow('assignment_response_limit');});
++ it('schema-valid foreign IDs still fail deterministic authorization',async()=>{const raw=await gatewayAssignmentAi({key:'synthetic-test-only',fetch:async()=>Response.json({content:[{type:'tool_use',name:'uppdragsval',input:{...answer,assignment_id:'b1000000-0000-4000-8000-000000000003'}}]})})(input);expect(decideAssignment(company,customer,input.facts,input.assignments,raw,input.segments).state).toBe('ambiguous');});
++});
+--- /dev/null
++++ b/src/test/samtal-a10-full-schema.test.ts
+@@ -0,0 +1,26 @@
++// Complete repository schema is applied only inside disposable local PostgreSQL with network stubs.
++import {describe,it,expect} from 'vitest';
++import {readFileSync,readdirSync} from 'node:fs';
++import path from 'node:path';
++import {disposableSamtalPostgres,scalar} from './helpers/samtal-postgres-local';
++const read=(name:string)=>readFileSync(path.resolve(process.cwd(),name),'utf8');
++describe('A10 complete local schema compatibility',()=>{
++ it('applies all existing migrations and A1-A10 proposals without changing shared functions',async()=>{
++  const pg=await disposableSamtalPostgres('priority-1-coordinated-v2.sql');
++  try{
++   await pg.admin.exec('DROP SCHEMA public CASCADE;DROP SCHEMA auth CASCADE;DROP SCHEMA storage CASCADE;CREATE SCHEMA public;');
++   await pg.admin.exec(read('docs/samtal/a7-local-platform-stubs.sql'));
++   await pg.admin.exec('SET session_replication_role=replica;');
++   for(const file of readdirSync(path.resolve(process.cwd(),'supabase/migrations')).filter(f=>f.endsWith('.sql')).sort()){
++    await pg.admin.exec(read(`supabase/migrations/${file}`).replace(/^CREATE EXTENSION IF NOT EXISTS (pg_cron|pg_net)[^;]*;/gm,''));
++   }
++   await pg.admin.exec('SET session_replication_role=origin;');
++   const before=await scalar<string>(pg.admin,"SELECT md5(pg_get_functiondef('public.estim_quote(uuid,jsonb)'::regprocedure)) AS v");
++   for(const file of ['priority-1-coordinated-v2.sql','a1-provider-transcript.sql','a7-durable-webhook.sql','a3-a4-ring-estim.sql','a5-draft-management.sql','a6-monitoring.sql','a6-integration.sql','a9-matching.sql','a9-lookup-indexes.sql','a9-quote-handoff.sql','a10-inbox-handoff.sql','a10-quote-integration.sql','a10-ring-bridge.sql'])await pg.admin.exec(read(`docs/samtal/${file}`));
++   expect(await scalar<string>(pg.admin,"SELECT md5(pg_get_functiondef('public.estim_quote(uuid,jsonb)'::regprocedure)) AS v")).toBe(before);
++   expect(await scalar<boolean>(pg.admin,"SELECT has_function_privilege('authenticated','public.samtal_a10_commit_quote(uuid,uuid,integer,jsonb,uuid,text)','EXECUTE') AS v")).toBe(true);
++   expect(await scalar<boolean>(pg.admin,"SELECT has_table_privilege('authenticated','public.samtal_a10_handoffs','INSERT') AS v")).toBe(false);
++   expect(await scalar<boolean>(pg.admin,"SELECT has_table_privilege('anon','public.samtal_a10_handoffs','SELECT') AS v")).toBe(false);
++  }finally{await pg.close();}
++ },180000);
++});
+--- /dev/null
++++ b/src/test/samtal-a10-quote.test.ts
+@@ -0,0 +1,11 @@
++import {describe,it,expect} from 'vitest';
++import {catalogSuggestions,appendReviewedLines} from '../lib/samtal/a10/quote-source';
++const catalog=[{id:'moment-1',name:'Byte av uttag',unit:'st',hours_per_unit:0.8,material_per_unit_ex_vat:150,rot_eligible:true}];
++const row={description:'Byte av uttag',quantity:2,unit:'st',moment_id:'moment-1',evidence:'Två uttag'};
++describe('A10 existing catalog quotation rules',()=>{
++ it('reuses catalog arithmetic without invented pricing',()=>{expect(catalogSuggestions([row],catalog,{hourly_rate_ex_vat:650,travel_fee:0}).lines).toEqual([{t:'Byte av uttag',typ:'arbete',q:1.6,u:'h',p:650,rot:true},{t:'Byte av uttag · material',typ:'material',q:2,u:'st',p:150,rot:false}]);});
++ it('missing quantity stays outside priced suggestions',()=>{const r=catalogSuggestions([{...row,quantity:null}],catalog,{hourly_rate_ex_vat:650,travel_fee:0});expect(r.lines).toEqual([]);expect(r.unresolved).toHaveLength(1);expect(r.unresolved[0]?.quantity).toBeNull();});
++ it('unknown catalog IDs never become zero-price rows',()=>{const r=catalogSuggestions([{...row,moment_id:'unknown'}],catalog,{hourly_rate_ex_vat:650,travel_fee:0});expect(r.lines).toEqual([]);expect(r.unresolved).toHaveLength(1);});
++ it('additional work preserves existing quotation lines',()=>expect(appendReviewedLines([{t:'Existing',q:3}],[{t:'Additional',q:2}],'additional_work')).toEqual([{t:'Existing',q:3},{t:'Additional',q:2}]));
++ it('a quotation change cannot use implicit append/replacement',()=>expect(()=>appendReviewedLines([],[],'quote_change')).toThrow('explicit_full_revision_required'));
++});
+--- /dev/null
++++ b/src/test/samtal-a10-review.test.tsx
+@@ -0,0 +1,18 @@
++import type {ComponentProps} from "react";
++import {describe,it,expect,vi} from 'vitest';
++import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
++import {afterEach} from 'vitest';
++vi.mock('../components/estim/workspace-provider',()=>({useWorkspace:()=>({})}));
++vi.mock('../components/estim/store-provider',()=>({useEstim:()=>({})}));
++vi.mock('../lib/samtal/a10/review.functions',()=>({getSamtalA10Review:vi.fn(),completeSamtalA10Handoff:vi.fn(),saveSamtalA10Quote:vi.fn()}));
++vi.mock('../lib/samtal/a9/a9.functions',()=>({loadSamtalAssignmentOptions:vi.fn()}));
++import {SamtalA10QuoteReview} from '../components/estim/samtal-a10-review';
++type Save=ComponentProps<typeof SamtalA10QuoteReview>['save'];
++const call={call:'a1000000-0000-4000-8000-000000000011',version:1,state:'resolved',customer_id:'a1000000-0000-4000-8000-000000000012',assignment_id:'a1000000-0000-4000-8000-000000000013',quote_requested:true,intent:'additional_work',title:'Extra uttag',rows:[{description:'Två uttag',quantity:null,unit:null,moment_id:null,evidence:'Två uttag'}]};
++const catalog=[{id:'moment-1',name:'Byte av uttag',unit:'st',hours_per_unit:0.8,material_per_unit_ex_vat:150,rot_eligible:true}];
++afterEach(cleanup);
++describe('A10 synthetic human quotation review flow',()=>{
++ it('requires explicit quantity and catalog selection before any save',()=>{const save=vi.fn();render(<SamtalA10QuoteReview call={call} catalog={catalog} company={{hourly_rate_ex_vat:650,travel_fee:0}} existing={null} save={save}/>);fireEvent.click(screen.getByRole('button',{name:'Beräkna från prislistan'}));expect(save).not.toHaveBeenCalled();});
++ it('saves existing-engine prices only after the human reviews the generated draft',async()=>{const save=vi.fn<Save>(async()=>{});render(<SamtalA10QuoteReview call={call} catalog={catalog} company={{hourly_rate_ex_vat:650,travel_fee:0}} existing={null} save={save}/>);fireEvent.change(screen.getByLabelText('Prislistemoment 1'),{target:{value:'moment-1'}});fireEvent.change(screen.getByLabelText('Antal 1'),{target:{value:'2'}});fireEvent.click(screen.getByRole('button',{name:'Beräkna från prislistan'}));expect(save).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Spara offertutkast'}));await waitFor(()=>expect(save).toHaveBeenCalledTimes(1));expect(save.mock.calls[0]?.[0]).toMatchObject({lines:[{q:1.6,p:650},{q:2,p:150}]});expect(save.mock.calls[0]?.[1]).toBe('append');});
++ it('additional work does not add another travel charge when the quote already has one',async()=>{const save=vi.fn<Save>(async()=>{});render(<SamtalA10QuoteReview call={call} catalog={catalog} company={{hourly_rate_ex_vat:650,travel_fee:500}} existing={{nr:'1001',owners:2,addOn:true,prisform:'fast',lines:[{t:'Framkörning',typ:'resa',q:1,u:'st',p:500,rot:false}]}} save={save}/>);fireEvent.change(screen.getByLabelText('Prislistemoment 1'),{target:{value:'moment-1'}});fireEvent.change(screen.getByLabelText('Antal 1'),{target:{value:'2'}});fireEvent.click(screen.getByRole('button',{name:'Beräkna från prislistan'}));fireEvent.click(screen.getByRole('button',{name:'Spara offertutkast'}));await waitFor(()=>expect(save).toHaveBeenCalledTimes(1));const payload=save.mock.calls[0]?.[0] as {lines:{typ:string}[];owners:number}|undefined;expect(payload?.lines.some(l=>l.typ==='resa')).toBe(false);expect(payload?.owners).toBe(2);});
++});
+--- /dev/null
++++ b/src/test/samtal-a10-sql.test.ts
+@@ -0,0 +1,48 @@
++import {beforeAll,afterAll,beforeEach,describe,it,expect} from 'vitest';
++import {randomUUID} from 'node:crypto';
++import {a10Database} from './helpers/a10-local-db';
++import {scalar,LOCAL_A as A,LOCAL_B as B,LOCAL_OWNER as owner,LOCAL_STAFF as staff,LOCAL_OTHER as other,type LocalSession} from './helpers/samtal-postgres-local';
++const customer='a1000000-0000-4000-8000-000000000011',thread='a1000000-0000-4000-8000-000000000012';
++type Result={status:string;thread_id?:string;customer_id?:string;quote_id?:string;repeat?:boolean};
++const line={t:'Extra uttag',typ:'arbete',q:1.6,u:'h',p:650,rot:true};
++describe('A10 proposed SQL: actual local transactions only',()=>{
++ let pg:Awaited<ReturnType<typeof a10Database>>,x:LocalSession,y:LocalSession,auth:LocalSession;let call:string,job:string,token:string;
++ const count=(table:string)=>scalar<string>(pg.admin,`SELECT count(*)::text AS v FROM ${table}`).then(Number);
++ const rpc=(db:LocalSession,sql:string,p:unknown[])=>scalar<Result>(db,`SELECT ${sql} AS v`,p);
++ const handoff=(db=x,over:Partial<{company:string;actor:string|null;customer:string|null;assignment:string|null;create:boolean;identity:unknown;version:number}>={})=>rpc(db,'samtal_a10_handoff($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[call,over.company??A,over.version??1,call,'customer'in over?over.customer:customer,'assignment'in over?over.assignment:thread,over.create??false,over.identity??null,'Köksrenovering','actor'in over?over.actor:null,job,token]);
++ beforeAll(async()=>{pg=await a10Database();x=await pg.connect('service_role');y=await pg.connect('service_role');auth=await pg.connect();await auth.exec(`SET ROLE authenticated;SET request.jwt.claim.sub='${staff}'`);},180000);
++ afterAll(async()=>{await pg?.close();});
++ beforeEach(async()=>{
++  await pg.admin.exec('TRUNCATE samtal_calls,threads,customers,quotes,audit_log CASCADE;');
++  await pg.admin.query("INSERT INTO customers(id,company_id,name,address,phone) VALUES($1,$2,'Anna Andersson','Storgatan 12','0701234567')",[customer,A]);
++  await pg.admin.query("INSERT INTO threads(id,company_id,customer_id,job,place,channel) VALUES($1,$2,$3,'Köksrenovering','Storgatan 12','email')",[thread,A,customer]);
++  call=randomUUID();job=randomUUID();token=randomUUID();
++  await pg.admin.query(`INSERT INTO samtal_calls(id,company_id,user_id,provider,provider_call_id,caller_phone,started_at,delete_after,classification,transcript,extraction,safety_version) VALUES($1::uuid,$2,$3,'synthetic',($1::uuid)::text,'+46701234567',now(),clock_timestamp()+interval '30 days','jobb','{"segments":[{"start":0,"end":10,"text":"Extra uttag köksrenovering"}]}','{"interpretation":{"fields":{"description":{"value":"Extra uttag köksrenovering"}}}}',2)`,[call,A,staff]);
++  await pg.admin.query("INSERT INTO samtal_jobs(id,company_id,call_id,state,step,lease_token,lease_until) VALUES($1,$2,$3,'running','inkorg',$4,clock_timestamp()+interval '15 minutes')",[job,A,call,token]);
++  await pg.admin.query("INSERT INTO samtal_a9_matches(company_id,call_id,customer_candidates,assignment_candidates,customer_id,assignment_id,state,quote_requested,version) VALUES($1,$2,ARRAY[$3::uuid],ARRAY[$4::uuid],$3,$4,'resolved',true,1)",[A,call,customer,thread]);
++ });
++ it('automatic exact-ID handoff retains the email assignment and creates no shared AI job',async()=>{const r=await handoff();expect(r.status).toBe('ok');expect(r.customer_id).toBe(customer);expect(r.thread_id).toBe(thread);expect(await count('customers')).toBe(1);expect(await count('threads')).toBe(1);expect(await count('messages')).toBe(1);expect(await count('ai_jobs')).toBe(0);expect(await scalar<string>(pg.admin,'SELECT channel AS v FROM threads WHERE id=$1',[thread])).toBe('email');});
++ it('handoff never resets the existing human-edited reply draft',async()=>{await pg.admin.query("INSERT INTO drafts(company_id,thread_id,text,edited) VALUES($1,$2,'Human edited reply',true)",[A,thread]);await handoff();expect(await scalar<string>(pg.admin,'SELECT text AS v FROM drafts WHERE thread_id=$1',[thread])).toBe('Human edited reply');});
++ it('concurrent repeated handoffs create one message and one receipt',async()=>{const r=await Promise.all([handoff(x,{actor:staff}),handoff(y,{actor:staff})]);expect(r.every(v=>v.status==='ok')).toBe(true);expect(await count('messages')).toBe(1);expect(await count('samtal_a10_handoffs')).toBe(1);});
++ it('a foreign company cannot write using another company lease',async()=>{expect((await handoff(x,{company:B})).status).toBe('not_found');expect(await count('messages')).toBe(0);});
++ it('a foreign employee cannot confirm a call',async()=>{expect((await handoff(x,{actor:other})).status).toBe('not_found');expect(await count('messages')).toBe(0);});
++ it('stale human choices do not create a request',async()=>{expect((await handoff(x,{actor:staff,version:2})).status).toBe('stale');expect(await count('messages')).toBe(0);});
++ it('ambiguous matching cannot automatically create a new identity',async()=>{await pg.admin.query("UPDATE samtal_a9_matches SET state='pending' WHERE call_id=$1",[call]);expect((await handoff(x,{create:true,customer:null,assignment:null,identity:{name:'New Person',address:'New Road 1',phone:null}})).status).toBe('review_required');expect(await count('customers')).toBe(1);});
++ it('explicit new customer confirmation creates one customer and assignment',async()=>{const r=await handoff(x,{actor:staff,create:true,customer:null,assignment:null,identity:{name:'New Person',address:'New Road 1',phone:null}});expect(r.status).toBe('ok');expect(await count('customers')).toBe(2);expect(await count('threads')).toBe(2);expect(await count('messages')).toBe(1);});
++ it('confirming an existing exact identity and work reuses both IDs',async()=>{const r=await handoff(x,{actor:staff,create:true,customer:null,assignment:null,identity:{name:'Anna Andersson',address:'Storgatan 12',phone:'0701234567'}});expect(r.customer_id).toBe(customer);expect(r.thread_id).toBe(thread);expect(await count('customers')).toBe(1);expect(await count('threads')).toBe(1);});
++ it('shared-phone identity conflicts create no customer',async()=>{expect((await handoff(x,{actor:staff,create:true,customer:null,assignment:null,identity:{name:'Another Person',address:'Another Road',phone:'0701234567'}})).status).toBe('customer_conflict');expect(await count('customers')).toBe(1);});
++ it('new identity confirmation preserves source quotation readiness and finishes its paused job',async()=>{await pg.admin.query("UPDATE samtal_jobs SET state='paused',lease_token=NULL,lease_until=NULL WHERE id=$1",[job]);await pg.admin.query("UPDATE samtal_calls SET extraction=jsonb_set(extraction,'{interpretation,quote_ready}','true') WHERE id=$1",[call]);await pg.admin.query("UPDATE samtal_a9_matches SET state='pending',quote_requested=false WHERE call_id=$1",[call]);expect((await handoff(x,{actor:staff,create:true,customer:null,assignment:null,identity:{name:'New Person',address:'New Road 1',phone:null}})).status).toBe('ok');expect(await scalar<boolean>(pg.admin,'SELECT quote_requested AS v FROM samtal_a9_matches WHERE call_id=$1',[call])).toBe(true);expect(await scalar<string>(pg.admin,'SELECT state AS v FROM samtal_jobs WHERE id=$1',[job])).toBe('done');});
++ it('private/deleted calls cannot create an Inbox record',async()=>{await pg.admin.query("UPDATE samtal_calls SET classification='privat' WHERE id=$1",[call]);expect((await handoff()).status).toBe('not_found');expect(await count('messages')).toBe(0);});
++ const quote=(expected:string|null,mode='append',lines:unknown[]=[line])=>rpc(auth,'samtal_a10_commit_quote($1,$2,$3,$4,$5,$6)',[call,A,1,lines,expected,mode]);
++ it('human-reviewed quote uses existing numbering and remains an unsent draft',async()=>{const r=await quote(null);expect(r.status).toBe('ok');expect(await scalar<string>(pg.admin,'SELECT nr AS v FROM quotes LIMIT 1')).toBe('1001');expect(await scalar<string>(pg.admin,'SELECT status AS v FROM quotes LIMIT 1')).toBe('utkast');expect(await count('messages')).toBe(0);expect(await count('ai_jobs')).toBe(0);expect((await quote(null)).quote_id).toBe(r.quote_id);expect(await count('quotes')).toBe(1);});
++ it('additional work appends without removing old quotation lines or owner settings',async()=>{await pg.admin.exec(`SET request.jwt.claim.sub='${owner}'`);await rpc(pg.admin,'estim_quote($1,$2)',[thread,{nr:'pending',owners:2,addOn:true,prisform:'fast',lines:[{...line,t:'Existing work',q:3}]}]);const old=await scalar<string>(pg.admin,'SELECT id::text AS v FROM quotes ORDER BY version DESC LIMIT 1');expect((await quote(old)).status).toBe('ok');expect(await scalar<unknown[]>(pg.admin,'SELECT lines AS v FROM quotes ORDER BY version DESC LIMIT 1')).toEqual([{...line,t:'Existing work',q:3},line]);expect(await scalar<number>(pg.admin,'SELECT owners AS v FROM quotes ORDER BY version DESC LIMIT 1')).toBe(2);expect(await count('quotes')).toBe(2);});
++ it('missing quantities/prices cannot become a quote',async()=>{expect((await quote(null,'append',[{...line,q:null,p:null}])).status).toBe('incomplete_quote');expect(await count('quotes')).toBe(0);});
++ it('stale quotation snapshots cannot overwrite an intervening version',async()=>{await pg.admin.exec(`SET request.jwt.claim.sub='${owner}'`);await rpc(pg.admin,'estim_quote($1,$2)',[thread,{nr:'pending',owners:1,addOn:false,prisform:'ungefar',lines:[line]}]);expect((await quote(null)).status).toBe('quote_changed');expect(await count('quotes')).toBe(1);});
++ async function approvedDraft(){const id=randomUUID();await pg.admin.query("INSERT INTO samtal_ring_drafts(id,company_id,call_id,user_id,kind,title,body,customer_id,state,version) VALUES($1,$2,$3,$4,'offertutkast','Extra uttag','{\"rows\":[{\"item\":\"Uttag\",\"quantity\":2,\"unit\":\"st\"}]}',$5,'godkand',1)",[id,A,call,staff,customer]);return id;}
++ it('approved legacy Ring draft stages into the actual quote review and finishes its existing A6 receipt',async()=>{const draft=await approvedDraft();expect((await rpc(x,'samtal_a10_stage_ring_draft($1,$2,$3,$4)',[owner,A,draft,1])).status).toBe('ok');const r=await quote(null);expect(r.status).toBe('ok');expect(await scalar<string>(pg.admin,'SELECT state AS v FROM samtal_ring_handoffs WHERE draft_id=$1',[draft])).toBe('overlamnad');expect(await scalar<string>(pg.admin,'SELECT quote_ref AS v FROM samtal_ring_handoffs WHERE draft_id=$1',[draft])).toBe(r.quote_id);expect(await count('quotes')).toBe(1);});
++ it('legacy draft edits after staging cannot create a stale quotation',async()=>{const draft=await approvedDraft();await rpc(x,'samtal_a10_stage_ring_draft($1,$2,$3,$4)',[owner,A,draft,1]);await pg.admin.query('UPDATE samtal_ring_drafts SET version=version+1 WHERE id=$1',[draft]);expect((await quote(null)).status).toBe('draft_changed');expect(await count('quotes')).toBe(0);});
++ it('legacy transfer retains the existing owner-only approval rule',async()=>{const draft=await approvedDraft();expect((await rpc(x,'samtal_a10_stage_ring_draft($1,$2,$3,$4)',[staff,A,draft,1])).status).toBe('not_found');expect(await count('samtal_ring_handoffs')).toBe(0);});
++ it('terminal privacy cleanup redacts the exact copied message while retaining restricted provenance',async()=>{await handoff(x,{actor:staff});await pg.admin.query("UPDATE samtal_calls SET classification='privat' WHERE id=$1",[call]);expect(await scalar<string>(pg.admin,'SELECT text AS v FROM messages LIMIT 1')).toBe('[Raderat samtalsunderlag]');expect(await scalar<boolean>(pg.admin,'SELECT content_removed AS v FROM samtal_a10_handoffs LIMIT 1')).toBe(true);});
++ it('staging a legacy handoff after the call already has a quote reconciles the original receipt',async()=>{const saved=await quote(null);const draft=await approvedDraft();expect((await rpc(x,'samtal_a10_stage_ring_draft($1,$2,$3,$4)',[owner,A,draft,1])).status).toBe('ok');expect(await scalar<string>(pg.admin,'SELECT state AS v FROM samtal_ring_handoffs WHERE draft_id=$1',[draft])).toBe('overlamnad');expect(await scalar<string>(pg.admin,'SELECT quote_ref AS v FROM samtal_ring_handoffs WHERE draft_id=$1',[draft])).toBe(saved.quote_id);expect(await count('quotes')).toBe(1);});
++ it('receipt metadata is hidden from another company through actual RLS',async()=>{await handoff(x,{actor:staff});expect((await auth.query('SELECT call_id FROM samtal_a10_handoffs')).rows).toHaveLength(1);await auth.exec(`SET request.jwt.claim.sub='${other}'`);expect((await auth.query('SELECT call_id FROM samtal_a10_handoffs')).rows).toHaveLength(0);await auth.exec(`SET request.jwt.claim.sub='${staff}'`);});
++});

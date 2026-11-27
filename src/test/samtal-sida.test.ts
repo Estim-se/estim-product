@@ -37,14 +37,17 @@ describe('loading the page', () => {
       ? { data: [{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', audio_path: `${A}/${CALL}.mp3`,
         extraction: { interpretation: { fields: { job_type: { value: 'laddbox' }, description: { value: 'Ny laddbox' } } } }, transcript: { segments: [{ text: 'hemligt' }] } }] }
       : table === 'samtal_calls' ? { count: 2 } : { data: [] }, owner);
-    const admin = fake(table => table === 'company_members' ? { data: [{ user_id: 'u1', role: 'användare' }] } : { data: [{ id: 'u1', display_name: 'Ali' }] });
+    const admin = fake(table => table === 'company_members' ? { data: [{ user_id: 'u1', role: 'användare' }] } : table === 'profiles' ? { data: [{ id: 'u1', display_name: 'Ali' }] } : { data: [] });
     const page = await loadSamtalPage(user.client, admin.client, 'u0', { stt: false, ai: true });
-    expect(page.calls).toEqual([{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true }]);
+    expect(page.calls).toEqual([{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true, needs_review: false }]);
     expect(JSON.stringify(page)).not.toContain('hemligt');
     expect(page.members).toEqual([{ user_id: 'u1', role: 'användare', name: 'Ali' }]);
-    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles']);
+    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles', 'samtal_reviews']);
     expect(has(admin.log.queries[0]!.ops, 'eq', 'company_id', A)).toBe(true);
     expect(has(admin.log.queries[1]!.ops, 'in', 'id', ['u1'])).toBe(true);
+    // Pending reviews are read for the own company and only for calls the user's client already returned.
+    const reviews = admin.log.queries[2]!.ops;
+    expect(has(reviews, 'eq', 'company_id', A) && has(reviews, 'eq', 'decision', 'pending') && has(reviews, 'in', 'call_id', [CALL])).toBe(true);
     expect(page).toMatchObject({ owner: true, waiting: 2, keys: { stt: false, ai: true } });
   });
   it('a user without an active company gets nothing', async () => {
@@ -85,20 +88,29 @@ describe('settings and numbers: owners only, through RLS', () => {
 });
 
 describe('audio, tasks and restarting: the user\'s client must see the call first', () => {
+  const PATH = `${A}/${CALL}.mp3`;
   it('no signed link for a call the user\'s client cannot see (another company, or a colleague\'s call for an employee)', async () => {
-    const admin = fake(() => ({}));
-    await expect(samtalAudioLink(fake(() => ({ data: null })).client, admin.client, CALL)).rejects.toThrow('Inspelningen finns inte.');
+    const admin = fake(() => ({}), { samtal_audio_access_guarded: PATH });
+    await expect(samtalAudioLink(fake(() => ({ data: null }), employee).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
+    await expect(samtalAudioLink(fake(() => ({ data: { company_id: B, audio_path: `${B}/x.mp3` } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
     expect(admin.log.signed).toEqual([]);
+    expect(admin.log.rpc).toEqual([]);
   });
   it('no signed link for a path outside the call\'s company folder', async () => {
-    const admin = fake(() => ({}));
-    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${B}/x.mp3` } })).client, admin.client, CALL)).rejects.toThrow('Inspelningen finns inte.');
+    const admin = fake(() => ({}), { samtal_audio_access_guarded: `${B}/x.mp3` });
+    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${B}/x.mp3` } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
     expect(admin.log.signed).toEqual([]);
   });
-  it('a visible call gets a link valid for 60 seconds', async () => {
-    const admin = fake(() => ({}));
-    expect(await samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: `${A}/${CALL}.mp3` } })).client, admin.client, CALL)).toEqual({ url: `https://signed/${A}/${CALL}.mp3`, expires_in: 60 });
-    expect(admin.log.signed).toEqual([{ path: `${A}/${CALL}.mp3`, seconds: 60 }]);
+  it('a deleted, private or expired call (guard returns no path) is never signed', async () => {
+    const admin = fake(() => ({}), { samtal_audio_access_guarded: null });
+    await expect(samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: PATH } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Inspelningen finns inte.');
+    expect(admin.log.signed).toEqual([]);
+  });
+  it('a visible call gets a link valid for 60 seconds, checked by the guard before and after signing with the verified actor', async () => {
+    const admin = fake(() => ({}), { samtal_audio_access_guarded: PATH });
+    expect(await samtalAudioLink(fake(() => ({ data: { company_id: A, audio_path: PATH } }), employee).client, admin.client, CALL, 'u0')).toEqual({ url: `https://signed/${PATH}`, expires_in: 60 });
+    expect(admin.log.signed).toEqual([{ path: PATH, seconds: 60 }]);
+    expect(admin.log.rpc).toEqual([1, 2].map(() => ({ name: 'samtal_audio_access_guarded', args: { p_call: CALL, p_company: A, p_actor: 'u0' } })));
   });
   it('tasks are decided by the database function with the user\'s own rights', async () => {
     const user = fake(() => ({}), { samtal_decide_task: { state: 'bekraftad' } });
@@ -106,17 +118,18 @@ describe('audio, tasks and restarting: the user\'s client must see the call firs
     expect(user.log.rpc).toEqual([{ name: 'samtal_decide_task', args: { p_task: 't1', p_decision: 'bekraftad' } }]);
     await expect(decideSamtalTask(fake(() => ({})).client, { id: 't-b', decision: 'avvisad' })).rejects.toThrow('kunde inte ändras');
   });
-  it('only an owner restarts a call, only one their client sees in their company, only a waiting or failed job', async () => {
-    const admin = fake((_t, ops) => has(ops, 'select', 'id') ? { data: [{ id: 'j1' }] } : {});
-    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), employee).client, admin.client, CALL)).rejects.toThrow('Bara ägaren');
-    await expect(startSamtalCall(fake(() => ({ data: null }), owner).client, admin.client, CALL)).rejects.toThrow('Samtalet finns inte.');
-    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: B } }), owner).client, admin.client, CALL)).rejects.toThrow('Samtalet finns inte.');
+  it('only an owner restarts a call, only one their client sees in their company, and only through the guarded function', async () => {
+    const admin = fake(() => ({}), { samtal_restart_guarded: true });
+    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), employee).client, admin.client, CALL, 'u0')).rejects.toThrow('Bara ägaren');
+    await expect(startSamtalCall(fake(() => ({ data: null }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Samtalet finns inte.');
+    await expect(startSamtalCall(fake(() => ({ data: { id: CALL, company_id: B } }), owner).client, admin.client, CALL, 'u0')).rejects.toThrow('Samtalet finns inte.');
+    expect(admin.log.rpc).toEqual([]);
+    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, admin.client, CALL, 'u0')).toEqual({ started: true });
+    expect(admin.log.rpc).toEqual([{ name: 'samtal_restart_guarded', args: { p_call: CALL, p_company: A, p_actor: 'u0' } }]);
+    // No direct job or call writes: the guard decides whether the job is waiting, failed, private or unreviewed.
     expect(admin.log.queries).toEqual([]);
-    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, admin.client, CALL)).toEqual({ started: true });
-    const job = admin.log.queries[0]!;
-    expect(job.table).toBe('samtal_jobs');
-    expect(has(job.ops, 'eq', 'company_id', A) && has(job.ops, 'eq', 'call_id', CALL) && has(job.ops, 'in', 'state', ['paused', 'failed'])).toBe(true);
-    expect(has(admin.log.queries[1]!.ops, 'eq', 'company_id', A)).toBe(true);
+    const refused = fake(() => ({}), { samtal_restart_guarded: false });
+    expect(await startSamtalCall(fake(() => ({ data: { id: CALL, company_id: A } }), owner).client, refused.client, CALL, 'u0')).toEqual({ started: false });
   });
 });
 

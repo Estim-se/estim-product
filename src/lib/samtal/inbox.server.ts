@@ -8,11 +8,15 @@
 //
 // The inbox message is a structured summary of the call (fields and uncertain points), never the full transcript:
 // the transcript and the audio stay in samtal_calls and are deleted with the company's retention.
+// Priority 1 V2 (unapplied patch): the handoff is one lease-fenced database transaction (samtal_inbox_guarded). It
+// runs the same estim_receive, saves the thread link and the tasks, and records the existing AI job in Samtal's own
+// dispatch outbox. The outbox is drained separately (drainSamtalDispatch) through the existing dispatchAiJob; a failed
+// start is retried by the outbox, and Samtal never rewrites shared AI jobs, drafts or threads. Replies to the customer
+// still need human approval in the inbox.
 // Every write is bound to the call's company. Calling estim_receive twice for the same call is harmless: the message
 // id samtal:<call id> is a duplicate the second time, and the existing thread is looked up instead.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/integrations/supabase/types';
-import type { CustomerMatch } from './customer-match';
+import type { Database } from '@/lib/samtal/db-types';
 import type { Interpretation } from './interpretation';
 import type { InboxStep } from './process.server';
 
@@ -58,50 +62,36 @@ export function suggestedTasks(i: Interpretation) {
   return steps.slice(0, 5);
 }
 
-export function samtalInboxStep(dispatch: (jobId: string) => Promise<void>): InboxStep {
-  return async ({ db, call, interpretation: i, match }) => {
+export function samtalInboxStep(): InboxStep {
+  return async ({ db, call, interpretation: i, match, lease }) => {
     const company = call.company_id;
     const meta = await db.from('samtal_calls').select('started_at, duration_seconds').eq('id', call.id).eq('company_id', company).maybeSingle();
     if (meta.error || !meta.data) throw Object.assign(new Error('call_read_failed'), { retryable: true });
-    // The existing customer is found by estim_receive on its stored phone; a new one gets the call's details.
-    const phone = await customerPhone(db, company, match) ?? i.fields.customer_phone?.value ?? call.caller_phone;
-    const saved = await db.rpc('estim_receive', { cid: company, payload: {
-      channel: 'samtal', provider_message_id: `samtal:${call.id}`, sent_at: meta.data.started_at,
-      customer_phone: phone, customer_name: i.fields.customer_name?.value ?? null, address: i.fields.address?.value ?? null, place: i.fields.place?.value ?? null,
-      job: requestTitle(i), text: requestSummary(i, meta.data),
-    } });
+    const saved = await db.rpc('samtal_inbox_guarded', { p_call: call.id, p_company: company, p_job: lease.job, p_token: lease.token,
+      p_extraction: { interpretation: i, customer_match: match }, p_title: requestTitle(i), p_summary: requestSummary(i, meta.data), p_tasks: suggestedTasks(i) });
     if (saved.error) throw Object.assign(new Error('inbox_failed'), { retryable: true });
-    const result = saved.data as { id?: string; job_id?: string; duplicate?: boolean };
-    let threadId = result.id ?? null;
-    if (!threadId) {
-      const existing = await db.from('messages').select('thread_id').eq('company_id', company).eq('channel', 'samtal').eq('provider_message_id', `samtal:${call.id}`).maybeSingle();
-      threadId = existing.data?.thread_id ?? null;
-    }
-    if (!threadId) throw Object.assign(new Error('inbox_thread_missing'), { retryable: true });
-    const thread = await db.from('threads').select('customer_id').eq('id', threadId).eq('company_id', company).maybeSingle();
-    await db.from('samtal_calls').update({ thread_id: threadId, customer_id: thread.data?.customer_id ?? null }).eq('id', call.id).eq('company_id', company);
-    // Tasks once per call, assigned to the employee who took it.
-    const existing = await db.from('samtal_tasks').select('id', { count: 'exact', head: true }).eq('company_id', company).eq('call_id', call.id);
-    if (!existing.error && !existing.count) {
-      const added = await db.from('samtal_tasks').insert(suggestedTasks(i).map(t => ({ ...t, company_id: company, call_id: call.id, user_id: call.user_id })));
-      if (added.error) throw Object.assign(new Error('tasks_not_saved'), { retryable: true });
-    }
-    // The existing AI job: interpretation, quote draft from the catalog and the reply draft. As for other channels,
-    // a failed start leaves the request for manual handling.
-    if (result.job_id) {
-      try { await dispatch(result.job_id); }
-      catch {
-        await db.from('ai_jobs').update({ state: 'failed' }).eq('id', result.job_id).eq('company_id', company);
-        await db.from('drafts').update({ text: '', warnings: ['AI kunde inte svara just nu'], needs_review: true }).eq('thread_id', threadId).eq('company_id', company);
-        await db.from('threads').update({ status: 'svar' }).eq('id', threadId).eq('company_id', company);
-      }
-    }
+    return (saved.data as { accepted?: boolean } | null)?.accepted === true;
   };
 }
 
-// The stored phone of the matched existing customer, so estim_receive finds that customer and not a new one.
-async function customerPhone(db: Db, company: string, match: CustomerMatch) {
-  if (match.kind !== 'befintlig') return null;
-  const c = await db.from('customers').select('phone').eq('id', match.customer_id).eq('company_id', company).maybeSingle();
-  return c.data?.phone?.trim() || null;
+// Starts the existing AI job for committed handoffs, from Samtal's own leased outbox. Only the outbox row is retried;
+// a shared job that is already running or failed is observed and parked for attention, never reset or recreated.
+export async function drainSamtalDispatch(db: Db, dispatch: (jobId: string) => Promise<void>, limit = 10) {
+  const claimed = await db.rpc('samtal_claim_dispatch', { p_limit: limit, p_lease_seconds: 60 });
+  if (claimed.error) throw new Error('dispatch_claim_failed');
+  let started = 0, retried = 0;
+  for (const o of claimed.data ?? []) {
+    // A7 type validation: token and job are nullable columns; a row without them is not dispatchable.
+    if (!o.token || !o.job_id) continue;
+    const live = await db.rpc('samtal_dispatch_live', { p_outbox: o.id, p_company: o.company_id, p_token: o.token });
+    if (live.error || live.data !== true) continue;
+    let accepted = false;
+    try { await dispatch(o.job_id); accepted = true; } catch { /* The outbox keeps the row and retries it later. */ }
+    const done = await db.rpc('samtal_finish_dispatch', { p_outbox: o.id, p_company: o.company_id, p_token: o.token, p_accepted: accepted, p_retry_seconds: 60 });
+    if (!done.error && done.data === true && accepted) started++; else retried++;
+  }
+  // Started jobs are observed until done; a shared job running too long is parked for attention, never reset.
+  const watched = await db.from('samtal_dispatch_outbox').select('company_id').eq('state', 'accepted').limit(50);
+  for (const company of new Set((watched.data ?? []).map(r => r.company_id))) await db.rpc('samtal_observe_dispatch', { p_company: company, p_limit: 50 });
+  return { claimed: (claimed.data ?? []).length, started, retried };
 }

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { processJob } from '@/lib/samtal/process.server';
 import { purgeDueCalls } from '@/lib/samtal/purge.server';
-import type { Database, Json } from '@/integrations/supabase/types';
+import type { Database, Json } from '@/lib/samtal/db-types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Transcript } from '@/lib/samtal/transcript';
 import { defineSamtalSafetyTests } from './helpers/samtal-safety-db';
@@ -23,34 +23,33 @@ const privateAnswer = {
   uncertain: [], next_steps: [],
 };
 
-function cleanupDb(options: { persistence?: 'error' | 'none' | 'throw'; remove?: 'error' | 'throw' } = {}) {
-  const row: Record<string, unknown> = { id: callId, company_id: company, user_id: null, audio_path: path, caller_phone: null, transcript: transcript as unknown as Json, extraction: null };
-  const updates: Record<string, unknown>[] = [];
-  const releases: Record<string, unknown>[] = [];
-  const removal = vi.fn(async () => {
-    if (options.remove === 'throw') throw new Error('synthetic sensitive recording text');
-    return { error: options.remove === 'error' ? { message: 'synthetic sensitive recording text' } : null };
-  });
+// V2: private content is removed by the lease-fenced samtal_commit_private in one transaction; the worker never deletes
+// files itself, and the recording goes to the urgent cleanup queue. The fake records every RPC and refuses direct writes.
+function cleanupDb(options: { commit?: 'error' | 'false' | 'throw' } = {}) {
+  const rpcs: { name: string; args: Record<string, unknown> }[] = [];
+  const removal = vi.fn(async () => ({ error: null }));
+  const writes: string[] = [];
+  const row = { id: callId, company_id: company, user_id: null, audio_path: path, caller_phone: null, transcript: transcript as unknown as Json, extraction: null };
   const db = {
     storage: { from: () => ({ remove: removal }) },
-    rpc: async (_name: string, args: Record<string, unknown>) => { releases.push(args); return { data: true, error: null }; },
-    from: () => {
-      const read = { select: () => read, eq: () => read, maybeSingle: async () => ({ data: { ...row }, error: null }) };
-      return { ...read, update: (values: Record<string, unknown>) => {
-        updates.push(values);
-        const result = () => {
-          if (options.persistence === 'throw') throw new Error('synthetic sensitive database text');
-          const error = options.persistence === 'error' ? { message: 'synthetic sensitive database text' } : null;
-          if (!error && options.persistence !== 'none') Object.assign(row, values);
-          return { error, data: error || options.persistence === 'none' ? null : { id: callId } };
-        };
-        const write = { eq: () => write, select: () => write, maybeSingle: async () => result(), then: (resolve: (value: unknown) => void) => resolve(result()) };
-        return write;
-      } };
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      rpcs.push({ name, args });
+      if (name === 'samtal_commit_private') {
+        if (options.commit === 'throw') throw new Error('synthetic sensitive database text');
+        if (options.commit === 'error') return { data: null, error: { message: 'synthetic sensitive database text' } };
+        if (options.commit === 'false') return { data: false, error: null };
+      }
+      return { data: true, error: null };
+    },
+    from: (table: string) => {
+      const read = { select: () => read, eq: () => read, maybeSingle: async () => ({ data: { ...row }, error: null }),
+        update: () => { writes.push(`update ${table}`); throw new Error('no_direct_write'); } };
+      return read;
     },
   };
-  return { db: db as unknown as SupabaseClient<Database>, row, updates, releases, removal };
+  return { db: db as unknown as SupabaseClient<Database>, rpcs, removal, writes };
 }
+const named = (f: { rpcs: { name: string; args: Record<string, unknown> }[] }, name: string) => f.rpcs.filter(r => r.name === name).map(r => r.args);
 
 async function runPrivate(f: ReturnType<typeof cleanupDb>) {
   return processJob(f.db, { stt: { id: 'synthetic', transcribe: async () => transcript }, ai: { id: 'synthetic', interpret: async () => privateAnswer } }, job);
@@ -59,86 +58,79 @@ async function runPrivate(f: ReturnType<typeof cleanupDb>) {
 describe('Samtal private cleanup result handling', () => {
   afterEach(() => vi.restoreAllMocks());
   it('does not complete the job when private content persistence returns an error', async () => {
-    const f = cleanupDb({ persistence: 'error' });
+    const f = cleanupDb({ commit: 'error' });
     expect(await runPrivate(f)).toBe('retry');
-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'queued', p_step: 'tolka', p_error: 'private_cleanup_not_saved', p_retry_seconds: 60 })]);
-    expect(f.row['transcript']).toEqual(transcript);
+    expect(named(f, 'samtal_retry_guarded')).toEqual([expect.objectContaining({ p_error: 'private_cleanup_not_saved', p_retry_seconds: 60 })]);
+    expect(named(f, 'samtal_release_job')).toEqual([]);
   });
-  it('requires a returned call row instead of accepting a no-row cleanup write', async () => {
-    const f = cleanupDb({ persistence: 'none' });
-    expect(await runPrivate(f)).toBe('retry');
-    expect(f.releases.some(r => r['p_state'] === 'done')).toBe(false);
+  it('a refused private commit (lost lease, already deleted) is not reported as done', async () => {
+    const f = cleanupDb({ commit: 'false' });
+    expect(await runPrivate(f)).toBe('stopped');
+    expect(named(f, 'samtal_release_job').some(r => r['p_state'] === 'done')).toBe(false);
   });
   it('uses a structural retry code when private cleanup persistence rejects', async () => {
-    const f = cleanupDb({ persistence: 'throw' });
+    const f = cleanupDb({ commit: 'throw' });
     expect(await runPrivate(f)).toBe('retry');
-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'queued', p_error: 'private_cleanup_not_saved' })]);
+    const [retry] = named(f, 'samtal_retry_guarded');
+    expect(retry).toMatchObject({ p_call: callId, p_company: company });
+    expect(String(retry!['p_error'])).toMatch(/^[a-z0-9_]+$/);
+    expect(JSON.stringify(f.rpcs)).not.toContain('sensitive');
   });
-  it('clears text and keeps the audio reference due when storage deletion rejects', async () => {
-    const f = cleanupDb({ remove: 'throw' });
-    expect(await runPrivate(f)).toBe('privat');
-    expect(f.row['transcript']).toBeNull();
-    expect(f.row['extraction']).toBeNull();
-    expect(f.row['audio_path']).toBe(path);
-    expect(Date.parse(String(f.row['delete_after']))).toBeLessThanOrEqual(Date.now());
-    expect(f.row).not.toHaveProperty('content_deleted_at');
-  });
-  it('keeps failed audio removal eligible for purge when storage returns an error', async () => {
-    const f = cleanupDb({ remove: 'error' });
-    expect(await runPrivate(f)).toBe('privat');
-    expect(f.row['audio_path']).toBe(path);
-    expect(f.row['transcript']).toBeNull();
-    expect(f.row).not.toHaveProperty('content_deleted_at');
-  });
-  it('confirms successful deletion using the existing schema', async () => {
+  it('commits the private call through the fenced function and leaves the recording to the cleanup queue', async () => {
     const f = cleanupDb();
     expect(await runPrivate(f)).toBe('privat');
-    expect(f.row['audio_path']).toBeNull();
-    expect(f.row['transcript']).toBeNull();
-    expect(f.row['content_deleted_at']).toEqual(expect.any(String));
-    expect(f.releases).toEqual([expect.objectContaining({ p_state: 'done' })]);
+    expect(named(f, 'samtal_commit_private')).toEqual([{ p_call: callId, p_company: company, p_job: job.id, p_token: job.lease_token }]);
+    expect(f.removal).not.toHaveBeenCalled();
+    expect(f.writes).toEqual([]);
+    // Nothing from the private call was saved before the commit.
+    expect(named(f, 'samtal_write_stage')).toEqual([]);
   });
 });
 
-function purgeDb(failure: 'storage_throw' | 'mark_throw' | 'mark_error' | 'mark_false' | 'none') {
+function purgeDb(failure: 'storage_throw' | 'storage_error' | 'finish_throw' | 'finish_error' | 'finish_false' | 'none') {
   const pending = new Set(['first', 'second']);
   const attempts: string[] = [];
   let fail = failure !== 'none';
   const db = {
     storage: { from: () => ({ remove: async (paths: string[]) => {
-      if (fail && failure === 'storage_throw' && paths[0] === `${company}/first.mp3`) { fail = false; throw new Error('synthetic sensitive storage text'); }
+      if (fail && paths[0] === `${company}/first.mp3`) {
+        if (failure === 'storage_throw') { fail = false; throw new Error('synthetic sensitive storage text'); }
+        if (failure === 'storage_error') { fail = false; return { error: { message: 'synthetic sensitive storage text' } }; }
+      }
       return { error: null };
     } }) },
     rpc: async (name: string, args: Record<string, unknown>) => {
-      if (name === 'samtal_due_for_deletion') return { data: [...pending].map(id => ({ call_id: id, company_id: company, audio_path: `${company}/${id}.mp3` })), error: null };
-      const id = String(args['p_call']); attempts.push(id);
+      if (name === 'samtal_claim_cleanup_class') return { data: args['p_queue'] === 'urgent' ? [...pending].map(id => ({ id, company_id: company, audio_path: `${company}/${id}.mp3`, cleanup_token: `t-${id}` })) : [], error: null };
+      const id = String(args['p_audio']); attempts.push(id);
       if (fail && id === 'first') {
         fail = false;
-        if (failure === 'mark_throw') throw new Error('synthetic sensitive database text');
-        if (failure === 'mark_error') return { data: null, error: { message: 'synthetic sensitive database text' } };
-        if (failure === 'mark_false') return { data: false, error: null };
+        if (failure === 'finish_throw') throw new Error('synthetic sensitive database text');
+        if (failure === 'finish_error') return { data: null, error: { message: 'synthetic sensitive database text' } };
+        if (failure === 'finish_false') return { data: false, error: null };
       }
-      pending.delete(id); return { data: true, error: null };
+      if (args['p_removed'] === true) pending.delete(id);
+      return { data: true, error: null };
     },
+    from: () => { const q = { select: () => q, eq: () => q, limit: async () => ({ data: [], error: null }) }; return q; },
   };
   return { db: db as unknown as SupabaseClient<Database>, pending, attempts };
 }
 
 describe('Samtal purge per-call recovery', () => {
   afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
-  it.each(['storage_throw', 'mark_throw', 'mark_error', 'mark_false'] as const)('keeps %s retryable and continues with the next call', async failure => {
+  it.each(['storage_throw', 'storage_error', 'finish_throw', 'finish_error', 'finish_false'] as const)('keeps %s pending and continues with the next call', async failure => {
     const f = purgeDb(failure);
     const logger = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await purgeDueCalls(f.db)).toEqual({ due: 2, deleted: 1, kept: 1 });
+    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 2, removed: 1, pending: 1, erased: 0 });
     expect([...f.pending]).toEqual(['first']);
-    expect(await purgeDueCalls(f.db)).toEqual({ due: 1, deleted: 1, kept: 0 });
+    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 1, removed: 1, pending: 0, erased: 0 });
     expect(f.pending.size).toBe(0);
     expect(logger).not.toHaveBeenCalled();
   });
   it.each(['', '0', '1'])('retention still runs with test-process SAMTAL=%s', async flag => {
     vi.stubEnv('SAMTAL', flag);
     const f = purgeDb('none');
-    expect(await purgeDueCalls(f.db)).toEqual({ due: 2, deleted: 2, kept: 0 });
+    expect(await purgeDueCalls(f.db)).toEqual({ claimed: 2, removed: 2, pending: 0, erased: 0 });
   });
 });
 
