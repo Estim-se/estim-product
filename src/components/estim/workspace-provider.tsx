@@ -10,7 +10,7 @@ import { parseMutation } from '@/lib/real.schemas';
 import { WorkspaceContext } from './workspace-context';
 import { interpretRequest, writeReply } from '@/lib/ai-client';
 import { sendMessage } from '@/lib/channel.functions';
-import { createRealtimeRefreshScheduler, shouldSubscribeToRealtime } from '@/lib/realtime-refresh';
+import { createRealtimeRefreshScheduler, pollIntervalMs, REALTIME_TABLES, realtimeLiveAfter, shouldSubscribeToRealtime } from '@/lib/realtime-refresh';
 export { useWorkspace } from './workspace-context';
 
 export function WorkspaceProvider({children}:{children:ReactNode}) {
@@ -59,13 +59,21 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   },[realStore]);
   const companyId=data?.company?.id;
   const realtimeFlag=import.meta.env['VITE_INBOX_REALTIME'];
-  const realtimeEnabled=realtimeFlag==='true';
+  // Realtime only slows polling once the channel reports SUBSCRIBED; until then, and after any channel error,
+  // polling runs exactly as on main.
+  const [realtimeLive,setRealtimeLive]=useState(false);
+  // One workspace read at a time: an event during a read reruns once afterwards, so an older snapshot never wins.
+  const reading=useRef<Promise<unknown>|null>(null),readAgain=useRef(false);
+  function serialRefresh():Promise<unknown>{
+    if(reading.current){readAgain.current=true;return reading.current;}
+    const run=refresh().catch(()=>{}).finally(()=>{reading.current=null;if(readAgain.current){readAgain.current=false;void serialRefresh();}});
+    reading.current=run;return run;
+  }
   useEffect(()=>{
     if(!shouldSubscribeToRealtime(realtimeFlag,mode,signedIn,companyId))return;
-    const scheduler=createRealtimeRefreshScheduler(()=>{void refresh().catch(()=>{});});
+    const scheduler=createRealtimeRefreshScheduler(()=>{void serialRefresh();});
     const channel=supabase.channel(`workspace:${companyId}`);
-    const tables=['threads','messages','drafts','ai_jobs','customers','quotes','moments','audit_log','companies'] as const;
-    for(const table of tables){
+    for(const table of REALTIME_TABLES){
       channel.on('postgres_changes',{
         event:'*',
         schema:'public',
@@ -75,8 +83,9 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
         scheduler.schedule();
       });
     }
-    void channel.subscribe();
+    channel.subscribe(status=>{setRealtimeLive(live=>realtimeLiveAfter(live,status));});
     return()=>{
+      setRealtimeLive(false);
       scheduler.cancel();
       void supabase.removeChannel(channel);
     };
@@ -85,13 +94,12 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
   const analysing=useSyncAnalysing(realStore);
   useEffect(()=>{
     if(mode!=='real'||!signedIn)return;
-    let inFlight=false;
-    const poll=()=>{if((realtimeEnabled&&document.visibilityState==='hidden')||inFlight)return;inFlight=true;void refresh().catch(()=>{}).finally(()=>{inFlight=false;});};
-    const timer=setInterval(poll,realtimeEnabled?(analysing?5000:30000):(analysing?4000:10000));
+    const poll=()=>{if((realtimeLive&&document.visibilityState==='hidden')||reading.current)return;void serialRefresh();};
+    const timer=setInterval(poll,pollIntervalMs(realtimeLive,analysing));
     const onVisibility=()=>{if(document.visibilityState==='visible')poll();};
-    if(realtimeEnabled)document.addEventListener('visibilitychange',onVisibility);
-    return()=>{clearInterval(timer);if(realtimeEnabled)document.removeEventListener('visibilitychange',onVisibility);};
-  },[mode,analysing,signedIn,realtimeEnabled]);
+    if(realtimeLive)document.addEventListener('visibilitychange',onVisibility);
+    return()=>{clearInterval(timer);if(realtimeLive)document.removeEventListener('visibilitychange',onVisibility);};
+  },[mode,analysing,signedIn,realtimeLive]);
   async function signOut(){identityEpoch.current++;await queryClient.cancelQueries();queryClient.clear();await supabase.auth.signOut();realStore.clear();setData(null);setSignedIn(false);setMode('demo');await navigate({to:'/auth',replace:true});}
   return <WorkspaceContext.Provider value={{mode,setMode,signedIn,loading,error,data,realStore,refresh,mutate,signOut}}>{children}</WorkspaceContext.Provider>;
 }
