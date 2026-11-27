@@ -165,6 +165,11 @@ Deno.test("what gets ignored before the AI sees it", () => {
   assert(isNoReplySender("no-reply@bank.se"));
   assert(isNoReplySender("wordpress@site.se"));
   assertFalse(isNoReplySender("anna@site.se"));
+  // Level 0 keeps the original list; form builders and mailer@ count as no-reply only from level 1.
+  assertFalse(isNoReplySender("webform@site.se"));
+  assertFalse(isNoReplySender("mailer@kund.se", 0));
+  assert(isNoReplySender("webform@site.se", 1));
+  assert(isNoReplySender("contact_form@site.se", 2));
   assertEquals(
     shouldSkip(msg({ headers: [{ name: "List-Unsubscribe", value: "<mailto:x@y.se>" }] }), own),
     "mailing_list",

@@ -92,3 +92,19 @@ Deno.test("sender check: compauth=fail and any dmarc=fail win over a dmarc pass"
   assertEquals(senderVerdict([ar("mx; dmarc=fail header.from=kund.se; dmarc=pass header.from=kund.se")], "info@kund.se"), "fail");
   assertEquals(senderVerdict([ar("mx; dmarc=bestguesspass action=none header.from=kund.se; compauth=pass reason=109")], "info@kund.se"), "pass");
 });
+
+Deno.test("sender check: truncated 16 KB header fails closed even when an earlier spf/dkim passed", () => {
+  const padded = `mx.google.com; spf=pass smtp.mailfrom=kund.se; ${"a".repeat(AUTH_RESULTS_VALUE_LIMIT)}`.slice(
+    0,
+    AUTH_RESULTS_VALUE_LIMIT,
+  );
+  assertEquals(padded.length, AUTH_RESULTS_VALUE_LIMIT);
+  assertEquals(senderVerdict([ar(padded)], "info@kund.se"), "fail");
+});
+
+Deno.test("sender check: a From domain that is not a host never aligns and fails closed", () => {
+  const fail = "mx.example.com; dmarc=fail header.from=kund.se; spf=pass smtp.mailfrom=kund.se";
+  assertEquals(senderVerdict([ar(fail)], "ceo@kund.se/x"), "fail");
+  assertEquals(senderVerdict([ar(GMAIL)], "a@example.com/x"), "fail");
+  assertEquals(senderVerdict([ar(GMAIL)], "a@ex%61mple.com"), "fail");
+});
