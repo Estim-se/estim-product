@@ -37,6 +37,28 @@ use the editor.
 - After every merge: run the tender tests locally (totals unchanged) and all WhatsApp and email tests.
 - Tests run the same in every terminal: `vitest.config.ts` normalises a lower-case Windows drive letter, so `vi.mock` applies; never trust a local result where mocks did not apply.
 
+## CI and accepted tests
+
+- `.github/workflows/ci.yml` is the source of truth for required checks. Its default test run is the full `vitest run`,
+  launched through `scripts/ci/isolated-tests-run.py` in a sanitized copy with verified network isolation and no app
+  credentials. The canonical command is `python3 scripts/ci/isolated-tests-run.py node_modules/.bin/vitest run`;
+  running `vitest run` directly is not valid CI evidence. Never bypass the launcher or claim isolation by setting
+  environment variables alone.
+- `vitest.config.ts` automatically includes `src/**/*.{test,spec}.{ts,tsx}` and `scripts/ci/**/*.test.ts`. Any test
+  matching those patterns is part of required CI and must pass on every pull request.
+- Accepted in the default suite: deterministic tests of committed behavior, using pure functions, fakes, synthetic
+  data, or existing disposable local-service helpers. Tests must not depend on production/preview databases, real
+  provider calls, customer data, secrets, or external network access.
+- Do not put tests for proposed, unapplied, or otherwise unimplemented behavior in the default Vitest patterns. Keep
+  exploratory/proposal tests outside auto-discovery or in an explicitly opt-in harness; get the user's approval before
+  creating that harness. Do not silently skip failing tests to make CI green.
+- A test requiring a new service, binary, network access, secret, special permission, or separate workflow needs the
+  user's explicit approval before it is created. Include the approved setup, execution, isolation, and cleanup in
+  `.github/workflows/ci.yml` and document the exact local command in the same change; do not rely on an undocumented
+  developer machine setup.
+- Changes to test discovery, the isolation launcher, CI test commands, or test dependencies must update this policy
+  and the relevant CI workflow/tests together.
+
 ## Pull requests and the review gate
 
 - Every pull request targets `main`, so the gate reviews it; don't stack pull requests on other branches. Independent
