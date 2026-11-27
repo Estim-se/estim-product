@@ -171,5 +171,5 @@
 - [x] Only then set SAMTAL_A9=1 and SAMTAL_A10=1 (SAMTAL_DISPATCH stays unset)
 - [ ] (blocked: no signed-in browser session on external Supabase; user tests) End-to-end test with Daniel: pasted call -> Inkorg -> Offertutkast
 
-- [ ] Samtal i Inkorg: unconfirmed calls in the normal list, confirmation inside the selected conversation, remove separate section, tasks shown in conversation, transcript accessible.
+- [x] Samtal i Inkorg (signed-in browser check unavailable): unconfirmed calls in the normal list, confirmation inside the selected conversation, remove separate section, tasks shown in conversation, transcript accessible.
 - [x] Samtal tasks/reminders DB fix, due day + time-of-day words, dismiss duplicate calls.

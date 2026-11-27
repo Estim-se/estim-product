@@ -40,9 +40,14 @@ describe('the request built from a call', () => {
   });
   it('tasks: the suggested steps, always a call-back, and a quote task when a quote can be drafted', () => {
     expect(suggestedTasks(interpretation)).toEqual([
-      { kind: 'ring_tillbaka', title: 'Ring tillbaka', due_at: null, address: null },
-      { kind: 'platsbesok', title: 'Platsbesök laddbox', due_at: '2026-12-01T09:00:00.000Z', address: 'Storgatan 5, Solna' },
-      { kind: 'offert', title: 'Skapa offert', due_at: null, address: null }]);
+      { kind: 'ring_tillbaka', title: 'Ring tillbaka', due_at: null, due_date: null, due_hint: null, address: null },
+      { kind: 'platsbesok', title: 'Platsbesök laddbox', due_at: '2026-12-01T09:00:00.000Z', due_date: '2026-12-01', due_hint: null, address: 'Storgatan 5, Solna' },
+      { kind: 'offert', title: 'Skapa offert', due_at: null, due_date: null, due_hint: null, address: null }]);
+  });
+  it('"måndag förmiddag" keeps the day and the words; no exact time is invented', () => {
+    const step = { ...interpretation.next_steps[0]!, kind: 'ring_tillbaka' as const, title: 'Ring kunden', date: '2026-11-30', time: null, time_hint: 'förmiddag' };
+    const [task] = suggestedTasks({ ...interpretation, next_steps: [step] });
+    expect(task).toMatchObject({ kind: 'ring_tillbaka', due_at: null, due_date: '2026-11-30', due_hint: 'förmiddag' });
   });
 });
 
