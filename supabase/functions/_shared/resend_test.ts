@@ -234,7 +234,11 @@ Deno.test("notifyDraftReady (Resend): notifies sole proprietor even without emai
   const html = String(sent[0]!.html);
   assert(html.includes("Kalles El &lt;AB&gt;"), "company name must be HTML-escaped");
   assert(!html.includes("Hej kund!"), "must never include draft/customer text");
-  assert(html.includes("https://app.estim.se"), "must include app link");
+  assertEquals(
+    [...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1]),
+    ["https://app.estim.se"],
+    "must link to app origin",
+  );
 });
 
 Deno.test("notifyConnectionLost: off by default, notifies owners only, respects cooldown", async () => {
@@ -309,7 +313,12 @@ Deno.test("notifyConnectionLost: off by default, notifies owners only, respects 
   assertEquals(sent.length, 2);
   assertEquals(sent[0]!.to, ["agare@elfirma.se"]);
   assertEquals(sent[0]!.subject, "E-postkopplingen i estim behöver förnyas");
-  assert(String(sent[0]!.html).includes("https://app.estim.se/kanaler"));
+  assertEquals(
+    [...String(sent[0]!.html).matchAll(/href="([^"]*)"/g)].map((match) =>
+      match[1]
+    ),
+    ["https://app.estim.se/kanaler"],
+  );
   assert(String(sent[0]!.html).includes("info@elfirma.se"));
 });
 
