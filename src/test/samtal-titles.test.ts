@@ -26,3 +26,17 @@ describe('samtal assignment titles', () => {
     expect(() => parseHandoff({ call: 'x' })).toThrow(/^[^{\[]*$/);
   });
 });
+
+import { decideCustomer } from '@/lib/samtal/a9/matching';
+describe('samtal customer recognition without phone', () => {
+  const co = '00000000-0000-4000-8000-0000000000aa';
+  const cust = { id: '00000000-0000-4000-8000-0000000000bb', company_id: co, name: 'Anna Berg', phone: null, address: 'Lindvägen 5, Ort' };
+  it('matches a unique name and street address even when the town was stored with it', () => {
+    const d = decideCustomer(co, { kind: 'telefonsamtal', name: 'Anna Berg', phone: null, callerPhone: null, address: 'Lindvägen 5', text: '', quoteRequested: false }, [cust]);
+    expect(d.state).toBe('matched');
+  });
+  it('still asks when the street differs', () => {
+    const d = decideCustomer(co, { kind: 'telefonsamtal', name: 'Anna Berg', phone: null, callerPhone: null, address: 'Lindvägen 7', text: '', quoteRequested: false }, [cust]);
+    expect(d.state).toBe('ambiguous');
+  });
+});

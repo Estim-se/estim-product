@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { normalisePhone } from '../call';
 export const MAX_CANDIDATES = 20;
 export const normalText = (s: string | null | undefined) => (s ?? '').normalize('NFC').toLocaleLowerCase('sv').replace(/[^\p{L}\d]+/gu, ' ').trim();
+// Same address when equal, or when one is the other with the town appended ("Tallvägen 32" vs "Tallvägen 32, Borås").
+export const sameAddress = (a: string | null | undefined, b: string | null | undefined) => {
+  const x = normalText(a), y = normalText(b);
+  return !!x && !!y && (x === y || x.startsWith(`${y} `) || y.startsWith(`${x} `));
+};
 export type Facts = { kind: 'telefonsamtal' | 'rostanteckning'; name: string | null; phone: string | null; callerPhone: string | null; address: string | null; text: string; quoteRequested: boolean };
 export type Customer = { id: string; company_id: string; name: string; phone: string | null; address: string | null };
 export type Assignment = { id: string; company_id: string; customer_id: string; job: string; address: string | null; status: string; channel: string; quotes: { id: string; nr: string; version: number; lines: unknown }[]; history: { id: string; channel: string | null; text: string }[] };
@@ -12,8 +17,8 @@ export function decideCustomer(company: string, f: Facts, candidates: Customer[]
   const phones = [...new Set([f.kind === 'telefonsamtal' ? f.callerPhone : null, f.phone].map(normalisePhone).filter((p): p is string => p !== null))];
   const name = normalText(f.name), address = normalText(f.address);
   const byPhone = candidates.filter(c => { const p = normalisePhone(c.phone); return p !== null && phones.includes(p); });
-  const byBoth = candidates.filter(c => name && address && normalText(c.name) === name && normalText(c.address) === address);
-  const relevant = candidates.filter(c => byPhone.includes(c) || byBoth.includes(c) || name && normalText(c.name) === name || address && normalText(c.address) === address);
+  const byBoth = candidates.filter(c => name && address && normalText(c.name) === name && sameAddress(c.address, f.address));
+  const relevant = candidates.filter(c => byPhone.includes(c) || byBoth.includes(c) || name && normalText(c.name) === name || address && sameAddress(c.address, f.address));
   const ambiguous = (reason: string): CustomerDecision => ({ state: 'ambiguous', customer_id: null, alternatives: relevant.map(c => c.id), reason });
   if (truncated) return ambiguous('candidate_limit');
   // A unique number is not sufficient when spoken identity conflicts with it. Shared numbers never pick the oldest.

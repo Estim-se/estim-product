@@ -38,7 +38,24 @@ export async function continueAfterHandoff(db:SupabaseClient<Database>,company:s
   if(i&&Array.isArray(i.next_steps)){
     const has=await any.from('samtal_tasks').select('id',{count:'exact',head:true}).eq('company_id',company).eq('call_id',call);
     if(!has.error&&(has.count??0)===0){
-      const tasks=suggestedTasks(i).map(t=>({company_id:company,call_id:call,user_id:c.data?.user_id??null,kind:t.kind,title:t.title,due_at:t.due_at,due_date:t.due_date,due_hint:t.due_hint,address:t.address}));
+      const all=suggestedTasks(i).map(t=>({company_id:company,call_id:call,user_id:c.data?.user_id??null,kind:t.kind,title:t.title,due_at:t.due_at,due_date:t.due_date,due_hint:t.due_hint,address:t.address}));
+      // A follow-up call on an existing assignment must not duplicate its open tasks: an open callback or site visit
+      // already on the assignment is kept, and a new quote deadline moves the existing open quote task.
+      const others=await any.from('samtal_calls').select('id').eq('company_id',company).eq('thread_id',thread).neq('id',call);
+      const ids=(others.data??[]).map((r:{id:string})=>r.id);
+      const open=ids.length?((await any.from('samtal_tasks').select('id,kind,due_date,due_at,due_hint').eq('company_id',company).in('call_id',ids).neq('state','klar')).data??[]) as {id:string;kind:string;due_date:string|null;due_at:string|null;due_hint:string|null}[]:[];
+      const tasks=[] as typeof all;
+      for(const t of all){
+        const same=open.filter(o=>o.kind===t.kind);
+        if(t.kind==='offert'&&same[0]){if(t.due_date||t.due_at){const u=await any.from('samtal_tasks').update({due_date:t.due_date,due_at:t.due_at,due_hint:t.due_hint}).eq('id',same[0].id).eq('company_id',company);if(u.error)console.error('samtal_continue_task_update_failed',u.error.code);}continue;}
+        if(t.kind==='ring_tillbaka'&&same.length&&!t.due_date)continue;
+        const visit=t.kind==='platsbesok'?open.find(o=>o.kind==='platsbesok'&&(o.due_date??null)===(t.due_date??null)):undefined;
+        // The same visit is kept once; what the new call adds to it is appended to the visit's title.
+        if(visit){const cur=await any.from('samtal_tasks').select('title').eq('id',visit.id).eq('company_id',company).maybeSingle();const old=(cur.data?.title as string|undefined)??'';
+          if(old&&!old.toLowerCase().includes(t.title.toLowerCase())){const u=await any.from('samtal_tasks').update({title:shortTitle(`${old} · ${t.title}`,200)}).eq('id',visit.id).eq('company_id',company);if(u.error)console.error('samtal_continue_task_update_failed',u.error.code);}
+          continue;}
+        tasks.push(t);
+      }
       // The server saves tasks once per call; a refusal is logged and the inbox flow continues.
       if(tasks.length){const w=await any.from('samtal_tasks').insert(tasks);if(w.error)console.error('samtal_continue_tasks_failed',w.error.code);}
     }
