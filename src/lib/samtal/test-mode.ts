@@ -24,3 +24,10 @@ export function transcriptSegments(text: string) {
     return { start: i * 6, end: i * 6 + 6, speaker: m ? m[1]!.trim() : null, text: m ? m[2]!.trim() : line };
   });
 }
+
+// Sending protection: a thread in the test company that holds any Samtal message is never delivered externally,
+// whatever its channel (WhatsApp, email). The approval is still saved; only the external send is skipped.
+export const SAMTAL_TEST_SEND_BLOCKED = 'Testläge: godkänt och sparat, men inget skickades till kunden.';
+export function samtalTestSendBlocked(companyId: string, threadHasSamtalMessage: boolean): boolean {
+  return companyId === SAMTAL_TEST_COMPANY_ID && threadHasSamtalMessage;
+}
