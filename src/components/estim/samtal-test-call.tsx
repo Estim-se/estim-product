@@ -28,7 +28,7 @@ export function SamtalTestCall() {
     try {
       const r = await submit({ data: { number_id: selected, customer_phone: phone, transcript: text } });
       const p = r.processed[0];
-      setStatus(r.status !== 'registered' ? `Samtalet togs inte emot (${r.status}).` : p ? RESULT[p] ?? `Resultat: ${p}` : 'Samtalet väntar på bearbetning.');
+      setStatus(r.status !== 'registered' ? `Samtalet togs inte emot (${r.status}).` : p ? RESULT[p] ?? "Samtalet är mottaget men kunde inte bearbetas helt. Se listan Samtal nedan." : 'Samtalet väntar på bearbetning.');
       setNeedsMatch(p === 'matching_needs_review');
       await queryClient.invalidateQueries();
     } catch (e) { setStatus(e instanceof Error ? e.message : 'Något gick fel.'); }
