@@ -46,6 +46,23 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys: 
     : { data: [], error: null };
   if (reviews.error) throw new SamtalPageError('Samtal kunde inte läsas.');
   const pending = new Set((reviews.data ?? []).map(r => r.call_id));
+  // Processing state for the list label only: job state and open A9 confirmation, bounded to visible calls.
+  const [jobs, matches] = visible.length ? await Promise.all([
+    admin.from('samtal_jobs').select('call_id, state, attempts').eq('company_id', companyId).in('call_id', visible),
+    admin.from('samtal_a9_matches').select('call_id, state, customer_id').eq('company_id', companyId).eq('state', 'pending').in('call_id', visible),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const job = new Map((jobs.data ?? []).map(j => [j.call_id, j]));
+  const match = new Map((matches.data ?? []).map(m => [m.call_id, m]));
+  const progress = (id: string, status: string): string => {
+    const m = match.get(id);
+    if (m) return m.customer_id ? 'uppdrag' : 'kund';
+    const j = job.get(id);
+    if (j?.state === 'failed' || status === 'fel') return 'misslyckad';
+    if (j?.state === 'queued' && j.attempts > 0) return 'retry';
+    if (j?.state === 'running') return 'bearbetas';
+    if (j?.state === 'done' || status === 'klar') return 'klar';
+    return status;
+  };
   const monitor = owner ? await loadSamtalMonitor(admin, userId, companyId) : null;
   return {
     owner, userId, monitor,
@@ -58,7 +75,7 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys: 
       const i = (c.extraction as { interpretation?: Interpretation } | null)?.interpretation;
       return { id: c.id, user_id: c.user_id, caller_phone: c.caller_phone, started_at: c.started_at, duration_seconds: c.duration_seconds, status: c.status,
         classification: c.classification, error_code: c.error_code, thread_id: c.thread_id, title: i && !pending.has(c.id) ? requestTitle(i) : null, has_audio: !!c.audio_path && c.status !== 'privat',
-        needs_review: pending.has(c.id), kind: c.kind };
+        needs_review: pending.has(c.id), kind: c.kind, progress: progress(c.id, c.status) };
     }),
     tasks: tasks.data ?? [],
   };

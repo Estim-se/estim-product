@@ -10,7 +10,7 @@ import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraft
 import { CALL_KIND } from '@/lib/samtal/ring/labels';
 import { SamtalRingSection } from './samtal-ring';
 import { SamtalTestCall } from './samtal-test-call';
-import { CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
+import { CALL_PROGRESS, CALL_STATUS, CLASSIFICATION, errorLabel, RETENTION_CHOICES, TASK_KIND, TASK_STATE } from '@/lib/samtal/labels';
 import { Icon } from './icon';
 import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
@@ -146,7 +146,8 @@ export function SamtalPage() {
       {d.calls.filter(c => kind === 'alla' || c.kind === kind).map(c => <div key={c.id} className="mt12">
         <div className="row between">
           <span><b>{c.title ?? (c.classification ? CLASSIFICATION[c.classification] : 'Samtal')}</b> · {when(c.started_at)} {minutes(c.duration_seconds)}{d.owner ? ` · ${name(c.user_id)}` : ''}{c.caller_phone ? ` · från ${c.caller_phone}` : ''}</span>
-          <span className="xs muted">{CALL_KIND[c.kind] ?? 'Telefonsamtal'} · {c.needs_review ? 'Behöver granskas' : CALL_STATUS[c.status] ?? c.status}</span>
+          <span className="xs muted">{CALL_KIND[c.kind] ?? 'Telefonsamtal'} · {c.needs_review ? 'Behöver granskas' : CALL_PROGRESS[c.progress] ?? CALL_STATUS[c.status] ?? 'Väntar'}</span>
+          {(c.progress === 'kund' || c.progress === 'uppdrag') && d.a10 && <a className="xs" href="#samtal-bekrafta" onClick={e => { e.preventDefault(); document.getElementById('samtal-bekrafta')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>Bekräfta nu</a>}
         </div>
         {c.error_code && <div className="xs muted">{errorLabel(c.error_code)}</div>}
         <div className="row mt4">
