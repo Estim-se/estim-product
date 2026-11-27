@@ -23,6 +23,8 @@ export async function prepareMatching(rpc: Rpc, lease: Lease, f: Facts, segments
     const raw = await ai({ facts: f, assignments: a.assignments, segments });
     assignment = decideAssignment(lease.company, customer.customer_id, f, a.assignments, raw, segments, a.truncated);
   }
+  // Structural reason codes only (no personal data), so a held call can be explained.
+  if (assignment?.state === 'ambiguous' || customer.state === 'ambiguous') console.info('[samtal-a9-hold]', JSON.stringify({ customer: customer.reason, assignment: assignment?.reason ?? null }));
   const saved = await rpc('samtal_a9_save', { ...args, p_customer: customer, p_assignment: assignment });
   if (saved.error) throw new Error('matching_write_failed');
   return saved.data as { status: string; customer?: CustomerDecision; assignment?: AssignmentDecision };
