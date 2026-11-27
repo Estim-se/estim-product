@@ -16,7 +16,7 @@ import type {CatalogMoment} from '../../../supabase/functions/_shared/build-quot
 import type {z} from 'zod';
 import type {quoteSchema} from '@/lib/real.schemas';
 type Quote=z.infer<typeof quoteSchema>;
-type Call={call:string;version:number;state:string;customer_id:string|null;assignment_id:string|null;quote_requested:boolean;intent:string|null;title:string;rows:SourceRow[]};
+type Call={call:string;version:number;state:string;customer_id:string|null;assignment_id:string|null;quote_requested:boolean;intent:string|null;title:string;rows:SourceRow[];heard?:{name:string|null;phone:string|null;caller:string|null;address:string|null}};
 type Options={version:number;customers:{id:string;name:string;address:string|null}[];assignments:{id:string;job:string;address:string|null}[]};
 type NumericLine=Quote['lines'][number];
 export function SamtalA10QuoteReview({call,catalog,company,existing,save}:{call:Call;catalog:CatalogMoment[];company:{hourly_rate_ex_vat:number;travel_fee:number};existing:Quote|null;save:(quote:Quote,mode:'append'|'replace')=>Promise<void>}) {
@@ -60,16 +60,19 @@ export function SamtalA10ReviewPanel() {
   try{await complete({data:{call:c.call,version,request,customer,assignment,create,identity:create&&!customer?{name,address,phone:null}:null,title:title||c.title}});await refresh();requests.current.delete(key);setActive(null);return true;}
   catch(e){setError(e instanceof Error?e.message:'Valet kunde inte sparas.');return false;}finally{setBusy(false);}
  };
- return <section className="mt16 space-y-4 min-w-0" aria-label="Samtalsunderlag">
-  <h2>Samtalsunderlag</h2>
+ if(!calls.length)return null;
+ return <section id="samtal-bekrafta" className="card mt16 space-y-4 min-w-0" aria-label="Bekräfta kund och uppdrag">
+  <h3>Bekräfta kund och uppdrag</h3>
+  <div className="sub">Systemet var inte säkert på vilken kund eller vilket uppdrag samtalet gäller. Välj rätt, så hamnar samtalet i Inkorgen med ett offertutkast. Inget skickas till kunden.</div>
   {calls.map(c=><div key={c.call} className="border-b border-border pb-4 space-y-3 min-w-0">
    {c.state==='resolved'&&c.assignment_id?<>
     <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={()=>{const id=c.assignment_id;if(!id)return;void workspace.refresh().then(()=>{actions.select(id);void navigate({to:'/'});});}}>Öppna uppdrag</Button>
     <SamtalA10QuoteReview call={c} catalog={q.data.catalog} company={company} existing={(()=>{const old=workspace.data?.quotes.find(v=>v.thread_id===c.assignment_id);return old?{nr:old.nr,owners:old.owners===2?2:1,addOn:old.add_on,prisform:old.prisform==='fast'?'fast':'ungefar',lines:old.lines as NumericLine[]}:null;})()} save={async(quote,mode)=>{const old=workspace.data?.quotes.find(v=>v.thread_id===c.assignment_id);await saveQuote({data:{call:c.call,version:c.version,expectedQuote:old?.id??null,quote,mode}});await refresh();}}/>
    </>:<>
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3>{c.title}</h3><Button variant="prototype" className="btn btn-sm" disabled={busy} onClick={()=>void choose(c)}>Välj kund och uppdrag</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><b>{c.title}</b><Button variant="prototype" className="btn btn-sm" disabled={busy} onClick={()=>void choose(c)}>Välj kund och uppdrag</Button></div>
+    {c.heard&&<div className="xs muted">Det här hörde AI:n i samtalet: {[c.heard.name&&`namn ${c.heard.name}`,c.heard.phone&&`telefon ${c.heard.phone}`,c.heard.caller&&`ringde från ${c.heard.caller}`,c.heard.address&&`adress ${c.heard.address}`].filter(Boolean).join(' · ')||'inga kunduppgifter'}</div>}
     {active===c.call&&choice&&<>
-     {!newIdentity&&(c.customer_id?<SamtalAssignmentChoice options={choice.assignments} onConfirm={(assignment,request)=>{requests.current.set([c.call,c.customer_id,assignment,false,name,address,title].join(':'),request);return handoff(c,c.customer_id,assignment,choice.version,assignment===null);}}/>:<SamtalMatchingReview customers={choice.customers} loadAssignments={async customer=>{const r=await options({data:{call:c.call,customer}}) as Options;return {options:r.assignments,version:r.version};}} confirm={(customer,assignment,request,version)=>{requests.current.set([c.call,customer,assignment,false,name,address,title].join(':'),request);return handoff(c,customer,assignment,version,assignment===null);}}/>)}
+     {!newIdentity&&(c.customer_id?<SamtalAssignmentChoice options={choice.assignments} onConfirm={(assignment,request)=>{requests.current.set([c.call,c.customer_id,assignment,false,name,address,title].join(':'),request);return handoff(c,c.customer_id,assignment,choice.version,assignment===null);}}/>:<SamtalMatchingReview customers={choice.customers} {...(c.heard?{heard:c.heard}:{})} loadAssignments={async customer=>{const r=await options({data:{call:c.call,customer}}) as Options;return {options:r.assignments,version:r.version};}} confirm={(customer,assignment,request,version)=>{requests.current.set([c.call,customer,assignment,false,name,address,title].join(':'),request);return handoff(c,customer,assignment,version,assignment===null);}}/>)}
      <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>setNewIdentity(v=>!v)}>{newIdentity?'Välj befintlig kund':'Ny kund och nytt uppdrag'}</Button>
      {newIdentity&&<form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void handoff(c,null,null,choice.version,true);}}><label>Namn<input className="input w-full" value={name} maxLength={200} onChange={e=>setName(e.target.value)}/></label><label>Adress<input className="input w-full" value={address} maxLength={200} onChange={e=>setAddress(e.target.value)}/></label><label className="sm:col-span-2">Uppdrag<input className="input w-full" value={title} maxLength={200} onChange={e=>setTitle(e.target.value)}/></label><Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy||!name.trim()||!address.trim()||!title.trim()}>Bekräfta kund och uppdrag</Button></form>}
     </>}

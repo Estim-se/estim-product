@@ -16,7 +16,7 @@ export const getSamtalA10Review=createServerFn({method:'POST'}).middleware([requ
  const member=await membership(asSamtal(context.supabase),context.userId),company=member.company_id;
  const [matches,calls,catalog,receipts,ringDrafts]=await Promise.all([
   asSamtal(context.supabase).from('samtal_a9_matches').select('call_id,version,state,customer_id,assignment_id,quote_requested,intent').eq('company_id',company).neq('state','deleted').order('updated_at',{ascending:false}).limit(100),
-  asSamtal(context.supabase).from('samtal_calls').select('id,extraction').eq('company_id',company).eq('classification','jobb').is('content_deleted_at',null).gt('delete_after',new Date().toISOString()).order('started_at',{ascending:false}).limit(100),
+  asSamtal(context.supabase).from('samtal_calls').select('id,extraction,caller_phone').eq('company_id',company).eq('classification','jobb').is('content_deleted_at',null).gt('delete_after',new Date().toISOString()).order('started_at',{ascending:false}).limit(100),
   asSamtal(context.supabase).from('moments').select('id,name,unit,hours_per_unit,material_per_unit_ex_vat,rot_eligible').eq('company_id',company).eq('active',true).order('name').limit(1000),
   asSamtal(context.supabase).from('samtal_a9_quote_receipts').select('call_id').eq('company_id',company).limit(1000),
   asSamtal(context.supabase).from('samtal_ring_drafts').select('call_id,body').eq('company_id',company).eq('kind','offertutkast').eq('state','godkand').limit(1000)
@@ -30,7 +30,7 @@ export const getSamtalA10Review=createServerFn({method:'POST'}).middleware([requ
   const material=Array.isArray(approved['rows'])?approved['rows']:Array.isArray(approved['items'])?approved['items']:Array.isArray(n['materials'])?n['materials']:[];
   const rows:SourceRow[]=material.slice(0,100).map(raw=>{const r=object(raw);return {description:text(r['item'])||text(r['description']),quantity:typeof r['quantity']==='number'?r['quantity']:null,unit:typeof r['unit']==='string'?r['unit']:null,moment_id:null,evidence:typeof r['evidence']==='string'?r['evidence']:null};});
   if(!rows.length)rows.push({description:title,quantity:null,unit:null,moment_id:null,evidence:title});
-  return [{call:m.call_id,version:m.version,state:m.state,customer_id:m.customer_id,assignment_id:m.assignment_id,quote_requested:m.quote_requested,quote_saved:savedQuotes.has(m.call_id),intent:m.intent,title,rows}];
+  return [{call:m.call_id,version:m.version,state:m.state,customer_id:m.customer_id,assignment_id:m.assignment_id,quote_requested:m.quote_requested,quote_saved:savedQuotes.has(m.call_id),intent:m.intent,title,rows,heard:{name:text(object(f['customer_name'])['value'])||text(object(n['customer'])['name'])||null,phone:text(object(f['customer_phone'])['value'])||null,caller:c.caller_phone??null,address:text(object(f['address'])['value'])||text(object(n['customer'])['address'])||null}}];
  })};
 });
 export const completeSamtalA10Handoff=createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator(parseHandoff).handler(async({data,context})=>{

@@ -77,6 +77,8 @@ export function SamtalPage() {
 
     <SamtalTestCall />
 
+    {d.a10 && <SamtalA10ReviewPanel />}
+
     {d.owner && d.monitor && <div className="card mt16"><SamtalMonitor snapshot={d.monitor.snapshot} alerts={d.monitor.alerts} connected={d.settings.provider_status === 'ansluten'} /></div>}
 
     {d.owner && <div className="card mt16"><h3>Inställningar</h3>
@@ -125,8 +127,6 @@ export function SamtalPage() {
         </> : <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => decide({ data: { id: t.id, decision: 'klar' } }))}>Klar</Button>}</span>
       </div>)}
     </div>
-
-    {d.a10 && <SamtalA10ReviewPanel />}
 
     <SamtalRingSection data={d.ring} busy={busy}
       onChooseContext={company_id => void run(() => ringContext({ data: { company_id } }), 'Företaget är valt för din nästa röstanteckning.')}
