@@ -14,6 +14,8 @@ describe("resend.server", () => {
     expect(parseResendFromAddress("notiser@mail.estim.se")).toBe("notiser@mail.estim.se");
     expect(parseResendFromAddress("estim <Notiser@Mail.Estim.se>")).toBe("notiser@mail.estim.se");
     expect(parseResendFromAddress("estim <notiser@mail.estim.se>\r\nBcc: x@y.se")).toBeNull();
+    expect(parseResendFromAddress("A <a@b.se>, B <c@d.se>")).toBeNull();
+    expect(parseResendFromAddress("notiser@mail.estim.se\x00")).toBeNull();
     expect(parseResendFromAddress("inte-en-adress")).toBeNull();
     expect(parseResendFromAddress("")).toBeNull();
   });
@@ -63,6 +65,7 @@ describe("resend.server", () => {
         idempotencyKey: "draft:c1:j1:0",
       },
       {
+        RESEND_NOTIFY_ENABLED: "true",
         RESEND_API_KEY: "re_secret",
         RESEND_FROM: "estim <notiser@mail.estim.se>",
       },
@@ -90,6 +93,15 @@ describe("resend.server", () => {
     });
   });
 
+  it("refuses to send when RESEND_NOTIFY_ENABLED is not true", async () => {
+    await expect(
+      sendResendSystemEmail(
+        { to: "a@b.se", subject: "Hej", html: "<p>Hej</p>" },
+        { RESEND_API_KEY: "re_secret", RESEND_FROM: "notiser@mail.estim.se" },
+      ),
+    ).rejects.toThrow("resend_disabled");
+  });
+
   it("throws safe status codes without leaking response bodies", async () => {
     vi.stubGlobal(
       "fetch",
@@ -99,7 +111,11 @@ describe("resend.server", () => {
     await expect(
       sendResendSystemEmail(
         { to: "a@b.se", subject: "Hej", html: "<p>Hej</p>" },
-        { RESEND_API_KEY: "re_secret", RESEND_FROM: "notiser@mail.estim.se" },
+        {
+          RESEND_NOTIFY_ENABLED: "true",
+          RESEND_API_KEY: "re_secret",
+          RESEND_FROM: "notiser@mail.estim.se",
+        },
       ),
     ).rejects.toThrow("resend_429");
   });

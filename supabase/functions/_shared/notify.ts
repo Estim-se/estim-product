@@ -73,8 +73,8 @@ export async function notifyDraftReady(
   key: string,
   opts?: { kind?: DraftNotifyKind },
 ): Promise<void> {
-  const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
-  if (!appUrl || Deno.env.get("NOTIFY_ENABLED") === "false") return;
+  const appUrl = (Deno.env.get("APP_URL") ?? "").trim().replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(appUrl) || Deno.env.get("NOTIFY_ENABLED") === "false") return;
 
   const useResend = resendEnabled();
   let legacyGrantId = "";
@@ -187,8 +187,8 @@ export async function notifyConnectionLost(
   input: ConnectionLostInput,
 ): Promise<void> {
   if (!resendEnabled()) return;
-  const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
-  if (!appUrl || Deno.env.get("NOTIFY_ENABLED") === "false") return;
+  const appUrl = (Deno.env.get("APP_URL") ?? "").trim().replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(appUrl) || Deno.env.get("NOTIFY_ENABLED") === "false") return;
 
   const cooldownHours = Math.max(1, optNumber("RECONNECT_NOTIFY_COOLDOWN_HOURS", 24));
   const since = new Date(Date.now() - cooldownHours * 3_600_000).toISOString();
@@ -284,8 +284,16 @@ export async function notifyOpsAlert(args: {
     `<p>${escapeHtml(args.detail)}</p>` +
     `</div>`;
   const text = `${args.title}\n\n${args.detail}`;
+  const safeKey = args.key.replace(/[^A-Za-z0-9:._-]+/g, "_").slice(0, 120) || "alert";
+  const bucket = Math.floor(now / OPS_ALERT_COOLDOWN_MS);
   try {
-    await sendResendEmail({ to, subject, html, text });
+    await sendResendEmail({
+      to,
+      subject,
+      html,
+      text,
+      idempotencyKey: `ops:${safeKey}:${bucket}`,
+    });
   } catch (e) {
     console.error("[notify] ops alert failed:", errCode(e));
   }

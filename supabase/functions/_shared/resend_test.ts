@@ -77,6 +77,8 @@ Deno.test("resend config: off by default and validates sender format strictly", 
   assertEquals(parseFromAddress("notiser@mail.estim.se"), "notiser@mail.estim.se");
   assertEquals(parseFromAddress("estim <Notiser@Mail.Estim.se>"), "notiser@mail.estim.se");
   assertEquals(parseFromAddress("estim <a@b.se>\r\nBcc: x@y.se"), null);
+  assertEquals(parseFromAddress("A <a@b.se>, B <c@d.se>"), null);
+  assertEquals(parseFromAddress("estim <a@b.se>\x00"), null);
   assertEquals(parseFromAddress("bad"), null);
 
   await withEnvAndFetch(
@@ -84,6 +86,10 @@ Deno.test("resend config: off by default and validates sender format strictly", 
     () => new Response("ok"),
     async () => {
       assertEquals(resendEnabled(), false, "flag must default to off");
+      await assertRejects(
+        () => sendResendEmail({ to: "a@b.se", subject: "x", html: "<p>x</p>" }),
+        "resend_disabled",
+      );
     },
   );
   await withEnvAndFetch(RESEND_ON, () => new Response("ok"), async () => {
@@ -320,11 +326,14 @@ Deno.test("notifyOpsAlert: no-op without OPS_ALERT_EMAIL, sends and rate-limits 
   );
   assertEquals(sends, 0);
 
-  const sent: Record<string, unknown>[] = [];
+  const sent: { headers: Record<string, string>; body: Record<string, unknown> }[] = [];
   await withEnvAndFetch(
     { ...RESEND_ON, OPS_ALERT_EMAIL: "drift@estim.se" },
     (_url, init) => {
-      sent.push(JSON.parse(String(init?.body)));
+      sent.push({
+        headers: (init?.headers ?? {}) as Record<string, string>,
+        body: JSON.parse(String(init?.body)),
+      });
       return Response.json({ id: "re_ops_2" });
     },
     async () => {
@@ -333,6 +342,32 @@ Deno.test("notifyOpsAlert: no-op without OPS_ALERT_EMAIL, sends and rate-limits 
     },
   );
   assertEquals(sent.length, 1);
-  assertEquals(sent[0]!.to, ["drift@estim.se"]);
-  assertEquals(sent[0]!.subject, "[estim drift] Webhook-fel");
+  assertEquals(sent[0]!.body.to, ["drift@estim.se"]);
+  assertEquals(sent[0]!.body.subject, "[estim drift] Webhook-fel");
+  assert(
+    /^ops:unipile_giveup:email\.new:\d+$/.test(sent[0]!.headers["Idempotency-Key"] ?? ""),
+    "ops alert must pass a time-bucketed Idempotency-Key",
+  );
+});
+
+Deno.test("notify: refuses non-http(s) APP_URL schemes", async () => {
+  const db = draftDb();
+  let sends = 0;
+  await withEnvAndFetch(
+    { ...RESEND_ON, APP_URL: "javascript:alert(1)" },
+    () => {
+      sends++;
+      return Response.json({ id: "re_bad" });
+    },
+    async () => {
+      await notifyDraftReady(asClient(db), "c1", "t1", "j_bad");
+      await notifyConnectionLost(asClient(db), {
+        companyId: "c1",
+        email: "info@elfirma.se",
+        grantId: "acc_1",
+        newState: "expired",
+      });
+    },
+  );
+  assertEquals(sends, 0);
 });
