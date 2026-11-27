@@ -1,8 +1,9 @@
-# estim Samtal Priority 1 V2 – unapplied application patch
+# estim Samtal Priority 1 V2 – historical application patch
 
-Status: prepared, **not applied**. `docs/samtal/priority-1-app-patch.diff` applies cleanly to main; it calls V2
-database functions that the live database does not have, so it must only be applied together with the approved V2 schema
-and regenerated types.
+Status: historical proposal. The current application source has since evolved, and
+`docs/samtal/priority-1-app-patch.diff` is not an executable patch for current main. Do not apply it as-is. The current
+test validates the present modules instead of applying this historical diff. Verify database deployment separately;
+this document is not evidence that any schema is deployed.
 
 ## Files and functions
 
@@ -15,14 +16,13 @@ and regenerated types.
 
 ## Tests
 
-`src/test/samtal-app-patch.test.ts` (17) applies the patch to a disposable copy and checks authorization, tenant isolation,
-concurrent review, ambiguous timeout retry, guarded audio, guarded restart and no type casts. Full Samtal run:
-271 passed (254 previous + 17 new).
+`src/test/samtal-app-patch.test.ts` checks the current source for authorization, tenant isolation, concurrent review,
+ambiguous timeout retry, guarded audio and guarded restart. This is not current validation evidence.
 
-## Remaining dependencies
+## Historical proposal dependencies
 
-- V2 schema applied and production types regenerated (the patch does not typecheck before that).
-- Two existing tests in `samtal-sida.test.ts` cover the old raw audio/restart behaviour and must be updated when the patch is applied.
+- The proposal depended on V2 SQL and regenerated types at the time; verify the current database state independently.
+- The page tests have since been updated to the current call shape.
 - Ingest/process/Inbox/purge/routes (readiness step 2) and provider/shared-worker gates are untouched.
 
-Next smallest step: approval to prepare the step 2 patch for the remaining Samtal modules.
+Retain this file and its diff for historical context, not as an implementation checklist.

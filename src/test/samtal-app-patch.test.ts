@@ -1,12 +1,10 @@
-// estim Samtal Priority 1 V2: synthetic checks of the UNAPPLIED application patch in docs/samtal/priority-1-app-patch.diff.
-// The patch is applied to a disposable copy of the Samtal modules for this test run only; the active modules on main
-// stay unchanged. Fake clients stand in for the candidate V2 RPCs, whose SQL behaviour is covered by the PostgreSQL suite.
-import { execFileSync } from 'node:child_process';
+// estim Samtal Priority 1 V2: synthetic checks of the current application modules. Fake clients stand in for the
+// candidate V2 RPCs, whose SQL behaviour is covered by the PostgreSQL suite.
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const ROOT = process.cwd(), PATCH = path.join(ROOT, 'docs/samtal/priority-1-app-patch.diff');
+const ROOT = process.cwd();
 const A = '0000000a-0000-4000-8000-000000000000', B = '0000000b-0000-4000-8000-000000000000';
 const CALL = 'c0000000-0000-4000-8000-000000000001', REQ = 'r0000000-0000-4000-8000-000000000001'.replace('r', 'e');
 const ACTOR = 'a0000000-0000-4000-8000-00000000000a';
@@ -52,22 +50,17 @@ beforeAll(async () => {
   cpSync(path.join(ROOT, 'src/lib/samtal'), path.join(dir, 'src/lib/samtal'), { recursive: true });
   cpSync(path.join(ROOT, 'src/lib/input-limits.ts'), path.join(dir, 'src/lib/input-limits.ts'));
   cpSync(path.join(ROOT, 'src/components/estim/samtal-page.tsx'), path.join(dir, 'src/components/estim/samtal-page.tsx'));
-  execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', PATCH], { stdio: 'pipe' });
   page = await import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal/page.server.ts'));
   labels = await import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal/labels.ts'));
 });
 afterAll(() => { if (dir) rmSync(dir, { recursive: true, force: true }); });
 
-describe('the patch itself', () => {
-  it('applies cleanly to the current modules and leaves the active modules on main untouched', () => {
+describe('the active implementation', () => {
+  it('uses guarded review and restart functions in the application modules', () => {
     const active = readFileSync(path.join(ROOT, 'src/lib/samtal/page.server.ts'), 'utf8');
-    expect(active).not.toContain('samtal_restart_guarded');
+    expect(active).toContain('samtal_restart_guarded');
     expect(readFileSync(path.join(dir, 'src/lib/samtal/page.server.ts'), 'utf8')).toContain('samtal_restart_guarded');
     expect(readFileSync(path.join(dir, 'src/components/estim/samtal-page.tsx'), 'utf8')).toContain('confirmSamtalReviewFn');
-  });
-  it('adds no handwritten type casts to bypass the missing V2 schema', () => {
-    const added = readFileSync(PATCH, 'utf8').split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
-    expect(added.filter(l => /as (never|any|unknown)\b|@ts-(ignore|expect-error)/.test(l))).toEqual([]);
   });
 });
 

@@ -1,11 +1,9 @@
-// estim Samtal A7 (unapplied): provider integration framework and webhook security.
-// The four unapplied patches (priority-1-app-patch.diff, priority-1-app-patch-remaining.diff, a1-a2-app-patch.diff and
-// a7-provider-framework.diff) are applied to a disposable copy of the Samtal modules; the end-to-end part runs against
-// the V2 SQL candidate plus a1-provider-transcript.sql in a disposable local PostgreSQL.
+// estim Samtal A7: provider integration framework and webhook security.
+// The current application modules are copied to a disposable directory; the end-to-end part runs against the V2 SQL
+// candidate plus a1-provider-transcript.sql in a disposable local PostgreSQL.
 //
 // Everything external is SYNTHETIC: the provider mapping (not Lynes), the HMAC reference verifier, recording hosts
 // (fetch is a local stub; nothing leaves the machine), speech to text and the AI classifier.
-import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -13,7 +11,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff'];
 const SECRET = 'synthetic-secret-0123456789abcdef-current';
 const OLD_SECRET = 'synthetic-secret-0123456789abcdef-previous';
 const A_NUMBER = '+46701111111', B_NUMBER = '+46702222222', SHARED = '+46108888888', CUSTOMER = '+46709999999';
@@ -81,7 +78,7 @@ function signed(body: string, o: { secret?: string; t?: number; sig?: string | n
   return new Request('https://local.invalid/synthetic-webhook', { method: 'POST', headers, body });
 }
 
-describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unapplied patch)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (current application)', () => {
   let dir = '', fw: M, sec: M, idm: M, rf: M, evm: M, ref: M, ingestMod: M, proc: M, inbox: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession;
   const files = new Map<string, Uint8Array>();
@@ -92,7 +89,6 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unappl
     for (const f of ['src/lib/samtal', 'src/lib/input-limits.ts', 'src/components/estim/samtal-page.tsx', 'src/routes/api/public/samtal-worker.ts', 'src/routes/api/public/samtal-purge.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [fw, sec, idm, rf, evm, ref, ingestMod, proc, inbox] = await Promise.all(['provider/framework.server.ts', 'provider/webhook-security.server.ts', 'provider/identity.ts', 'provider/recording-fetch.server.ts',
       'provider/events.ts', 'provider/reference-provider.ts', 'ingest.server.ts', 'process.server.ts', 'inbox.server.ts'].map(load));

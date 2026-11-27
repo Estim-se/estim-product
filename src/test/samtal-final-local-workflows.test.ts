@@ -1,7 +1,9 @@
 // Final local validation harness only. Synthetic provider/AI; real disposable PostgreSQL functions.
 import { beforeAll,afterAll,beforeEach,describe,it,expect,vi } from 'vitest';
 import { randomUUID,createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync,writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/samtal/db-types';
 import { a10Database } from './helpers/a10-local-db';
@@ -13,6 +15,8 @@ import { ingestCall } from '../lib/samtal/ingest.server';
 import { ingestRingNote } from '../lib/samtal/ring/ingest.server';
 import { runSamtalJobs } from '../lib/samtal/process.server';
 import { catalogSuggestions } from '../lib/samtal/a10/quote-source';
+vi.mock('@/lib/channel.server',()=>({dispatchAiJob:vi.fn(async()=>{})}));
+const evidenceDirectory=path.join(tmpdir(),'work','evidence');
 const customer='a1000000-0000-4000-8000-000000000081',thread='a1000000-0000-4000-8000-000000000082';
 const source={start:0,end:30};
 const text='Anna Andersson på Storgatan 12 vill ha två extra uttag i Köksrenovering Storgatan 12 och offert.';
@@ -36,9 +40,9 @@ function localClient(db:LocalSession):SupabaseClient<Database>{
    }catch(error){return {data:null,error};}
   },
   from(table:string){
-   identifier(table);let columns='*';const filters:{column:string,value:unknown}[]=[];
-   const run=async(single=false)=>{const where=filters.map((f,i)=>`${f.column}=$${i+1}`).join(' AND ');try{const r=await db.query(`SELECT ${columns} FROM ${table}${where?' WHERE '+where:''}`,filters.map(f=>f.value));return {data:single?(r.rows[0]??null):r.rows,error:null};}catch(error){return {data:null,error};}};
-   const q={select(c:string){c.split(',').forEach(x=>identifier(x.trim()));columns=c;return q;},eq(c:string,v:unknown){filters.push({column:identifier(c),value:v});return q;},single(){return run(true);},maybeSingle(){return run(true);},then(a:unknown,b:unknown){return run().then(a as Parameters<Promise<unknown>['then']>[0],b as Parameters<Promise<unknown>['then']>[1]);}};return q;
+   identifier(table);let columns='*',inserted:Record<string,unknown>|null=null,limit:number|null=null;const filters:{column:string;value:unknown;operator?:'='|'!='}[]=[];
+   const run=async(single=false)=>{const where=filters.map((f,i)=>`${f.column}${f.operator??'='}$${i+1}`).join(' AND ');try{if(inserted){const values=inserted,names=Object.keys(values).map(identifier);const r=await db.query(`INSERT INTO ${table} (${names.join(',')}) VALUES (${names.map((_,i)=>`$${i+1}`).join(',')}) RETURNING ${columns}`,names.map(name=>values[name]));return {data:single?(r.rows[0]??null):r.rows,error:null};}const r=await db.query(`SELECT ${columns} FROM ${table}${where?' WHERE '+where:''}${limit===null?'':` LIMIT ${limit}`}`,filters.map(f=>f.value));return {data:single?(r.rows[0]??null):r.rows,error:null};}catch(error){return {data:null,error};}};
+   const q={select(c:string){c.split(',').forEach(x=>identifier(x.trim()));columns=c;return q;},insert(values:Record<string,unknown>){inserted=values;return q;},eq(c:string,v:unknown){filters.push({column:identifier(c),value:v});return q;},neq(c:string,v:unknown){filters.push({column:identifier(c),value:v,operator:'!='});return q;},limit(n:number){if(!Number.isSafeInteger(n)||n<0)throw new Error('invalid_local_limit');limit=n;return q;},single(){return run(true);},maybeSingle(){return run(true);},then(a:unknown,b:unknown){return run().then(a as Parameters<Promise<unknown>['then']>[0],b as Parameters<Promise<unknown>['then']>[1]);}};return q;
   },
   storage:{from(){throw new Error('real_storage_not_available');}}
  };
@@ -48,7 +52,7 @@ describe('Final isolated ordinary/Ring integration with real local persistence',
  let pg:Awaited<ReturnType<typeof a10Database>>,service:LocalSession,auth:LocalSession,db:SupabaseClient<Database>;
  const results:unknown[]=[];
  beforeAll(async()=>{pg=await a10Database();service=await pg.connect('service_role');auth=await pg.connect();await auth.exec(`SET ROLE authenticated;SET request.jwt.claim.sub='${staff}'`);db=localClient(service);},180000);
- afterAll(async()=>{writeFileSync('/tmp/work/evidence/final-workflow-results.json',JSON.stringify(results,null,2));vi.unstubAllEnvs();await pg?.close();});
+ afterAll(async()=>{try{mkdirSync(evidenceDirectory,{recursive:true});writeFileSync(path.join(evidenceDirectory,'final-workflow-results.json'),JSON.stringify(results,null,2));}finally{vi.unstubAllEnvs();await pg?.close();}});
  beforeEach(async()=>{
   vi.stubEnv('SAMTAL','1');vi.stubEnv('SAMTAL_A9','1');vi.stubEnv('SAMTAL_A10','1');assignmentAi.mockReset();assignmentAi.mockImplementation(async()=>({intent:'additional_work',assignment_id:thread,quote_id:null,source:{...source,text}}));
   await pg.admin.exec('TRUNCATE samtal_calls,threads,customers,quotes,audit_log,drafts,ai_jobs,messages,samtal_webhook_events,samtal_webhook_replays,samtal_webhook_call_leases,samtal_call_bindings CASCADE;');
@@ -78,9 +82,9 @@ describe('Final isolated ordinary/Ring integration with real local persistence',
   const result=await scalar<{status:string;quote_id:string}>(auth,'SELECT samtal_a10_commit_quote($1,$2,$3,$4,NULL,\'append\') AS v',[call,A,version,lines]);expect(result.status).toBe('ok');
   const quote=(await auth.query<{nr:string;status:string;lines:unknown[]}>('SELECT nr,status,lines FROM quotes WHERE id=$1',[result.quote_id])).rows[0];expect(quote?.nr).toBe('1001');expect(quote?.status).toBe('utkast');expect(quote?.lines).toEqual(lines);return result.quote_id;
  }
- async function assertHandoff(call:string){expect(await scalar<string>(pg.admin,'SELECT customer_id::text AS v FROM samtal_calls WHERE id=$1',[call])).toBe(customer);expect(await scalar<string>(pg.admin,'SELECT thread_id::text AS v FROM samtal_calls WHERE id=$1',[call])).toBe(thread);expect(await scalar<string>(pg.admin,'SELECT channel AS v FROM threads WHERE id=$1',[thread])).toBe('email');expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM messages')).toBe(1);expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM ai_jobs')).toBe(0);expect(await scalar<string>(pg.admin,'SELECT text AS v FROM drafts WHERE thread_id=$1',[thread])).toBe('Existing human reply');}
+ async function assertHandoff(call:string,expectedAiJobs=1){expect(await scalar<string>(pg.admin,'SELECT customer_id::text AS v FROM samtal_calls WHERE id=$1',[call])).toBe(customer);expect(await scalar<string>(pg.admin,'SELECT thread_id::text AS v FROM samtal_calls WHERE id=$1',[call])).toBe(thread);expect(await scalar<string>(pg.admin,'SELECT channel AS v FROM threads WHERE id=$1',[thread])).toBe('email');expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM messages')).toBe(1);expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM ai_jobs')).toBe(expectedAiJobs);expect(await scalar<string>(pg.admin,'SELECT text AS v FROM drafts WHERE thread_id=$1',[thread])).toBe('Existing human reply');}
  it('ordinary durable provider event → ingestion → worker → automatic matching → exact Inbox → human unsent quote',async()=>{const {call}=await ordinary();const run=await runSamtalJobs(db,{ai,stt,ringAi,assignmentAi});expect(run.results).toEqual(['done']);await assertHandoff(call);const quote=await assertQuote(call);expect(stt.transcribe).not.toHaveBeenCalled();results.push({flow:'ordinary',call,quote,result:'passed',provider:'synthetic',AI:'fixture',STT:'not invoked',Storage:'not invoked'});});
  it('verified Ring event → ingestion → worker → automatic matching → Inbox → human unsent quote',async()=>{const {r}=await ring();expect(r.status).toBe('registered');if(r.status!=='registered')throw new Error('ring_registration_failed');const run=await runSamtalJobs(db,{ai,stt,ringAi,assignmentAi});expect(run.results).toEqual(['done']);await assertHandoff(r.callId);const quote=await assertQuote(r.callId);results.push({flow:'ring',call:r.callId,quote,result:'passed',providerIdentity:'synthetic enrolled account; not Lynes'});});
- it('ambiguous assignment pauses safely, then explicit employee review creates one handoff',async()=>{const {call}=await ordinary();assignmentAi.mockImplementation(async()=>({intent:'ambiguous',assignment_id:null as unknown as string,quote_id:null,source:{...source,text}}));const run=await runSamtalJobs(db,{ai,stt,ringAi,assignmentAi});expect(run.results).toEqual(['matching_needs_review']);expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM messages')).toBe(0);const v=await scalar<number>(pg.admin,'SELECT version AS v FROM samtal_a9_matches WHERE call_id=$1',[call]);const r=await scalar<{status:string}>(service,'SELECT samtal_a10_handoff($1,$2,$3,$4,$5,$6,false,NULL,\'Köksrenovering\',$7,NULL,NULL) AS v',[call,A,v,randomUUID(),customer,thread,staff]);expect(r.status).toBe('ok');await assertHandoff(call);results.push({flow:'ambiguity',call,result:'paused then explicitly reviewed; passed'});});
+ it('ambiguous assignment pauses safely, then explicit employee review creates one handoff',async()=>{const {call}=await ordinary();assignmentAi.mockImplementation(async()=>({intent:'ambiguous',assignment_id:null as unknown as string,quote_id:null,source:{...source,text}}));const run=await runSamtalJobs(db,{ai,stt,ringAi,assignmentAi});expect(run.results).toEqual(['matching_needs_review']);expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM messages')).toBe(0);const v=await scalar<number>(pg.admin,'SELECT version AS v FROM samtal_a9_matches WHERE call_id=$1',[call]);const r=await scalar<{status:string}>(service,'SELECT samtal_a10_handoff($1,$2,$3,$4,$5,$6,false,NULL,\'Köksrenovering\',$7,NULL,NULL) AS v',[call,A,v,randomUUID(),customer,thread,staff]);expect(r.status).toBe('ok');await assertHandoff(call,0);results.push({flow:'ambiguity',call,result:'paused then explicitly reviewed; passed'});});
  it('unverified Ring identity creates no call or business records',async()=>{const {r}=await ring(false);expect(r.status).toBe('rejected');expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM samtal_calls')).toBe(0);expect(await scalar<number>(pg.admin,'SELECT count(*)::int AS v FROM messages')).toBe(0);results.push({flow:'unverified-ring',result:'rejected; passed'});});
 });

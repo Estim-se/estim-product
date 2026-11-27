@@ -1,11 +1,9 @@
-// estim Samtal Priority 1 V2: end-to-end synthetic workflow through BOTH unapplied application patches
-// (docs/samtal/priority-1-app-patch.diff and priority-1-app-patch-remaining.diff), applied to a disposable copy of the
-// Samtal modules and run against the coordinated V2 SQL candidate in a disposable local PostgreSQL 17.
+// estim Samtal Priority 1 V2: end-to-end synthetic workflow through the current application modules, copied to a
+// disposable directory and run against the coordinated V2 SQL candidate in a disposable local PostgreSQL 17.
 //
 // Classification here is a DETERMINISTIC MOCK keyed on the synthetic Swedish transcripts. It proves what the code does
 // with each classification; it says nothing about how accurately the real AI classifies real calls. No provider,
 // recording, production database, Storage, secret or flag is touched.
-import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -82,7 +80,7 @@ function mockedInterpretation(t: Transcript) {
     uncertain: kind === 'ambiguous' ? [{ text: 'Oklart vad samtalet gäller.', source: { start: 0, end: 30 } }] : [], next_steps: [] };
 }
 
-describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal V2 application patches, end to end against local PostgreSQL', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal V2 application, end to end against local PostgreSQL', () => {
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession, dir = '';
   const files = new Map<string, Uint8Array>(), fails = { upload: false, remove: false };
   type Fn = (...a: never[]) => Promise<never>;
@@ -109,8 +107,6 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal V2 application patches, end t
     for (const f of ['src/lib/samtal', 'src/lib/input-limits.ts', 'src/components/estim/samtal-page.tsx', 'src/routes/api/public/samtal-worker.ts', 'src/routes/api/public/samtal-purge.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff'])
-      execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [ingest, proc, inbox, purge, page] = (await Promise.all(['ingest.server.ts', 'process.server.ts', 'inbox.server.ts', 'purge.server.ts', 'page.server.ts'].map(load))) as [typeof ingest, typeof proc, typeof inbox, typeof purge, typeof page];
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql'); x = await pg.connect('service_role'); y = await pg.connect('service_role');

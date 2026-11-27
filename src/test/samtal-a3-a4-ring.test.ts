@@ -1,10 +1,9 @@
-// estim Samtal A3 + A4 (Ring estim voice notes): synthetic tests of the UNAPPLIED patch docs/samtal/a3-a4-ring-estim.diff
-// on top of all earlier Samtal patches, against the SQL candidates (V2, A1, A3/A4) in a disposable local PostgreSQL 17.
+// estim Samtal A3 + A4 (Ring estim voice notes): synthetic tests of the current application modules against the
+// SQL candidates (V2, A1, A3/A4) in a disposable local PostgreSQL 17.
 //
 // The AI is a DETERMINISTIC MOCK keyed on each synthetic note: it proves what the code does with an answer (validation,
 // drafts, identity, isolation, deletion), not how well a real model understands real Swedish speech. No telephone
 // provider, recording, production database, Storage, secret or flag is touched. All names and addresses are invented.
-import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -12,8 +11,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
-  'v1-migration-app-fix.diff', 'v1-test-migration.diff', 'a3-a4-ring-estim.diff'];
 // Wednesday 25 November 2026, 09:00 in Stockholm.
 const CALLED = '2026-11-25T08:00:00.000Z';
 const FRIDAY = '2026-11-27T15:00:00.000Z', THURSDAY = '2026-11-26T15:00:00.000Z';
@@ -161,7 +158,7 @@ const SCENARIOS: Scenario[] = [
 ];
 const LENA = 'cccccccc-0000-4000-8000-000000000001', ANNA_1 = 'cccccccc-0000-4000-8000-000000000002', ANNA_2 = 'cccccccc-0000-4000-8000-000000000003';
 
-describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A3 + A4 Ring estim (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A3 + A4 Ring estim (current application + SQL candidate)', () => {
   type M = Record<string, (...a: never[]) => never>;
   let dir = '', ring: M, proc: M, dl: M, vn: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
@@ -192,7 +189,6 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A3 + A4 Ring estim (unapplied
       'src/test/samtal-adapter.test.ts', 'src/test/samtal-behandling.test.ts', 'src/test/samtal-inkorg-steg.test.ts', 'src/test/samtal-sida.test.ts', 'src/test/samtal-retention.test.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [ring, proc, dl, vn] = await Promise.all(['ring/ingest.server.ts', 'process.server.ts', 'ring/deadline.ts', 'ring/voice-note.ts'].map(load)) as [M, M, M, M];
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');

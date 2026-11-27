@@ -16,7 +16,8 @@ describe('A10 complete local schema compatibility',()=>{
    }
    await pg.admin.exec('SET session_replication_role=origin;');
    const before=await scalar<string>(pg.admin,"SELECT md5(pg_get_functiondef('public.estim_quote(uuid,jsonb)'::regprocedure)) AS v");
-   for(const file of ['priority-1-coordinated-v2.sql','a1-provider-transcript.sql','a7-durable-webhook.sql','a3-a4-ring-estim.sql','a5-draft-management.sql','a6-monitoring.sql','a6-integration.sql','a9-matching.sql','a9-lookup-indexes.sql','a9-quote-handoff.sql','a10-inbox-handoff.sql','a10-quote-integration.sql','a10-ring-bridge.sql'])await pg.admin.exec(read(`docs/samtal/${file}`));
+   // The V2 schema is already installed by the migrations above; reapplying its proposal duplicates objects.
+   for(const file of ['a1-provider-transcript.sql','a7-durable-webhook.sql','a3-a4-ring-estim.sql','a5-draft-management.sql','a6-monitoring.sql','a6-integration.sql','a9-matching.sql','a9-lookup-indexes.sql','a9-quote-handoff.sql','a10-inbox-handoff.sql','a10-quote-integration.sql','a10-ring-bridge.sql'])await pg.admin.exec(read(`docs/samtal/${file}`));
    expect(await scalar<string>(pg.admin,"SELECT md5(pg_get_functiondef('public.estim_quote(uuid,jsonb)'::regprocedure)) AS v")).toBe(before);
    expect(await scalar<boolean>(pg.admin,"SELECT has_function_privilege('authenticated','public.samtal_a10_commit_quote(uuid,uuid,integer,jsonb,uuid,text)','EXECUTE') AS v")).toBe(true);
    expect(await scalar<boolean>(pg.admin,"SELECT has_table_privilege('authenticated','public.samtal_a10_handoffs','INSERT') AS v")).toBe(false);
