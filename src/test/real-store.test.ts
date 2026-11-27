@@ -73,4 +73,34 @@ describe('R1 real-mode rules',()=>{
   expect(write).toHaveBeenLastCalledWith({kind:'merge',keep:'a',drop:'b'});
   await vi.waitFor(()=>expect(store.getSnapshot().toast).toBe('Kunderna kunde inte slås ihop.'));
  });
+ it('debounces and coalesces draft edits, keeps threads referentially stable, and protects dirty drafts during hydrate',async()=>{
+  vi.useFakeTimers();
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null);store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[t];s.drafts[t.id]={text:'Start',v:'std',ch:'email',att:[],edited:false};});
+  const threadsBefore=store.getSnapshot().threads;
+  store.actions.editDraft(t.id,'H');store.actions.editDraft(t.id,'He');store.actions.editDraft(t.id,'Hej');store.actions.editDraft(t.id,'Hej kund');
+  expect(store.getSnapshot().threads).toBe(threadsBefore);
+  expect(write).toHaveBeenCalledTimes(0);
+  // Background poll while draft is dirty must not overwrite typed text.
+  store.hydrate({platform:false,role:'ägare',company:null,profile:null,threads:[],customers:[],messages:[],quotes:[],drafts:[{thread_id:t.id,company_id:'c1',text:'Gammal servertext',variant:'std',channel:'email',attachments:[],edited:false,warnings:[],needs_review:false,document_ids:null,created_at:'2026-11-27T08:00:00Z',updated_at:'2026-11-27T08:00:00Z'}],moments:[],audit:[],channels:[]} as never);
+  expect(store.getSnapshot().drafts[t.id]?.text).toBe('Hej kund');
+  vi.advanceTimersByTime(500);
+  await store.flush();
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(write).toHaveBeenLastCalledWith(expect.objectContaining({kind:'draft',id:t.id,draft:expect.objectContaining({text:'Hej kund',edited:true})}));
+ });
+ it('skips redundant read writes on already-read threads and rolls back failed optimistic toggleAuto',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null);store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,ch:'wa',read:true,autopilot:false}];});
+  store.actions.select(t.id);await store.flush();
+  expect(write).toHaveBeenCalledTimes(0);
+  write.mockRejectedValueOnce(new Error('network'));
+  store.actions.toggleAuto(t.id);
+  // Flips optimistically at 0 ms before server settles.
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(true);
+  await expect(store.flush()).rejects.toThrow();
+  await vi.waitFor(()=>expect(store.getSnapshot().threads[0]?.autopilot).toBe(false));
+ });
 });

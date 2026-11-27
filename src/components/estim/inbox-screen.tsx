@@ -27,9 +27,12 @@ export function InboxScreen() {
   const [tab, setTab] = useState<'chat' | 'info'>('chat');
   const [viewingHubKey, setViewingHubKey] = useState<string | null>(null);
 
-  const activity = new Map(workspace.data?.threads.map(t => [t.id, Math.max(Date.parse(t.last_message_at), Date.parse(t.updated_at))]));
-  workspace.data?.drafts.forEach(d => activity.set(d.thread_id, Math.max(activity.get(d.thread_id) ?? 0, Date.parse(d.updated_at))));
-  const orderedThreads = real ? latestActivityOrder(threads, activity) : threads;
+  const orderedThreads = useMemo(() => {
+    if (!real) return threads;
+    const activity = new Map(workspace.data?.threads.map(t => [t.id, Math.max(Date.parse(t.last_message_at), Date.parse(t.updated_at))]));
+    workspace.data?.drafts.forEach(d => activity.set(d.thread_id, Math.max(activity.get(d.thread_id) ?? 0, Date.parse(d.updated_at))));
+    return latestActivityOrder(threads, activity);
+  }, [real, threads, workspace.data?.threads, workspace.data?.drafts]);
   const pending = Boolean(current && state.drafts[current.id] && ['svar', 'oppnad'].includes(current.status));
 
   const currentCustomerKey = current ? customerKeyOf(current) : '';

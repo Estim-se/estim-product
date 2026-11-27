@@ -10,22 +10,24 @@ export const loadWorkspace = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const db = context.supabase;
-    const { readAccess } = await import("./access.server");
-    const access = await readAccess(db, context.userId);
-    const membership = await db
-      .from("company_members")
-      .select("*")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    const profile = await db
-      .from("profiles")
-      .select("display_name")
-      .eq("id", context.userId)
-      .maybeSingle();
-    if (membership.error || profile.error) throw new Error("Kunde inte läsa ditt konto.");
+    // Wave 1: validate session and resolve role, membership, and profile in one parallel RTT.
+    const [session, platform, membership, profile] = await Promise.all([
+      db.rpc("estim_session_valid"),
+      db.from("platform_admins").select("user_id").eq("user_id", context.userId).maybeSingle(),
+      db
+        .from("company_members")
+        .select("company_id,role")
+        .eq("user_id", context.userId)
+        .maybeSingle(),
+      db.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
+    ]);
+    if (session.error || !session.data) throw new Error("Logga in igen.");
+    if (platform.error || membership.error || profile.error)
+      throw new Error("Kunde inte läsa ditt konto.");
+    const isPlatform = Boolean(platform.data);
     if (!membership.data)
       return {
-        platform: access.platform,
+        platform: isPlatform,
         role: null,
         company: null,
         profile: profile.data,
@@ -39,25 +41,45 @@ export const loadWorkspace = createServerFn({ method: "POST" })
         channels: [],
       };
     const cid = membership.data.company_id;
-    const [company, threads, customers, messages, quotes, drafts, moments, audit] =
-      await Promise.all([
-        db.from("companies").select("*").eq("id", cid).single(),
-        db
-          .from("threads")
-          .select("*")
-          .eq("company_id", cid)
-          .order("last_message_at", { ascending: false }),
-        db.from("customers").select("*").eq("company_id", cid),
-        db.from("messages").select("*").eq("company_id", cid).order("sent_at"),
-        db.from("quotes").select("*").eq("company_id", cid).order("version", { ascending: false }),
-        db.from("drafts").select("*").eq("company_id", cid),
-        db.from("moments").select("*").eq("company_id", cid).order("created_at"),
-        db
-          .from("audit_log")
-          .select("*")
-          .eq("company_id", cid)
-          .order("created_at", { ascending: false }),
-      ]);
+    // Wave 2: load all company-scoped tables in a single parallel RTT (RLS enforces my_company()).
+    const [
+      company,
+      threads,
+      customers,
+      messages,
+      quotes,
+      drafts,
+      moments,
+      audit,
+      channels,
+      documents,
+      library,
+    ] = await Promise.all([
+      db.from("companies").select("*").eq("id", cid).single(),
+      db
+        .from("threads")
+        .select("*")
+        .eq("company_id", cid)
+        .order("last_message_at", { ascending: false }),
+      db.from("customers").select("*").eq("company_id", cid),
+      db.from("messages").select("*").eq("company_id", cid).order("sent_at"),
+      db.from("quotes").select("*").eq("company_id", cid).order("version", { ascending: false }),
+      db.from("drafts").select("*").eq("company_id", cid),
+      db.from("moments").select("*").eq("company_id", cid).order("created_at"),
+      db
+        .from("audit_log")
+        .select("*")
+        .eq("company_id", cid)
+        .order("created_at", { ascending: false })
+        .limit(250),
+      db.from("channels").select("*").eq("company_id", cid),
+      db
+        .from("company_document_deliveries")
+        .select("id,name,message_id,thread_id")
+        .eq("company_id", cid)
+        .eq("state", "sent"),
+      db.from("company_documents").select("id,name").eq("company_id", cid),
+    ]);
     if (
       [company, threads, customers, messages, quotes, drafts, moments, audit].some(
         (result) => result.error,
@@ -65,18 +87,11 @@ export const loadWorkspace = createServerFn({ method: "POST" })
     )
       throw new Error("Kunde inte läsa företagets uppgifter.");
     if (!company.data?.active) throw new Error("Företaget är avaktiverat.");
-    const channels = await db.from("channels").select("*").eq("company_id", cid);
     if (channels.error) throw new Error("Kunde inte läsa kanalerna.");
-    const documents = await db
-      .from("company_document_deliveries")
-      .select("id,name,message_id,thread_id")
-      .eq("company_id", cid)
-      .eq("state", "sent");
     if (documents.error) throw new Error("Dokumenthistoriken kunde inte läsas.");
-    const library = await db.from("company_documents").select("id,name").eq("company_id", cid);
     if (library.error) throw new Error("Dokumentbiblioteket kunde inte läsas.");
     return {
-      platform: access.platform,
+      platform: isPlatform,
       role: membership.data.role,
       company: company.data,
       profile: profile.data,
@@ -126,16 +141,9 @@ export const mutateWorkspace = createServerFn({ method: "POST" })
   .inputValidator(parseMutation)
   .handler(async ({ data, context }) => {
     const db = context.supabase;
-    const session = await db.rpc("estim_session_valid");
-    if (session.error || !session.data) throw new Error("Logga in igen.");
-    const membership = await db
-      .from("company_members")
-      .select("company_id")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (membership.error) throw new Error("Kunde inte kontrollera företaget.");
-    const cid = membership.data?.company_id;
     if (data.kind === "profile") {
+      const session = await db.rpc("estim_session_valid");
+      if (session.error || !session.data) throw new Error("Logga in igen.");
       const result = await db
         .from("profiles")
         .update({ display_name: data.display_name })
@@ -146,9 +154,24 @@ export const mutateWorkspace = createServerFn({ method: "POST" })
     if (data.kind === "onboard") {
       throw new Error("Företag skapas av en plattformsadministratör.");
     }
-    if (!cid) throw new Error("Skapa ett företag först.");
-    const active = await db.from("companies").select("active").eq("id", cid).maybeSingle();
-    if (!active.data?.active) throw new Error("Företaget är avaktiverat.");
+    // Single atomic DB check: my_company() verifies valid_session(), company_members, and companies.active.
+    const activeCompany = await db.rpc("my_company");
+    const cid = typeof activeCompany.data === "string" ? activeCompany.data : null;
+    if (!cid) {
+      // Diagnostic lookup only on failure so error messages stay identical without slowing the happy path.
+      const [session, membership] = await Promise.all([
+        db.rpc("estim_session_valid"),
+        db
+          .from("company_members")
+          .select("company_id")
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+      ]);
+      if (session.error || !session.data) throw new Error("Logga in igen.");
+      if (membership.error) throw new Error("Kunde inte kontrollera företaget.");
+      if (!membership.data?.company_id) throw new Error("Skapa ett företag först.");
+      throw new Error("Företaget är avaktiverat.");
+    }
     let result;
     switch (data.kind) {
       case "whatsapp-auto":
