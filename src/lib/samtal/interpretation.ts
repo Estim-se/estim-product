@@ -22,7 +22,7 @@ const rawSchema = z.object({
   next_steps: z.array(z.object({
     kind: z.enum(SAMTAL_STEP_KINDS), title: z.string().trim().min(1).max(200),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(), // A time in words ("förmiddag") is not a clock time: drop it to null instead of rejecting the whole answer.
-    time: z.string().nullable().transform(t => (t !== null && /^\d{2}:\d{2}$/.test(t) ? t : null)),
+    time: z.string().nullable(),
     address: z.string().trim().max(300).nullable(), source,
   }).strict()).max(5),
 }).strict();
@@ -37,7 +37,7 @@ export type Interpretation = {
     job_type: Field<typeof SAMTAL_JOB_TYPES[number]> | null; description: Field<string> | null; desired_time: Field<string> | null; urgent: Field<boolean> | null;
   };
   uncertain: { text: string; source: Span | null }[];
-  next_steps: { kind: typeof SAMTAL_STEP_KINDS[number]; title: string; date: string | null; time: string | null; address: string | null; source: Span }[];
+  next_steps: { kind: typeof SAMTAL_STEP_KINDS[number]; title: string; date: string | null; time: string | null; time_hint?: string | null; address: string | null; source: Span }[];
   // Enough to draft a quote with the existing quote engine: what, where and a description.
   quote_ready: boolean;
 };
@@ -64,7 +64,9 @@ export function validateInterpretation(raw: unknown, transcript: Transcript): In
   };
   const next_steps = r.next_steps.flatMap(s => {
     if (!s.source || !spanInTranscript(transcript, s.source.start, s.source.end)) return [];
-    return [{ kind: s.kind, title: s.title, date: s.date && validDate(s.date) ? s.date : null, time: s.time, address: s.address, source: s.source }];
+    // A clock time is kept as a time; a time in words ("förmiddag") is kept as words, never turned into a clock time.
+    const t = s.time?.trim() ?? null, clock = t !== null && /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+    return [{ kind: s.kind, title: s.title, date: s.date && validDate(s.date) ? s.date : null, time: clock ? t : null, time_hint: !clock && t ? t.slice(0, 40) : null, address: s.address, source: s.source }];
   });
   return { classification: r.classification, fields, uncertain, next_steps, quote_ready: !!(fields.job_type && fields.description && (fields.address || fields.place)) };
 }

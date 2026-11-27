@@ -2569,6 +2569,8 @@ export type Database = {
           decided_at: string | null
           decided_by: string | null
           due_at: string | null
+          due_date: string | null
+          due_hint: string | null
           id: string
           kind: string
           state: string
@@ -2584,6 +2586,8 @@ export type Database = {
           decided_at?: string | null
           decided_by?: string | null
           due_at?: string | null
+          due_date?: string | null
+          due_hint?: string | null
           id?: string
           kind: string
           state?: string
@@ -2599,6 +2603,8 @@ export type Database = {
           decided_at?: string | null
           decided_by?: string | null
           due_at?: string | null
+          due_date?: string | null
+          due_hint?: string | null
           id?: string
           kind?: string
           state?: string
@@ -3758,6 +3764,15 @@ export type Database = {
         }
         Returns: Json
       }
+      samtal_a9_dismiss: {
+        Args: {
+          p_actor: string
+          p_call: string
+          p_company: string
+          p_version: number
+        }
+        Returns: Json
+      }
       samtal_a9_phone: { Args: { v: string }; Returns: string }
       samtal_a9_review_options: {
         Args: {
@@ -3971,6 +3986,8 @@ export type Database = {
           decided_at: string | null
           decided_by: string | null
           due_at: string | null
+          due_date: string | null
+          due_hint: string | null
           id: string
           kind: string
           state: string

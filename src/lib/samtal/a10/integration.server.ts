@@ -33,8 +33,8 @@ export async function continueAfterHandoff(db:SupabaseClient<Database>,company:s
   if(i&&Array.isArray(i.next_steps)){
     const has=await any.from('samtal_tasks').select('id',{count:'exact',head:true}).eq('company_id',company).eq('call_id',call);
     if(!has.error&&(has.count??0)===0){
-      const tasks=suggestedTasks(i).map(t=>({company_id:company,call_id:call,user_id:c.data?.user_id??null,kind:t.kind,title:t.title,due_at:t.due_at,address:t.address}));
-      // Server roles have no direct write on samtal_tasks yet; a refusal is logged and the inbox flow continues.
+      const tasks=suggestedTasks(i).map(t=>({company_id:company,call_id:call,user_id:c.data?.user_id??null,kind:t.kind,title:t.title,due_at:t.due_at,due_date:t.due_date,due_hint:t.due_hint,address:t.address}));
+      // The server saves tasks once per call; a refusal is logged and the inbox flow continues.
       if(tasks.length){const w=await any.from('samtal_tasks').insert(tasks);if(w.error)console.error('samtal_continue_tasks_failed',w.error.code);}
     }
   }
