@@ -1,3 +1,7 @@
 - Keep tender uploads isolated from existing modules; use bounded browser ZIP expansion and authenticated company-scoped server functions with atomic stored-size validation to prevent archive and tenant-boundary bypasses.
 - Keep Estim context in a component-free module and separate from its refreshable provider, so hot updates cannot disconnect mounted page consumers or reset their store.
 - Portal quote PDF previews to document.body using the shared ov/md dialog classes; keep modal constraints screen-only so printed sheets remain unclipped.
+- Keep interactive mutations responsive: parallelise independent reads/writes, debounce and coalesce draft keystroke saves, clear pending saves before explicit actions, and never send HTTP or serialise the whole workspace per keystroke.
+- Prefer optimistic UI with busy-state and rollback handling for reversible toggles and mutations; use stable keys and memoise only expensive derived values.
+- Keep polling and realtime updates quiet: skip rerenders when the whole workspace snapshot is unchanged (compare all of it, so no change is missed), slow background-tab polling rather than stopping it, and lazy-load hidden settings tabs only when opened.
+- Set staleTime and enabled per query for cached reads that do not change on every interaction, never as global QueryClient defaults (they change tender and Samtal queries); keep mutation invalidation or direct patching targeted.
