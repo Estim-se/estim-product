@@ -3677,6 +3677,17 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_a10_commit_quote: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_expected_quote: string
+          p_lines: Json
+          p_mode: string
+          p_version: number
+        }
+        Returns: Json
+      }
       samtal_a10_handoff: {
         Args: {
           p_actor?: string

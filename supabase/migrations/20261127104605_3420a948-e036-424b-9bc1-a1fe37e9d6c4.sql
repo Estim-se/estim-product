@@ -1,6 +1,3 @@
--- estim Samtal staged migration 12/13 from docs/samtal/a10-quote-integration.sql (approved for Bygg Demo AB test, 2026-11-27).
--- DOCUMENTATION-ONLY quotation integration. Reuses estim_quote and the A9 single-call receipt transaction.
--- Append is the safe default for additional work; existing lines/options are retained.
 CREATE FUNCTION public.samtal_a10_commit_quote(p_call uuid,p_company uuid,p_version integer,p_lines jsonb,p_expected_quote uuid,p_mode text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE c samtal_calls; m samtal_a9_matches; old quotes; merged jsonb; receipt samtal_a9_quote_receipts; h samtal_ring_handoffs; d samtal_ring_drafts; result jsonb;
@@ -31,7 +28,6 @@ BEGIN
  IF old.id IS DISTINCT FROM p_expected_quote THEN RETURN jsonb_build_object('status','quote_changed'); END IF;
  merged:=CASE WHEN p_mode='append' THEN coalesce(old.lines,'[]'::jsonb)||p_lines ELSE p_lines END;
  IF jsonb_array_length(merged)>200 THEN RETURN jsonb_build_object('status','line_limit'); END IF;
- -- This is an explicitly human-reviewed draft. No reply generation, send adapter or order operation.
  result:=samtal_a9_commit_quote(p_call,p_company,p_version,merged,p_expected_quote);
  IF result->>'status'='ok' AND h.id IS NOT NULL THEN PERFORM samtal_ring_finish_handoff(h.id,result->>'quote_id',NULL); END IF;
  RETURN result;
