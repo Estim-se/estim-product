@@ -4,7 +4,7 @@
 //   - the names of the company's members (profiles are not readable across users);
 //   - short-lived signed links to audio, after the user's client has proven the call is visible to them;
 //   - starting a waiting call's job, for an owner, after the same proof.
-// Priority 1 V2 (unapplied patch): audio, restart and review go through service-only guarded database functions that
+// Priority 1 V2: audio, restart and review go through service-only guarded database functions that
 // repeat the membership, tenant, deletion, expiry and review checks under the call lock. The actor is always the
 // verified user id from the auth middleware, never a value from the browser.
 import type { SupabaseClient } from '@supabase/supabase-js';

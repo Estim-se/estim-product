@@ -24,8 +24,7 @@ def main():
         shutil.copytree(root, target, dirs_exist_ok=True, ignore=ignore)
         # Give the copy its own node_modules directory whose entries link to the
         # installed packages. Tool caches (.vite-temp, .vite, .vitest) are then
-        # created inside the disposable copy, so a run under sudo never leaves
-        # root-owned files in the checkout's dependencies.
+        # created inside the disposable copy.
         modules = target / "node_modules"
         modules.mkdir()
         installed = root / "node_modules"
@@ -52,10 +51,10 @@ def main():
         if proposals:
             command += ["--config", "vitest.samtal-proposals.config.ts"]
         command += args
-        # The guard checks a distinct namespace, interfaces/routes, removes inherited
-        # credentials, and sets ESTIM_TEST_* only AFTER isolation is verified.
+        # The guard checks a distinct namespace and removes inherited credentials;
+        # it sets ESTIM_TEST_* only AFTER isolation is verified.
         result = subprocess.run(
-            [sys.executable, "docs/samtal/a10-isolated-run.py", *command], cwd=target,
+            [sys.executable, "scripts/ci/isolated-tests-run.py", *command], cwd=target,
             env={"PATH": os.environ.get("PATH", ""), "HOME": directory},
         )
         return result.returncode
