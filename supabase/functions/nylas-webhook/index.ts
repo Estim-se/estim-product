@@ -173,15 +173,35 @@ async function markConnectionLost(
     new_state: newState,
   });
   if (res.error) return { retry: true };
-  if (wasActive) {
-    await notifyConnectionLost(db, {
-      companyId: wasActive.company_id,
-      email: wasActive.email,
-      grantId,
-      newState,
-    }).catch((e) => console.error("[notify] reconnect alert error:", errCode(e)));
-  }
-  return {};
+  if (!wasActive) return {};
+  const alert = wasActive;
+  // Sent after the webhook has answered, so a slow Resend call never makes the provider retry or mark us failing.
+  return {
+    after: async () => {
+      if (newState === "revoked" && (await ownerDisconnected(db, alert.company_id))) return;
+      await notifyConnectionLost(db, {
+        companyId: alert.company_id,
+        email: alert.email,
+        grantId,
+        newState,
+      }).catch((e) => console.error("[notify] reconnect alert error:", errCode(e)));
+    },
+  };
+}
+
+/** The owner's own "Koppla från" revokes at the provider before marking our row; that event is not an alert. */
+const OWNER_DISCONNECT_GRACE_MS = 10_000;
+async function ownerDisconnected(db: SupabaseClient, companyId: string): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, OWNER_DISCONNECT_GRACE_MS));
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const own = await db
+    .from("audit_log")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("event", "E-post frånkopplad")
+    .gte("created_at", since)
+    .limit(1);
+  return !own.error && (own.data?.length ?? 0) > 0;
 }
 
 /* ---------- Shared inbound path (both providers) ---------- */

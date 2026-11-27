@@ -188,6 +188,25 @@ Deno.test("shouldSkip: blocks incoming estim system mails by header or RESEND_FR
     );
     assertEquals(shouldSkip(baseMsg(), "info@elfirma.se", null), null);
   });
+  // Flag off: inbound filtering is exactly as before Resend, even with RESEND_FROM set.
+  await withEnvAndFetch({ RESEND_FROM: "estim <notiser@mail.estim.se>" }, () => new Response("ok"), async () => {
+    assertEquals(
+      shouldSkip(
+        baseMsg({ from: [{ email: "notiser@mail.estim.se", name: "estim" }] }),
+        "info@elfirma.se",
+        null,
+      ),
+      null,
+    );
+    assertEquals(
+      shouldSkip(
+        baseMsg({ headers: [{ name: "X-Estim-System-Mail", value: "1" }] }),
+        "info@elfirma.se",
+        null,
+      ),
+      null,
+    );
+  });
 });
 
 function draftDb(extra: Record<string, Row[]> = {}): FakeDb {
