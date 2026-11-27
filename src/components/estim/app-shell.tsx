@@ -9,20 +9,39 @@ import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
 import { WorkspaceAccess } from './workspace-access';
 import { SamtalNavLink } from './samtal-nav';
+import { createUnreadTitleCycler } from '@/lib/unread-title';
 
 // Route-aware links preserve native navigation and the shared prototype state.
 export function AppShell({ children, waiting, onReset }: {
   children: ReactNode; waiting: number; onReset: () => void;
 }) {
-  const { actions } = useEstim();
+  const { state, actions } = useEstim();
   const path = useLocation().pathname;
   const workspace = useWorkspace();
   const navigate = useNavigate();
-  // App pages require a session: signed-out visitors are sent to the login page.
-  useEffect(() => { if (!workspace.loading && !workspace.signedIn) void navigate({ to: '/auth', replace: true }); }, [workspace.loading, workspace.signedIn, navigate]);
-  if (workspace.loading || !workspace.signedIn) return null;
   const real = workspace.mode === 'real';
   const company = real ? workspace.data?.company?.name ?? 'Ditt företag' : demo.company.name;
+  const unreadCount = state.threads.filter(thread => !thread.read).length;
+  // App pages require a session: signed-out visitors are sent to the login page.
+  useEffect(() => { if (!workspace.loading && !workspace.signedIn) void navigate({ to: '/auth', replace: true }); }, [workspace.loading, workspace.signedIn, navigate]);
+  useEffect(() => {
+    if (workspace.loading || !workspace.signedIn) return;
+    const cycler = createUnreadTitleCycler(company, unreadCount);
+    const syncTitle = () => { document.title = cycler.tick(document.hidden); };
+    document.title = company;
+    if (unreadCount === 0) return () => { document.title = company; };
+    const timer = setInterval(syncTitle, 1000);
+    const onVisibilityChange = () => {
+      document.title = document.hidden ? cycler.tick(true) : cycler.reset();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.title = company;
+    };
+  }, [company, unreadCount, path, workspace.loading, workspace.signedIn]);
+  if (workspace.loading || !workspace.signedIn) return null;
   // Both modes share the bounded inbox layout and mobile navigation; data stays mode-specific.
   return <div className={`app real-app${path === '/' ? ' inbox-app' : ''}`}>
     <aside className="side" aria-label="Huvudnavigation">
