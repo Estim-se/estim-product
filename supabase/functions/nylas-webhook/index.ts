@@ -39,6 +39,8 @@ import {
 import * as unipile from "../_shared/unipile.ts";
 import { bindUnipileAccount } from "../_shared/connection-binding.ts";
 import { ingestMail, type Outcome } from "../_shared/inbound-pipeline.ts";
+import { notifyConnectionLost, notifyOpsAlert } from "../_shared/notify.ts";
+import { resendEnabled } from "../_shared/resend.ts";
 import { senderCheckEnabled, senderVerdict } from "../_shared/sender-auth.ts";
 import { inboundLevel, parseThreadHeaders } from "../_shared/mail-identity.ts";
 
@@ -144,13 +146,62 @@ async function handle(
   if (type === "grant.expired" || type === "grant.deleted") {
     const grantId = grantOf(object);
     if (!grantId) return {};
-    const res = await db.rpc("estim_email_grant_state", {
-      p_grant: grantId,
-      new_state: type === "grant.expired" ? "expired" : "revoked",
-    });
-    return res.error ? { retry: true } : {};
+    return await markConnectionLost(db, grantId, type === "grant.expired" ? "expired" : "revoked");
   }
   return {};
+}
+
+async function markConnectionLost(
+  db: SupabaseClient,
+  grantId: string,
+  newState: "expired" | "revoked",
+): Promise<Outcome> {
+  // Only inspect prior status when Resend alerts are enabled so the flag-off path stays unchanged.
+  let wasActive: { company_id: string; email: string } | null = null;
+  if (resendEnabled()) {
+    const cur = await db
+      .from("email_connections")
+      .select("company_id,email,status")
+      .eq("grant_id", grantId)
+      .maybeSingle();
+    if (!cur.error && cur.data?.status === "active") {
+      wasActive = { company_id: String(cur.data.company_id), email: String(cur.data.email ?? "") };
+    }
+  }
+  const res = await db.rpc("estim_email_grant_state", {
+    p_grant: grantId,
+    new_state: newState,
+  });
+  if (res.error) return { retry: true };
+  if (!wasActive) return {};
+  const alert = wasActive;
+  // Sent after the webhook has answered, so a slow Resend call never makes the provider retry or mark us failing.
+  return {
+    after: async () => {
+      if (newState === "revoked" && (await ownerDisconnected(db, alert.company_id))) return;
+      await notifyConnectionLost(db, {
+        companyId: alert.company_id,
+        email: alert.email,
+        grantId,
+        newState,
+      }).catch((e) => console.error("[notify] reconnect alert error:", errCode(e)));
+    },
+  };
+}
+
+/** The owner's own "Koppla från" revokes at the provider before marking our row; that event is not an alert. */
+const OWNER_DISCONNECT_GRACE_MS = 10_000;
+async function ownerDisconnected(db: SupabaseClient, companyId: string): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, OWNER_DISCONNECT_GRACE_MS));
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const own = await db
+    .from("audit_log")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("event", "E-post frånkopplad")
+    .gte("created_at", since)
+    .limit(1);
+  return !own.error && (own.data?.length ?? 0) > 0;
 }
 
 /* ---------- Shared inbound path (both providers) ---------- */
@@ -316,6 +367,11 @@ async function runWithRetries(event: unipile.UnipileEvent): Promise<void> {
     }
   }
   console.error("[unipile] gave up on event:", event.type); // the event id is in Unipile's dashboard for a replay
+  await notifyOpsAlert({
+    key: `unipile_giveup:${event.type}`,
+    title: `Unipile-webhook misslyckades (${event.type})`,
+    detail: `Alla återförsök för webhook-händelsen ${event.type} misslyckades. Kontrollera Unipile Dashboard och Supabase Logs.`,
+  }).catch(() => undefined);
 }
 
 async function handleUnipileEvent(
@@ -346,11 +402,11 @@ async function handleUnipileEvent(
     return await bindUnipileAccount(db, type, payload, isLastAttempt);
   if (type === "account.status.disconnected" || type === "account.remove") {
     if (!accountId) return {};
-    const res = await db.rpc("estim_email_grant_state", {
-      p_grant: accountId,
-      new_state: type === "account.remove" ? "revoked" : "expired",
-    });
-    return res.error ? { retry: true } : {};
+    return await markConnectionLost(
+      db,
+      accountId,
+      type === "account.remove" ? "revoked" : "expired",
+    );
   }
   if (type === "account.status.running") {
     // The provider recovered on its own (e.g. a temporary token problem): an expired connection is usable again.

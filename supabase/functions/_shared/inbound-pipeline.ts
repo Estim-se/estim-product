@@ -678,7 +678,14 @@ export async function ingestMail(
       if (quarantine.warning) {
         await warnDraft(db, companyId, threadId, quarantine.warning);
         if (unverified) return; // never announce an unverified mail
-        if (state === "done") await notifyDraftReady(db, companyId, threadId, jobId);
+        if (state === "done")
+          await notifyDraftReady(
+            db,
+            companyId,
+            threadId,
+            jobId,
+            quarantine.reason === "form_mail" ? { kind: "form_quarantine" } : undefined,
+          );
         return;
       }
       if (unverified) {
