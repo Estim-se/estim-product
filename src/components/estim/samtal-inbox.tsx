@@ -39,10 +39,13 @@ function due(t: CallTask) {
   return t.due_hint ? `${day} ${t.due_hint}` : day;
 }
 
+// A site visit with a stated day and clock time is booked; a day without a time is preliminary; no day means a visit
+// is still needed. Derived from what was said, never assumed.
+const visit = (t: CallTask) => t.due_at ? 'Bokat' : t.due_date ? 'Preliminärt' : 'Kräver besök, ej bokat';
 function Tasks({ c }: { c: ReviewCall }) {
   if (!c.tasks?.length) return null;
   return <div className="card"><h3>Uppgifter och påminnelser</h3><div className="kv">{c.tasks.map(t =>
-    <div key={t.id}><span>{TASK_KIND[t.kind] ?? t.kind}</span><span>{t.title}{due(t) ? ` · ${due(t)}` : ''} <span className="xs muted">({TASK_STATE[t.state] ?? t.state})</span></span></div>)}</div></div>;
+    <div key={t.id}><span>{TASK_KIND[t.kind] ?? t.kind}</span><span>{t.title}{due(t) ? ` · ${due(t)}` : ''}{t.kind === 'platsbesok' ? ` · ${visit(t)}` : ''} <span className="xs muted">({TASK_STATE[t.state] ?? t.state})</span></span></div>)}</div></div>;
 }
 function Transcript({ c }: { c: ReviewCall }) {
   if (!c.transcript?.length) return null;
