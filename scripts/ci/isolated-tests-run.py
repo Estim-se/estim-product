@@ -40,7 +40,36 @@ if __name__ == '__main__':
                'A10_PARENT_NETNS': os.readlink('/proc/self/ns/net')}
         if os.environ.get('PLAYWRIGHT_BROWSERS_PATH'):
             env['PLAYWRIGHT_BROWSERS_PATH'] = os.environ['PLAYWRIGHT_BROWSERS_PATH']
-        flags = ['--net'] if os.getuid() == 0 else ['--user', '--map-root-user', '--net']
-        command = ['unshare', *flags,
-                   sys.executable, str(pathlib.Path(__file__).resolve()), '--inside', *sys.argv[1:]]
+        script = str(pathlib.Path(__file__).resolve())
+        child = [sys.executable, script, '--inside', *sys.argv[1:]]
+        if os.getuid() == 0:
+            command = ['unshare', '--net', *child]
+        else:
+            user_namespace = subprocess.run(
+                ['unshare', '--user', '--map-root-user', '--net', 'true'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            ).returncode == 0
+            if user_namespace:
+                command = ['unshare', '--user', '--map-root-user', '--net', *child]
+            else:
+                sudo = shutil.which('sudo')
+                unshare = shutil.which('unshare')
+                setpriv = shutil.which('setpriv')
+                env_command = shutil.which('env')
+                if not sudo or not unshare or not setpriv or not env_command:
+                    raise SystemExit('isolation_unavailable')
+                root_namespace = subprocess.run(
+                    [sudo, '-n', unshare, '--net', 'true'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                )
+                if root_namespace.returncode != 0:
+                    raise SystemExit('isolation_unavailable')
+                print('Using sudo only to create the network namespace; tests run as the invoking user', flush=True)
+                preserved_env = [f'{key}={value}' for key, value in env.items()]
+                command = [
+                    sudo, '-n', unshare, '--net', setpriv,
+                    f'--reuid={os.getuid()}', f'--regid={os.getgid()}',
+                    '--clear-groups', '--no-new-privs',
+                    env_command, '-i', *preserved_env, *child,
+                ]
         raise SystemExit(subprocess.call(command, cwd=cwd, env=env))
