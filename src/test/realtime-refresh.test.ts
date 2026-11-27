@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRealtimeRefreshScheduler } from '@/lib/realtime-refresh';
+import { createRealtimeRefreshScheduler, shouldSubscribeToRealtime } from '@/lib/realtime-refresh';
+
+describe('shouldSubscribeToRealtime',()=>{
+  it('defaults off and requires an authenticated real workspace',()=>{
+    expect(shouldSubscribeToRealtime(undefined,'real',true,'company-1')).toBe(false);
+    expect(shouldSubscribeToRealtime('false','real',true,'company-1')).toBe(false);
+    expect(shouldSubscribeToRealtime('true','demo',true,'company-1')).toBe(false);
+    expect(shouldSubscribeToRealtime('true','real',false,'company-1')).toBe(false);
+    expect(shouldSubscribeToRealtime('true','real',true,undefined)).toBe(false);
+    expect(shouldSubscribeToRealtime('true','real',true,'company-1')).toBe(true);
+  });
+});
 
 describe('createRealtimeRefreshScheduler',()=>{
   it('coalesces rapid realtime events into one refresh',()=>{

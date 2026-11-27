@@ -10,7 +10,7 @@ import { parseMutation } from '@/lib/real.schemas';
 import { WorkspaceContext } from './workspace-context';
 import { interpretRequest, writeReply } from '@/lib/ai-client';
 import { sendMessage } from '@/lib/channel.functions';
-import { createRealtimeRefreshScheduler } from '@/lib/realtime-refresh';
+import { createRealtimeRefreshScheduler, shouldSubscribeToRealtime } from '@/lib/realtime-refresh';
 export { useWorkspace } from './workspace-context';
 
 export function WorkspaceProvider({children}:{children:ReactNode}) {
@@ -58,8 +58,10 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
     return()=>{alive=false;listener.subscription.unsubscribe();};
   },[realStore]);
   const companyId=data?.company?.id;
+  const realtimeFlag=import.meta.env['VITE_INBOX_REALTIME'];
+  const realtimeEnabled=realtimeFlag==='true';
   useEffect(()=>{
-    if(mode!=='real'||!signedIn||!companyId)return;
+    if(!shouldSubscribeToRealtime(realtimeFlag,mode,signedIn,companyId))return;
     const scheduler=createRealtimeRefreshScheduler(()=>{void refresh().catch(()=>{});});
     const channel=supabase.channel(`workspace:${companyId}`);
     const tables=['threads','messages','drafts','ai_jobs','customers','quotes','moments','audit_log','companies'] as const;
@@ -78,18 +80,18 @@ export function WorkspaceProvider({children}:{children:ReactNode}) {
       scheduler.cancel();
       void supabase.removeChannel(channel);
     };
-  },[mode,signedIn,companyId,read]);
+  },[mode,signedIn,companyId,read,realtimeFlag]);
   // Poll while any thread is being analysed so drafts appear without a reload.
   const analysing=useSyncAnalysing(realStore);
   useEffect(()=>{
     if(mode!=='real'||!signedIn)return;
     let inFlight=false;
-    const poll=()=>{if(document.visibilityState==='hidden'||inFlight)return;inFlight=true;void refresh().catch(()=>{}).finally(()=>{inFlight=false;});};
-    const timer=setInterval(poll,analysing?5000:30000);
+    const poll=()=>{if((realtimeEnabled&&document.visibilityState==='hidden')||inFlight)return;inFlight=true;void refresh().catch(()=>{}).finally(()=>{inFlight=false;});};
+    const timer=setInterval(poll,realtimeEnabled?(analysing?5000:30000):(analysing?4000:10000));
     const onVisibility=()=>{if(document.visibilityState==='visible')poll();};
-    document.addEventListener('visibilitychange',onVisibility);
-    return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',onVisibility);};
-  },[mode,analysing,signedIn]);
+    if(realtimeEnabled)document.addEventListener('visibilitychange',onVisibility);
+    return()=>{clearInterval(timer);if(realtimeEnabled)document.removeEventListener('visibilitychange',onVisibility);};
+  },[mode,analysing,signedIn,realtimeEnabled]);
   async function signOut(){identityEpoch.current++;await queryClient.cancelQueries();queryClient.clear();await supabase.auth.signOut();realStore.clear();setData(null);setSignedIn(false);setMode('demo');await navigate({to:'/auth',replace:true});}
   return <WorkspaceContext.Provider value={{mode,setMode,signedIn,loading,error,data,realStore,refresh,mutate,signOut}}>{children}</WorkspaceContext.Provider>;
 }

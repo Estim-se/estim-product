@@ -1,3 +1,12 @@
+export function shouldSubscribeToRealtime(
+  flag: string | undefined,
+  mode: 'demo' | 'real',
+  signedIn: boolean,
+  companyId: string | undefined,
+) {
+  return flag === 'true' && mode === 'real' && signedIn && Boolean(companyId);
+}
+
 export function createRealtimeRefreshScheduler(refresh: () => void, delay = 150) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return {
