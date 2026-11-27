@@ -72,14 +72,8 @@ export function samtalInboxStep(): InboxStep {
     const saved = await db.rpc('samtal_inbox_guarded', { p_call: call.id, p_company: company, p_job: lease.job, p_token: lease.token,
       p_extraction: { interpretation: i, customer_match: match }, p_title: requestTitle(i), p_summary: requestSummary(i, meta.data), p_tasks: suggestedTasks(i) });
     if (saved.error) throw Object.assign(new Error('inbox_failed'), { retryable: true });
-    const accepted = (saved.data as { accepted?: boolean } | null)?.accepted === true;
-    // The inbox function saves due_at only; the day and time-of-day words are added to the same call's tasks.
-    if (accepted) for (const t of suggestedTasks(i)) if (t.due_date) {
-      const u = await (db as unknown as SupabaseClient).from('samtal_tasks').update({ due_date: t.due_date, due_hint: t.due_hint })
-        .eq('company_id', company).eq('call_id', call.id).eq('kind', t.kind).eq('title', t.title).is('due_date', null);
-      if (u.error) console.error('samtal_task_due_failed', u.error.code);
-    }
-    return accepted;
+    // The day and time-of-day words of each task are filled in by the database from the saved interpretation.
+    return (saved.data as { accepted?: boolean } | null)?.accepted === true;
   };
 }
 
