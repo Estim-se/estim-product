@@ -97,8 +97,17 @@ export function parseAuthResults(value: string): AuthResult[] {
   return results;
 }
 
-const domainOf = (value: string | undefined): string =>
-  (value ?? "").trim().toLowerCase().replace(/^.*@/, "").replace(/\.$/, "");
+function domainOf(value: string | undefined): string {
+  const raw = (value ?? "").trim().toLowerCase().replace(/^.*@/, "").replace(/\.$/, "");
+  // Characters a host cannot contain are kept as-is, so the domain simply never aligns (fails closed).
+  // "%" too: new URL would percent-decode and remap an attacker-supplied domain.
+  if (!raw || /[\s/\\:?#%]/.test(raw)) return raw;
+  try {
+    return new URL(`http://${raw}`).hostname.toLowerCase();
+  } catch {
+    return raw;
+  }
+}
 
 /** Equal, or one is a subdomain of the other. Both need a dot, so a bare suffix like "com" never aligns. */
 function aligned(a: string, b: string): boolean {
@@ -114,6 +123,8 @@ export function senderVerdict(
   if (!top) return "unknown";
   const fromDomain = domainOf(fromEmail);
   if (!fromDomain || !fromEmail.includes("@")) return "unknown";
+  // A header truncated at the parse limit may have lost a trailing dmarc=fail or compauth=fail.
+  if (top.value.length >= AUTH_RESULTS_VALUE_LIMIT) return "fail";
   const results = parseAuthResults(top.value);
   const has = (method: string, ...values: string[]) =>
     results.filter((r) => r.method === method && values.includes(r.result));

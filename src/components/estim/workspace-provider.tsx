@@ -18,6 +18,14 @@ import { parseMutation } from "@/lib/real.schemas";
 import { WorkspaceContext } from "./workspace-context";
 import { interpretRequest, writeReply } from "@/lib/ai-client";
 import { sendMessage } from "@/lib/channel.functions";
+import { isSessionRecovery } from "@/lib/auth-events";
+import {
+  createRealtimeRefreshScheduler,
+  pollIntervalMs,
+  REALTIME_TABLES,
+  realtimeLiveAfter,
+  shouldSubscribeToRealtime,
+} from "@/lib/realtime-refresh";
 export { useWorkspace } from "./workspace-context";
 
 /**
@@ -69,6 +77,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const lastFingerprint = useRef("");
   const hasDataRef = useRef(false);
   const lastHydrate = useRef(0);
+  // The user whose workspace is loaded; a SIGNED_IN event for the same user is a session recovery, not a sign-in.
+  const sessionUser = useRef<string | null>(null);
   const read = useServerFn(loadWorkspace);
   const write = useServerFn(mutateWorkspace);
   const send = useServerFn(sendMessage);
@@ -135,6 +145,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     let alive = true;
     let generation = 0;
     function signedOutState() {
+      sessionUser.current = null;
       hasDataRef.current = false;
       lastFingerprint.current = "";
       setSignedIn(false);
@@ -154,6 +165,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         signedOutState();
         return;
       }
+      sessionUser.current = sessionData.session.user.id;
       setSignedIn(true);
       setMode("real");
       try {
@@ -173,9 +185,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (alive && generation === own) setLoading(false);
     }
     void resolve(true);
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      // supabase-js re-emits SIGNED_IN for the same user whenever the tab regains focus. The visibility catch-up
+      // poll and react-query's focus refetch already refresh then, so a second read and a full invalidate are skipped.
+      if (isSessionRecovery(event, session?.user.id, sessionUser.current)) return;
       if (event === "SIGNED_OUT") {
+        sessionUser.current = null;
         generation++;
         identityEpoch.current++;
         hasDataRef.current = false;
@@ -197,29 +213,81 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [realStore, refresh, queryClient, router]);
 
-  // Poll as on main while visible (4 s during AI analysis, 10 s idle). A hidden tab keeps polling every 30 s so
-  // unread counts still update, and catches up at once when it becomes visible again.
+  // One workspace read at a time: a realtime event during a read reruns once afterwards, so an older snapshot
+  // never overwrites a newer one.
+  const reading = useRef<Promise<unknown> | null>(null);
+  const readAgain = useRef(false);
+  const serialRefresh = useCallback(
+    (force: boolean): Promise<unknown> => {
+      if (reading.current) {
+        readAgain.current = true;
+        return reading.current;
+      }
+      const run = refresh({ force })
+        .catch(() => {})
+        .finally(() => {
+          reading.current = null;
+          if (readAgain.current) {
+            readAgain.current = false;
+            void serialRefresh(false);
+          }
+        });
+      reading.current = run;
+      return run;
+    },
+    [refresh],
+  );
+
+  // Realtime (flag VITE_INBOX_REALTIME, off by default) only slows polling once the channel reports SUBSCRIBED;
+  // until then, and after any channel error, polling runs as below without it.
+  const companyId = data?.company?.id;
+  const realtimeFlag = import.meta.env["VITE_INBOX_REALTIME"];
+  const [realtimeLive, setRealtimeLive] = useState(false);
+  useEffect(() => {
+    if (!shouldSubscribeToRealtime(realtimeFlag, mode, signedIn, companyId)) return;
+    const scheduler = createRealtimeRefreshScheduler(() => {
+      void serialRefresh(false);
+    });
+    const channel = supabase.channel(`workspace:${companyId}`);
+    for (const table of REALTIME_TABLES) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+          filter: table === "companies" ? `id=eq.${companyId}` : `company_id=eq.${companyId}`,
+        },
+        () => scheduler.schedule(),
+      );
+    }
+    channel.subscribe((status) => setRealtimeLive((live) => realtimeLiveAfter(live, status)));
+    return () => {
+      setRealtimeLive(false);
+      scheduler.cancel();
+      void supabase.removeChannel(channel);
+    };
+  }, [mode, signedIn, companyId, realtimeFlag, serialRefresh]);
+
+  // Poll while visible (4 s during AI analysis, 10 s idle). A hidden tab keeps polling every 30 s so unread counts
+  // still update, and catches up at once when it becomes visible again. With live realtime, polling is a slow
+  // safety net (5 s / 30 s) and a hidden tab relies on events.
   const analysing = useSyncAnalysing(realStore);
   useEffect(() => {
     if (mode !== "real" || !signedIn) return;
-    let inFlight = false;
     let lastPoll = Date.now();
     const poll = () => {
-      if (inFlight) return;
-      inFlight = true;
+      if (reading.current) return;
       lastPoll = Date.now();
-      void refresh({ force: analysing })
-        .catch(() => {})
-        .finally(() => {
-          inFlight = false;
-        });
+      void serialRefresh(analysing);
     };
     const timer = setInterval(
       () => {
         const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
-        if (!hidden || Date.now() - lastPoll >= 30_000) poll();
+        if (!hidden) poll();
+        else if (!realtimeLive && Date.now() - lastPoll >= 30_000) poll();
       },
-      analysing ? 4000 : 10000,
+      pollIntervalMs(realtimeLive, analysing),
     );
     const onVisibility = () => {
       if (document.visibilityState === "visible") poll();
@@ -229,7 +297,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [mode, analysing, signedIn, refresh]);
+  }, [mode, analysing, signedIn, realtimeLive, serialRefresh]);
 
   const signOut = useCallback(async () => {
     await Promise.race([

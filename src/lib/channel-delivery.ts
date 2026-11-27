@@ -30,6 +30,7 @@ async function deliverEmail(input: DeliveryInput, request: typeof fetch) {
     if (response.ok && result?.ok === true && typeof result.provider_message_id === 'string' && result.provider_message_id) return { sent: true, error: null, providerId: result.provider_message_id as string };
     if (result?.reason === 'mailbox_not_connected') return fail('E-post är inte ansluten. Anslut e-post under Kanaler.');
     if (result?.reason === 'rate_limited') return fail('För många utskick den senaste timmen. Försök igen senare.');
+    if (result?.reason === 'pending_sender') return fail('Godkänn avsändaren innan du skickar svaret.');
     throw new Error('Delivery failed');
   } catch { return fail('E-postsvaret kunde inte skickas. Försök igen.'); }
 }

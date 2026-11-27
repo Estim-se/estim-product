@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import type { Json } from '@/integrations/supabase/types';
 import { assertBoundedInput } from './input-limits';
 import { parseAccept, parseManagement, INVITATION_DAYS, invitationStatus } from './access-rules';
+import { inviteTemplateData } from './invite-metadata';
 
 export const loadAccess = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
   const { readAccess } = await import('./access.server');
@@ -55,21 +56,28 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
   const origin = getRequestHeader('origin');
   const request = new URL((await import('@tanstack/react-start/server')).getRequest().url);
   if (!origin || origin !== request.origin) throw new Error('Ogiltig avsändare.');
+  const configuredAppUrl = (process.env['APP_URL'] ?? '').trim();
+  const redirectOrigin = /^https:\/\/[^\s/]+$/i.test(configuredAppUrl.replace(/\/+$/, ''))
+    ? new URL(configuredAppUrl).origin
+    : origin;
   async function audit(cid: string, event: string, after: Json) {
     const saved = await db.from('audit_log').insert({ company_id: cid, user_id: context.userId, event, after });
     if (saved.error) throw new Error('Kunde inte spara händelsen.');
   }
   async function invite(cid: string, email: string, role: 'ägare' | 'användare', previousId?: string) {
-    const company = await db.from('companies').select('active').eq('id', cid).single();
+    const company = await db.from('companies').select('active,name').eq('id', cid).single();
     if (!company.data?.active) throw new Error('Företaget är avaktiverat.');
+    // The inviter's name only personalises the mail; if it cannot be read the invitation is still sent.
+    const inviterProfile = await db.from('profiles').select('display_name').eq('id', context.userId).maybeSingle();
     const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
     const token_hash = await hashInvitation(token);
     const expires_at = new Date(Date.now() + INVITATION_DAYS * 86400000).toISOString();
     const recipient = email.toLowerCase();
     const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,...(previousId?{previous_id:previousId}:{})});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
-    const redirectTo = `${origin}/inbjudan?token=${token}`;
-    const sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
+    const redirectTo = `${redirectOrigin}/inbjudan?token=${token}`;
+    const templateData = inviteTemplateData(inviterProfile.error ? null : inviterProfile.data?.display_name, company.data.name);
+    const sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo, data: templateData });
     // Existing recipients receive a sign-in email pointing to the same bound invitation.
     if (sent.error?.code === 'email_exists' || sent.error?.message.toLowerCase().includes('already')) {
       const { createClient } = await import('@supabase/supabase-js');
