@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -9,7 +9,7 @@ import { useEstim } from './store-provider';
 import { useWorkspace } from './workspace-provider';
 import { WorkspaceAccess } from './workspace-access';
 import { SamtalNavLink } from './samtal-nav';
-import { createUnreadTitleCycler } from '@/lib/unread-title';
+import { createUnreadTitleCycler, unreadTitleEnabled } from '@/lib/unread-title';
 
 // Route-aware links preserve native navigation and the shared prototype state.
 export function AppShell({ children, waiting, onReset }: {
@@ -19,29 +19,41 @@ export function AppShell({ children, waiting, onReset }: {
   const path = useLocation().pathname;
   const workspace = useWorkspace();
   const navigate = useNavigate();
-  const real = workspace.mode === 'real';
-  const company = real ? workspace.data?.company?.name ?? 'Ditt företag' : demo.company.name;
   const unreadCount = state.threads.filter(thread => !thread.read).length;
   // App pages require a session: signed-out visitors are sent to the login page.
   useEffect(() => { if (!workspace.loading && !workspace.signedIn) void navigate({ to: '/auth', replace: true }); }, [workspace.loading, workspace.signedIn, navigate]);
+  // Unread count in the tab title (flag VITE_UNREAD_TITLE, real mode only): changed only while the tab is hidden,
+  // and the page's own title is restored when it becomes visible.
+  const titleOn = unreadTitleEnabled(import.meta.env['VITE_UNREAD_TITLE'], workspace.mode) && workspace.signedIn;
+  const unreadRef = useRef(unreadCount);
+  useEffect(() => { unreadRef.current = unreadCount; }, [unreadCount]);
   useEffect(() => {
-    if (workspace.loading || !workspace.signedIn) return;
-    const cycler = createUnreadTitleCycler(company, unreadCount);
-    const syncTitle = () => { document.title = cycler.tick(document.hidden); };
-    document.title = company;
-    if (unreadCount === 0) return () => { document.title = company; };
-    const timer = setInterval(syncTitle, 1000);
-    const onVisibilityChange = () => {
-      document.title = document.hidden ? cycler.tick(true) : cycler.reset();
+    if (!titleOn) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let cycler: ReturnType<typeof createUnreadTitleCycler> | null = null;
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+      if (cycler) document.title = cycler.reset();
+      cycler = null;
     };
+    const start = () => {
+      if (cycler) return;
+      const active = createUnreadTitleCycler(document.title);
+      cycler = active;
+      timer = setInterval(() => { document.title = active.tick(unreadRef.current); }, 1000);
+    };
+    const onVisibilityChange = () => { if (document.hidden) start(); else stop(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
+    if (document.hidden) start();
     return () => {
-      clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      document.title = company;
+      stop();
     };
-  }, [company, unreadCount, path, workspace.loading, workspace.signedIn]);
+  }, [titleOn]);
   if (workspace.loading || !workspace.signedIn) return null;
+  const real = workspace.mode === 'real';
+  const company = real ? workspace.data?.company?.name ?? 'Ditt företag' : demo.company.name;
   // Both modes share the bounded inbox layout and mobile navigation; data stays mode-specific.
   return <div className={`app real-app${path === '/' ? ' inbox-app' : ''}`}>
     <aside className="side" aria-label="Huvudnavigation">
