@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": { "enum": ["CONFIRMED", "PLAUSIBLE", "REFUTED"] },
+    "meets_important_bar": { "type": "boolean" },
+    "pre_existing": { "type": "boolean" },
+    "reasoning": { "type": "string" },
+    "settle_by": { "type": "string", "description": "for PLAUSIBLE: the check that would settle it" }
+  },
+  "required": ["verdict", "meets_important_bar", "pre_existing", "reasoning", "settle_by"]
+}

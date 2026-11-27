@@ -1,0 +1,60 @@
+{
+  "note": "Deterministic tiers. A PR is RISK if any touched file is risky, LITE if every touched file is light, NORMAL otherwise. cap_usd is a hard ceiling per review; the estimate comes from the bytes of the touched files.",
+  "risk_paths": [
+    "supabase/functions/**",
+    "supabase/config.toml",
+    "src/routes/api/**",
+    "src/integrations/supabase/**",
+    "src/start.ts",
+    "src/server.ts",
+    "**/*.sql"
+  ],
+  "risk_exclude": ["src/integrations/supabase/types.ts"],
+  "risk_content": ["createServerFn"],
+  "risk_markdown_sql": "(?im)^\\s*(?:```\\s*sql\\b|create\\s+(?:or\\s+replace\\s+)?(?:table|function|policy|view|trigger|index)\\b|alter\\s+(?:table|function|policy)\\b|drop\\s+(?:table|function|policy|view|trigger|index)\\b|grant\\s|revoke\\s|insert\\s+into\\b|delete\\s+from\\b|update\\s+\\S+\\s+set\\b)",
+  "unread_ok": ["bun.lock", "**/package-lock.json"],
+  "lite_paths": ["**/*.md", "**/*.txt", "bun.lock", "**/package-lock.json", "src/routeTree.gen.ts", "src/integrations/supabase/types.ts"],
+  "tiers": {
+    "LITE": {
+      "cap_usd": 0.6,
+      "finders": [{ "lens": "general", "model": "sonnet" }],
+      "verifier": "sonnet",
+      "security_verifier": "sonnet"
+    },
+    "LIGHT": {
+      "cap_usd": 0.9,
+      "finders": [{ "lens": "general", "model": "sonnet" }],
+      "verifier": "sonnet",
+      "security_verifier": "sonnet"
+    },
+    "NORMAL": {
+      "cap_usd": 2.0,
+      "finders": [
+        { "lens": "correctness", "model": "sonnet" },
+        { "lens": "security", "model": "sonnet" },
+        { "lens": "tests", "model": "sonnet" }
+      ],
+      "verifier": "sonnet",
+      "security_verifier": "sonnet"
+    },
+    "RISK": {
+      "cap_usd": 4.0,
+      "finders": [
+        { "lens": "correctness", "model": "sonnet" },
+        { "lens": "tests", "model": "sonnet" },
+        { "lens": "security", "model": "opus" }
+      ],
+      "verifier": "sonnet",
+      "security_verifier": "opus"
+    }
+  },
+  "calls": {
+    "finder": { "effort": "medium", "max_turns": 40, "max_candidates": 5 },
+    "verifier": { "effort": "medium", "max_turns": 20 },
+    "max_verify": 8,
+    "max_nits": 5,
+    "max_pre_existing": 5,
+    "finder_share": 0.6
+  },
+  "estimate": { "finder_base_usd": 0.06, "finder_per_kb_usd": 0.0008, "verifier_usd": 0.09, "expected_verifies": 4, "opus_factor": 1.7 }
+}

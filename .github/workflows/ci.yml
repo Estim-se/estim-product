@@ -1,6 +1,7 @@
 # Scope: the guards catch mistakes by agents, Lovable and people (a forgotten RLS, a missing auth guard, a permissive
-# policy). Deliberate lexical evasion (\r line ends in comments, string continuation, tarball or git dependencies,
-# ALTER ... OWNER TO / SET SCHEMA) is out of scope and needs review; the follow-up is a real-database RLS check.
+# policy, an edited bun.lock entry, a NUL byte that hides a diff). Deliberate lexical evasion (\r line ends in comments,
+# string continuation, ALTER ... OWNER TO / SET SCHEMA) is out of scope and needs review; the follow-up is a
+# real-database RLS check. Git and tarball dependencies now fail the lockfile guard.
 #
 # Required check "ci": the guards in scripts/ci/, then type check, lint, tests and build.
 # It never runs conditionally: GitHub counts a skipped required check as passed.
@@ -16,7 +17,8 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main, lovable]
+    # lovable-sync* branches are where Lovable's back-merges land (C16); they get the same checks.
+    branches: [main, lovable, 'lovable-sync*']
   workflow_dispatch:
 
 permissions:
@@ -141,6 +143,26 @@ jobs:
           CI_BASE_SHA: ${{ steps.base.outputs.sha }}
         run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/audit-guard.ts
 
+      - name: Lockfile guard
+        if: ${{ !cancelled() }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/lockfile-guard.ts
+
+      - name: Text guard
+        if: ${{ !cancelled() }}
+        env:
+          CI_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/text-guard.ts
+
+      # The token only reads CODEOWNERS errors at this commit; the job's token is read-only (permissions above).
+      - name: Config guard
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CODEOWNERS_AT: ${{ github.repository }}@${{ github.sha }}
+        run: bun --no-env-file --config="$RUNNER_TEMP/guard-bunfig.toml" --tsconfig-override="$RUNNER_TEMP/guard-tsconfig.json" scripts/ci/config-guard.ts --codeowners "$CODEOWNERS_AT"
+
       # Last of the guards: it runs typescript, a package, so nothing it runs can change a guard before it.
       - name: Edge Function guard
         if: ${{ !cancelled() && steps.guard-install.outcome == 'success' }}
@@ -172,7 +194,20 @@ jobs:
 
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: node_modules/.bin/vitest run
+        # The launcher uses an unprivileged network namespace where available.
+        # Otherwise it uses sudo only to create the namespace, then drops privileges before Vitest.
+        run: python3 scripts/run-tests-isolated.py
+
+      - name: No root-owned files left by the isolated tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          leftover="$(find . -path ./.git -prune -o -user 0 -print | head -20)"
+          if [ -n "$leftover" ]; then echo "Root-owned files after tests:"; echo "$leftover"; exit 1; fi
+
+      # The review gate's engine (.github/review/): Python's standard library only, nothing to install.
+      - name: Review gate tests
+        if: ${{ !cancelled() }}
+        run: python3 -I -m unittest discover -s .github/review/tests -t .github/review
 
       - name: Build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

@@ -15,6 +15,7 @@ import { logAiCall } from "../_shared/log.ts";
 import { requireCompany } from "../_shared/auth.ts";
 import { buildQuoteLines } from "../_shared/build-quote.ts";
 import { INTERPRET_SYSTEM, INTERPRET_TOOL, INTERPRET_VERSION } from "../_shared/prompts.ts";
+import { normaliseInterpretation } from "../_shared/interpretation-shape.ts";
 import { startMessageJob } from '../_shared/message-job.ts';
 import { loadConversation, formatConversation } from '../_shared/conversation.ts';
 
@@ -72,7 +73,7 @@ Deno.serve(async (req) => {
     const r = await callClaudeTool<Interpretation>({
       system: INTERPRET_SYSTEM, messages: [{ role: "user", content }], tool: INTERPRET_TOOL, maxTokens: 3000,
     });
-    const out = validate(r.data, new Set(body.catalog.map((m: { id: string }) => m.id)));
+    const out = validate(normaliseInterpretation(r.data as unknown as Record<string, unknown>) as unknown as Interpretation, new Set(body.catalog.map((m: { id: string }) => m.id)));
 
     // Quote is built in code from the catalog, never by the AI.
     let quoteNr: string | null = null;

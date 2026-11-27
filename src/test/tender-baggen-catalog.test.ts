@@ -1,7 +1,8 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { expect, it } from 'vitest';
 const url=process.env['SUPABASE_URL'], key=process.env['SUPABASE_SERVICE_ROLE_KEY'];
-const client=url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const headers=new Headers(init?.headers);if(key.startsWith('sb_')&&headers.get('Authorization')===`Bearer ${key}`)headers.delete('Authorization');headers.set('apikey',key);return fetch(input,{...init,headers});}}}):null;
+const client=integrationConfigured()&&url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>{const headers=new Headers(init?.headers);if(key.startsWith('sb_')&&headers.get('Authorization')===`Bearer ${key}`)headers.delete('Authorization');headers.set('apikey',key);return fetch(input,{...init,headers});}}}):null;
 const examples=[['Perilexuttag',1,250],['Vägguttag 16A',0.8,150],['Gruppcentral lägenhet',4,2500],['Gruppcentral lokal',6,4000],['Elmätare',2,1500],['Brandvarnare',0.3,250],['Handdukstork anslutning',1,80],['Dimmer',0.5,300],['Lamputtag',0.6,60],['Armatur badrum',0.8,600],['Armatur kök',0.8,700],['Spegelskåp anslutning',0.8,80],['Laddplats ledningsinstallation',4,1500],['Utomhusuttag',1,300]] as const;
 const newExamples=[['Huvudledning lägenhet',3,1200],['Huvudledning lokal',5,2500],['Fastighetscentral',24,25000],['Armatur trapphus',1,900]] as const;
 for(const [name,hours,list_price] of newExamples) it.skipIf(!client)(`stores the requested ${name} example`,async()=>{

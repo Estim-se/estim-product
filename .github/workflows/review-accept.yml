@@ -1,0 +1,50 @@
+# Accepting a review by hand (V1, C4, V12): the code owner dispatches this from main with pr:sha pairs and a reason.
+# Each pair must be an open PR into main whose head is still that commit, checked at the start and right before the
+# check is posted. The accept is recorded by diffhash, so the same change on another commit is accepted too. Only a
+# first attempt of this file on main can accept (a called workflow reports its caller's workflow_ref, so the check
+# fails there), and only when the account that dispatched it is in .github/review/accept.json. It never mints a token.
+name: review-accept
+
+on:
+  workflow_dispatch:
+    inputs:
+      pairs:
+        description: 'PR number and commit SHA, as 12:<sha>; several separated by spaces or commas'
+        required: true
+        type: string
+      reason:
+        description: 'Why this is accepted (shown on the check)'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  accept:
+    if: github.run_attempt == 1 && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: post
+    permissions:
+      contents: read
+    concurrency:
+      group: estim-review-ledger
+      queue: max
+    steps:
+      - name: Check out main's review code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: main
+
+      - name: Accept
+        env:
+          APP_KEY: ${{ secrets.REVIEW_APP_KEY }}
+          PAIRS: ${{ inputs.pairs }}
+          REASON: ${{ inputs.reason }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I main/.github/review/review.py accept

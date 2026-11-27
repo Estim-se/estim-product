@@ -1,16 +1,9 @@
-// estim Samtal A1 + A2 (unapplied): provider-delivered transcripts and a configurable speech-to-text service.
-// The three unapplied application patches (priority-1-app-patch.diff, priority-1-app-patch-remaining.diff and
-// a1-a2-app-patch.diff) are applied to a disposable copy of the Samtal modules and run against the V2 SQL candidate plus
-// docs/samtal/a1-provider-transcript.sql in a disposable local PostgreSQL 17.
-//
-// Everything external is MOCKED: the telephony adapter, the speech-to-text service (Berget is never called; its key
-// is absent) and the AI classifier (deterministic, keyed on synthetic Swedish text). Nothing here verifies a real
-// provider, real transcription quality or real AI accuracy.
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
 type Result = { data: unknown; error: { code: string } | null };
@@ -79,7 +72,7 @@ const providerTranscript = (id: string, text: string, over: Record<string, unkno
   segments: [{ start: 0, end: 12.5, speaker: 'SPEAKER_00', text: text.slice(0, 60) }, { start: 12.5, end: 30, speaker: 'SPEAKER_01', text: text.slice(60) || '.' }], ...over,
 });
 
-describe('Samtal A1 + A2 unapplied patches', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A1 + A2 current implementation', () => {
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession, dir = '';
   const files = new Map<string, Uint8Array>();
   type Fn = (...a: never[]) => Promise<never>;
@@ -119,13 +112,14 @@ describe('Samtal A1 + A2 unapplied patches', () => {
     for (const f of ['src/lib/samtal', 'src/lib/input-limits.ts', 'src/components/estim/samtal-page.tsx', 'src/routes/api/public/samtal-worker.ts', 'src/routes/api/public/samtal-purge.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff'])
-      execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, f));
     [ingest, proc, inbox, purge, pt, cfg, callMod] = (await Promise.all(['src/lib/samtal/ingest.server.ts', 'src/lib/samtal/process.server.ts', 'src/lib/samtal/inbox.server.ts', 'src/lib/samtal/purge.server.ts',
       'src/lib/samtal/provider-transcript.ts', 'src/lib/samtal/stt-config.server.ts', 'src/lib/samtal/call.ts'].map(load))) as [typeof ingest, typeof proc, typeof inbox, typeof purge, typeof pt, typeof cfg, typeof callMod];
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');
     await pg.admin.exec(readFileSync(path.join(ROOT, 'docs/samtal/a1-provider-transcript.sql'), 'utf8'));
+    // Current workers select kind, introduced by A3; this minimal A1 fixture predates that column.
+    await pg.admin.exec("ALTER TABLE samtal_calls ADD COLUMN kind text NOT NULL DEFAULT 'telefonsamtal'");
     x = await pg.connect('service_role'); y = await pg.connect('service_role');
   }, 90000);
   afterAll(async () => { await pg?.close(); if (dir) rmSync(dir, { recursive: true, force: true }); vi.unstubAllEnvs(); });

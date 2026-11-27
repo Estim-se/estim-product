@@ -1,0 +1,92 @@
+--- a/src/components/estim/samtal-page.tsx
++++ b/src/components/estim/samtal-page.tsx
+@@ -4,6 +4,8 @@
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { Button } from '@/components/ui/button';
+ import { SamtalMonitor } from './samtal-monitor';
++import { prepareApprovedRingQuote } from '@/lib/samtal/a10/review.functions';
++import { SamtalA10ReviewPanel } from './samtal-a10-review';
+ import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraftFn, enrollRingEmployeeFn, revokeRingEnrollmentFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
+ import { CALL_KIND } from '@/lib/samtal/ring/labels';
+ import { SamtalRingSection } from './samtal-ring';
+@@ -25,6 +27,7 @@
+   const load = useServerFn(getSamtal), save = useServerFn(saveSamtalSettingsFn), addNumber = useServerFn(addSamtalNumberFn), changeNumber = useServerFn(changeSamtalNumberFn);
+   const decide = useServerFn(decideSamtalTaskFn), audioLink = useServerFn(samtalAudioLinkFn), start = useServerFn(startSamtalCallFn);
+   const confirmReview = useServerFn(confirmSamtalReviewFn), ringContext = useServerFn(setRingContextFn), ringAssign = useServerFn(assignRingNoteFn);
++  const prepareRingQuote=useServerFn(prepareApprovedRingQuote);
+   const ringDecide = useServerFn(decideRingDraftFn), ringDelete = useServerFn(deleteRingDraftFn), ringEnroll = useServerFn(enrollRingEmployeeFn), ringRevoke = useServerFn(revokeRingEnrollmentFn);
+   const [kind, setKind] = useState<'alla' | 'telefonsamtal' | 'rostanteckning'>('alla');
+   // One request id per call and decision, kept until it succeeds, so a retry after a timeout repeats the same request.
+@@ -120,10 +123,13 @@
+       </div>)}
+     </div>
+ 
++    {d.a10 && <SamtalA10ReviewPanel />}
++
+     <SamtalRingSection data={d.ring} busy={busy}
+       onChooseContext={company_id => void run(() => ringContext({ data: { company_id } }), 'Företaget är valt för din nästa röstanteckning.')}
+       onAssign={(pending_id, company_id) => void run(() => ringAssign({ data: { pending_id, company_id } }), 'Anteckningen är kopplad och bearbetas.')}
+       members={d.members}
++      {...(d.a10?{onPrepareQuote:(draft:{id:string;version:number})=>void run(async()=>{await prepareRingQuote({data:draft});await queryClient.invalidateQueries({queryKey:['samtal-a10',company]});},'Offertunderlaget är öppet för granskning.')}: {})}
+       onDecide={decision => void run(() => ringDecide({ data: decision }), 'Utkastet är sparat. Inget har skickats.')}
+       onDelete={id => void run(() => ringDelete({ data: { id } }), 'Utkastet är raderat.')}
+       onEnroll={input => void run(() => ringEnroll({ data: input }), 'Medarbetaren väntar på verifiering.')}
+@@ -141,7 +147,7 @@
+         </div>
+         {c.error_code && <div className="xs muted">{errorLabel(c.error_code)}</div>}
+         <div className="row mt4">
+-          {c.thread_id && <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { actions.select(c.thread_id!); void navigate({ to: '/' }); }}>Öppna förfrågan</Button>}
++          {c.thread_id && <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={() => { if (!c.thread_id) return; actions.select(c.thread_id); void navigate({ to: '/' }); }}>Öppna förfrågan</Button>}
+           {c.has_audio && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(async () => { const r = await audioLink({ data: { call_id: c.id } }); setAudio({ id: c.id, url: r.url }); })}>Lyssna</Button>}
+           {d.owner && !c.needs_review && c.status !== 'privat' && (c.status === 'fel' || c.status === 'mottagen' && !d.settings.auto_process) && <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => start({ data: { call_id: c.id } }), 'Samtalet bearbetas.')}>Bearbeta</Button>}
+         </div>
+--- a/src/components/estim/samtal-ring.tsx
++++ b/src/components/estim/samtal-ring.tsx
+@@ -49,10 +49,11 @@
+   </form>;
+ }
+ 
+-export function SamtalRingSection({ data, busy, onChooseContext, onAssign, onDecide, onDelete, onEnroll, onRevoke, members = [] }: {
++export function SamtalRingSection({ data, busy, onChooseContext, onAssign, onDecide, onDelete, onEnroll, onRevoke, onPrepareQuote, members = [] }: {
+   data: RingSectionView; busy: boolean;
+   onChooseContext: (companyId: string) => void; onAssign: (pendingId: string, companyId: string) => void;
+   onDecide?: (d: RingDecision) => void; onDelete?: (id: string) => void;
++  onPrepareQuote?: (draft: { id:string;version:number }) => void;
+   onEnroll?: (input: { user_id: string; provider: string; phone: string }) => void; onRevoke?: (id: string) => void;
+   members?: { user_id: string; name: string }[];
+ }) {
+@@ -97,6 +98,7 @@
+         </div>
+         {editing !== d.id && rowsOf(d.kind as DraftKind, d.body).length > 0 && <ul className="xs muted">{rowsOf(d.kind as DraftKind, d.body).map((m, i) =>
+           <li key={i}>{m.quantity !== null ? `${m.quantity}${m.unit ? ` ${m.unit}` : ''} ` : ''}{m.item} · {CERTAINTY[m.certainty]}{m.price === null ? ' · pris saknas' : ''}{m.evidence ? <span title={m.evidence}> · källa</span> : null}</li>)}</ul>}
++        {data.owner && d.kind==='offertutkast' && d.s==='godkand' && onPrepareQuote && <Button variant="prototype" className="btn btn-ghost btn-sm mt4" disabled={busy} onClick={()=>onPrepareQuote({id:d.id,version:d.version??1})}>Öppna offertunderlag</Button>}
+         {editing === d.id ? <DraftEditor d={d} busy={busy} onCancel={() => setEditing(null)} onSave={value => { onDecide?.({ id: d.id, version: d.version ?? 1, action: 'redigera', value }); setEditing(null); }} />
+         : linking?.id === d.id ? <form className="row mt4" onSubmit={e => { e.preventDefault(); onDecide?.({ id: d.id, version: d.version ?? 1, action: linking.to === 'kund' ? 'koppla_kund' : 'koppla_projekt', value: linking.to === 'kund' ? { customer_id: linkValue } : { project: linkValue } }); setLinking(null); }}>
+             {linking.to === 'kund'
+--- a/src/lib/samtal/samtal.functions.ts
++++ b/src/lib/samtal/samtal.functions.ts
+@@ -23,7 +23,7 @@
+   const keys = { stt: !!process.env['BERGET_API_KEY'], ai: !!process.env['LOVABLE_API_KEY'] };
+   const { loadRingSection } = await import('./ring/page.server');
+   const [page, ring] = await safe(() => Promise.all([loadSamtalPage(context.supabase, supabaseAdmin, context.userId, keys), loadRingSection(context.supabase, supabaseAdmin, context.userId)]));
+-  return { enabled: true as const, ...page, ring };
++  return { enabled: true as const, ...page, ring, a10:process.env['SAMTAL_A9']==='1'&&process.env['SAMTAL_A10']==='1' };
+ });
+ 
+ export const saveSamtalSettingsFn = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
+--- a/src/routes/api/public/samtal-worker.ts
++++ b/src/routes/api/public/samtal-worker.ts
+@@ -11,11 +11,12 @@
+     const { selectSpeechToText } = await import('@/lib/samtal/stt-config.server');
+     const { gatewaySamtalAi } = await import('@/lib/samtal/ai.server');
+     const { gatewayRingAi } = await import('@/lib/samtal/ring/ai.server');
++    const { gatewayAssignmentAi } = await import('@/lib/samtal/a10/assignment-ai.server');
+     const { samtalInboxStep, drainSamtalDispatch } = await import('@/lib/samtal/inbox.server');
+     const { dispatchAiJob } = await import('@/lib/channel.server');
+     try {
+       // Processing writes the handoff to Samtal's outbox; the outbox then starts the existing AI jobs (V2, unapplied).
+-      const { claimed, results } = await runSamtalJobs(db, { stt: selectSpeechToText(), ai: gatewaySamtalAi(), inbox: samtalInboxStep(), ringAi: gatewayRingAi() });
++      const { claimed, results } = await runSamtalJobs(db, { stt: selectSpeechToText(), ai: gatewaySamtalAi(), inbox: samtalInboxStep(), ringAi: gatewayRingAi(), assignmentAi: gatewayAssignmentAi() });
+       const dispatch = await drainSamtalDispatch(db, dispatchAiJob);
+       return Response.json({ ok: true, claimed, results, dispatch });
+     }

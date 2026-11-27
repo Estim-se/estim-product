@@ -995,3 +995,53 @@ button.tender-kpi:hover{border-color:var(--foreground)}
 .tender-workspace .tender-grid td .input{min-width:0}
 .tender-workspace .tender-grid td.min-w-56{min-width:200px}
 .tender-workspace .tender-grid td.min-w-32{min-width:100px}
+
+/* ===== Minimal theme refresh: neutral palette, flat surfaces, hairline borders ===== */
+:root{
+  --prototype-tone-1:#F7F7F5;--prototype-tone-2:#FFFFFF;--prototype-tone-3:#FFFFFF;
+  --prototype-tone-4:#1F1F1E;--prototype-tone-5:#45454A;--prototype-tone-6:#7A7A7E;
+  --prototype-tone-7:#ECECEA;--prototype-tone-8:#E2E2DF;
+  --prototype-tone-9:#EEF1EC;--prototype-tone-10:#E4ECE6;--prototype-tone-11:#F6E3E1;
+  --prototype-tone-12:#2F6B4A;--prototype-tone-13:#2F6B4A;--prototype-tone-14:#1F1F1E;
+  --prototype-tone-15:rgba(0,0,0,.03);--prototype-tone-16:rgba(0,0,0,.04);
+  --prototype-tone-17:#333333;--prototype-tone-18:#CFCFCB;--prototype-tone-19:#E5EAE3;
+  --prototype-tone-20:rgba(31,31,30,.08);--prototype-tone-21:#E6EFE8;--prototype-tone-22:#C8C8C4;
+  --prototype-tone-23:#B7791F;--prototype-tone-25:#EEF1EC;
+  --r-lg:12px;--r-md:10px;--r-sm:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.04);
+  --side:232px;
+}
+@theme inline{--font-sans:'Geist',system-ui,sans-serif;--font-mono:'Geist Mono',ui-monospace,monospace}
+body{font:14px/1.5 'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:-.005em}
+.serif{font-family:'Geist',system-ui,sans-serif;font-style:normal;font-weight:600}
+h1,h2,h3,h4{font-weight:600;letter-spacing:-.01em}
+.h1{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.eyebrow{font-size:11px;font-weight:500;letter-spacing:.02em}
+.btn{height:36px;padding:0 14px;border-radius:8px;font-weight:500;font-size:13.5px}
+.btn-sm{height:32px;padding:0 12px;font-size:13px}
+.btn-xs{height:28px;padding:0 10px;font-size:12px;border-radius:6px}
+.btn-ghost{border-color:var(--line2);box-shadow:none}
+.btn-lime{background:var(--bg);border:1px solid var(--line2)}
+.btn-lime:hover{background:var(--line)}
+.input{height:38px;border-radius:8px;box-shadow:none}
+.input:focus,textarea.input:focus{border-color:var(--ink2);box-shadow:0 0 0 3px var(--prototype-tone-20)}
+.input.sm{height:32px;border-radius:6px}
+.chip{height:22px;padding:0 8px;border-radius:6px;font-weight:500}
+.chip-lime,.chip-sage{background:var(--bg);border:1px solid var(--line2);color:var(--ink2)}
+.card{border-radius:12px;box-shadow:none;border-color:var(--line)}
+.side{padding:18px 10px;gap:2px}
+.ws{background:transparent;box-shadow:none;border-radius:8px;padding:6px 8px}
+.ws-badge{width:28px;height:28px;border-radius:7px;background:var(--ink);color:var(--bg);font-size:11px}
+.nav{height:32px;border-radius:7px;font-size:13.5px;gap:10px;padding:0 10px}
+.nav svg{width:16px;height:16px;stroke-width:1.75}
+.nav.active{background:var(--line);box-shadow:none;font-weight:500}
+.nav .count{background:transparent;color:var(--muted);font-weight:500}
+.nav .lock{background:var(--line);font-weight:500}
+.main{padding:8px 8px 8px 0}
+.panel{border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:20px 32px 48px}
+.banner{background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.fchip{height:28px;border-radius:7px;font-weight:500;border-color:var(--line2)}
+.fchip.on{background:var(--line);color:var(--ink);border-color:var(--line2)}
+.fchip.on svg{stroke:var(--ink)}
+.avatar{border-radius:50%;width:34px;height:34px;font-size:12px;font-weight:600;background:var(--line)}
+code,kbd,.mono{font-family:'Geist Mono',ui-monospace,monospace}

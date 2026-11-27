@@ -4,6 +4,7 @@
 // The call names the receiving number, never a company or an employee: those are resolved from that number in our
 // own database (samtal_register_call), so an adapter or a provider payload can never place a call in another company.
 import { z } from 'zod';
+import { providerTranscriptInputSchema } from './provider-transcript';
 
 export const SAMTAL_AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg', m4a: 'audio/x-m4a', mp4: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', webm: 'audio/webm', flac: 'audio/flac', aac: 'audio/aac',
@@ -43,10 +44,13 @@ export const samtalCallSchema = z.object({
   started_at: z.string().datetime({ offset: true }),
   ended_at: z.string().datetime({ offset: true }).nullable(),
   duration_seconds: z.number().int().min(0).max(SAMTAL_MAX_DURATION_SECONDS).nullable(),
-  audio: audioSchema,
+  // A1 (unapplied): audio, a provider transcript, or both. The transcript is validated again before use.
+  audio: audioSchema.optional(),
+  transcript: providerTranscriptInputSchema.optional(),
 }).strict().superRefine((c, ctx) => {
+  if (!c.audio && !c.transcript) ctx.addIssue({ code: 'custom', path: ['audio'], message: 'audio or transcript required' });
   if (c.ended_at && Date.parse(c.ended_at) < Date.parse(c.started_at)) ctx.addIssue({ code: 'custom', path: ['ended_at'], message: 'ends before it starts' });
-  if (!SAMTAL_AUDIO_TYPES[c.audio.extension]) ctx.addIssue({ code: 'custom', path: ['audio', 'extension'], message: 'unsupported audio type' });
+  if (c.audio && !SAMTAL_AUDIO_TYPES[c.audio.extension]) ctx.addIssue({ code: 'custom', path: ['audio', 'extension'], message: 'unsupported audio type' });
 });
 export type SamtalCall = z.infer<typeof samtalCallSchema>;
 
@@ -54,7 +58,7 @@ export type SamtalCall = z.infer<typeof samtalCallSchema>;
 // the provider gives only those (and the end from the duration in the other case). Throws on invalid input.
 export function standardCall(input: {
   provider: string; provider_call_id: string; to_phone: string; from_phone?: string | null; started_at: string;
-  ended_at?: string | null; duration_seconds?: number | null; audio: SamtalCall['audio'];
+  ended_at?: string | null; duration_seconds?: number | null; audio?: SamtalCall['audio']; transcript?: SamtalCall['transcript'];
 }): SamtalCall {
   const to = normalisePhone(input.to_phone);
   if (!to) throw new Error('invalid_receiver_number');
@@ -66,7 +70,8 @@ export function standardCall(input: {
     provider: input.provider, provider_call_id: input.provider_call_id, to_phone: to, from_phone: normalisePhone(input.from_phone),
     started_at: started.toISOString(),
     ended_at: ended ? ended.toISOString() : duration !== null ? new Date(started.getTime() + duration * 1000).toISOString() : null,
-    duration_seconds: duration, audio: input.audio,
+    duration_seconds: duration,
+    ...(input.audio ? { audio: input.audio } : {}), ...(input.transcript ? { transcript: input.transcript } : {}),
   });
 }
 

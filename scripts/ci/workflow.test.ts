@@ -83,19 +83,22 @@ describe('ci.yml: no step can change the base commit or a later guard', () => {
     const all = steps();
     for (const s of all) expect(`${s.name}: ${s.run}`).not.toMatch(/GITHUB_ENV|GITHUB_PATH/);
     expect(all.find(s => s.name === 'Find the base commit')?.id).toBe('base');
-    const readers = all.filter(s => s.run.includes('CI_BASE_SHA') || ['Migration guard', 'Dependency audit'].includes(s.name));
-    expect(readers.map(s => s.name)).toEqual(["Install the guards' tools from the base commit (no scripts)", 'Migration guard', 'Dependency audit', 'Lint changed files', 'Prettier on changed files (warning only)']);
+    const readers = all.filter(s => s.run.includes('CI_BASE_SHA') || ['Migration guard', 'Dependency audit', 'Lockfile guard', 'Text guard'].includes(s.name));
+    expect(readers.map(s => s.name)).toEqual(["Install the guards' tools from the base commit (no scripts)", 'Migration guard', 'Dependency audit', 'Lockfile guard', 'Text guard', 'Lint changed files', 'Prettier on changed files (warning only)']);
     for (const s of readers) expect(s.env['CI_BASE_SHA']).toBe('${{ steps.base.outputs.sha }}');
   });
 
   it('runs the Edge Function guard, which runs typescript from node_modules/, after every other guard (security review)', () => {
     const names = steps().map(s => s.name);
     expect(names.indexOf('Edge Function guard')).toBe(names.indexOf('Install') - 1);
-    for (const guard of ['Migration guard', 'Install-script guard', 'Dependency audit']) expect(names.indexOf(guard)).toBeLessThan(names.indexOf('Edge Function guard'));
+    for (const guard of ['Migration guard', 'Install-script guard', 'Dependency audit', 'Lockfile guard', 'Text guard', 'Config guard']) {
+      expect(names.indexOf(guard)).toBeGreaterThan(0);
+      expect(names.indexOf(guard)).toBeLessThan(names.indexOf('Edge Function guard'));
+    }
   });
 
   it('every guard imports only node: built-ins and files next to it, and the edge guard loads typescript by path', () => {
-    const guards = ['audit-guard.ts', 'edge-guard.ts', 'install-scripts-guard.ts', 'lib.ts', 'migration-guard.ts', 'pr-body.ts'];
+    const guards = ['audit-guard.ts', 'config-guard.ts', 'edge-guard.ts', 'install-scripts-guard.ts', 'lib.ts', 'lockfile-guard.ts', 'migration-guard.ts', 'pr-body.ts', 'text-guard.ts'];
     for (const file of guards) {
       const source = readFileSync(join('scripts/ci', file), 'utf8');
       const runtime = [...source.matchAll(/^import (?!type )[\s\S]*? from '([^']+)';$/gm)].map(m => m[1] ?? '');

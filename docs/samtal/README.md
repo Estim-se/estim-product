@@ -2,6 +2,9 @@
 
 estim Samtal turns customer phone calls into requests, tasks and quote drafts.
 
+**Testing:** [Current regression inventory and isolated default/opt-in commands](testing.md).
+Historical “unapplied” labels below are not a reliable description of today's checked-in application.
+
 - **Flag:** `SAMTAL`, off by default.
 - **Owner:** the product owner.
 - **Data model:** new tables, functions and one private storage bucket. The only change to existing objects is the inbox channel `samtal` ([inkorg.sql](inkorg.sql)).

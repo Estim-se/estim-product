@@ -1,8 +1,9 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
 
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('company document delivery persistence', () => {
   it('uploads privately, reserves once, delivers and reads back the document through tenant RLS', async () => {
     const url = process.env['SUPABASE_URL'] ?? '', key = process.env['SUPABASE_PUBLISHABLE_KEY'] ?? '';
