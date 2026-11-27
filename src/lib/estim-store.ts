@@ -13,6 +13,7 @@ export interface Draft {
   warn?: string[];
   review?: boolean;
   busy?: boolean;
+  sending?: boolean;
 }
 export type MobileScreen = "lock" | "list" | "thread" | "done";
 export type DesktopPath = "/" | "/offerter" | "/kanaler" | "/installningar";

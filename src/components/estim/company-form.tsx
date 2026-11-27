@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { electricianMoments } from '@/data/electrician-moments';
 import { useWorkspace } from './workspace-provider';
@@ -16,12 +16,26 @@ export function CompanyForm({onboarding=false,activeSection,onSectionChange,save
  const [name,setName]=useState(workspace.data?.profile?.display_name??'');
  const [moments,setMoments]=useState<(typeof electricianMoments[number]&{id?:string})[]>(onboarding?structuredClone(electricianMoments):(workspace.data?.moments??[]));
  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const momentKey=(m:typeof moments[number])=>JSON.stringify({name:m.name,unit:m.unit,hours_per_unit:m.hours_per_unit,material_per_unit_ex_vat:m.material_per_unit_ex_vat,role:m.role,rot_eligible:m.rot_eligible,active:m.active});
+ const snapshotRef=useRef({name,values:JSON.stringify(values),moments:new Map(moments.filter(m=>m.id).map(m=>[m.id!,momentKey(m)]))});
  async function save(e:FormEvent){e.preventDefault();setBusy(true);setMessage('');try{
   assertBoundedInput({values,name,moments});
   parseMutation({kind:'profile',display_name:name});
-  if(onboarding)parseMutation({kind:'onboard',company:values,moments});else {parseMutation({kind:'company',company:values});for(const moment of moments)parseMutation({kind:'moment',moment});}
-  await workspace.mutate({kind:'profile',display_name:name});
-  if(onboarding)await workspace.mutate({kind:'onboard',company:values,moments});else {await workspace.mutate({kind:'company',company:values});for(const moment of moments)await workspace.mutate({kind:'moment',moment});}
+  if(onboarding){
+   parseMutation({kind:'onboard',company:values,moments});
+   await workspace.mutate({kind:'profile',display_name:name});
+   await workspace.mutate({kind:'onboard',company:values,moments});
+  }else{
+   parseMutation({kind:'company',company:values});
+   const changedMoments=moments.filter(m=>!m.id||snapshotRef.current.moments.get(m.id)!==momentKey(m));
+   for(const moment of changedMoments)parseMutation({kind:'moment',moment});
+   await Promise.all([
+    workspace.mutate({kind:'profile',display_name:name}),
+    workspace.mutate({kind:'company',company:values}),
+    ...changedMoments.map(moment=>workspace.mutate({kind:'moment',moment})),
+   ]);
+   snapshotRef.current={name,values:JSON.stringify(values),moments:new Map(moments.filter(m=>m.id).map(m=>[m.id!,momentKey(m)]))};
+  }
   await workspace.refresh();setMessage('Uppgifterna är sparade.');
  }catch{setMessage('Kunde inte spara. Kontrollera uppgifterna och försök igen.');}finally{setBusy(false);}}
  function changeMoment(index:number,key:string,value:string|boolean){setMoments(all=>all.map((m,i)=>i===index?{...m,[key]:typeof value==='boolean'?value:['hours_per_unit','material_per_unit_ex_vat'].includes(key)?Number(value):value}:m));}
@@ -36,7 +50,7 @@ export function CompanyForm({onboarding=false,activeSection,onSectionChange,save
  {onboarding?<div className="grid2">{identityFields}{priceFields}</div>:<div className="settings-grid col settings-column">
  <div hidden={activeSection !== undefined && activeSection !== 'AI'} role="tabpanel" id="settings-panel-AI" aria-labelledby="settings-tab-AI"><div className="card"><h3>Det här får AI:n göra själv</h3><div className="mt8"><CompanyAutoReply embedded />{settings.map((setting,i)=><label className="kop cursor-pointer" key={setting.label}><span className="grow"><b>{setting.label}</b></span><span className="relative"><input className="peer sr-only" type="checkbox" checked={values.settings[i]??false} onChange={e=>setValues({...values,settings:values.settings.map((v,index)=>index===i?e.target.checked:v)})}/><span aria-hidden="true" className={`toggle block peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-ring ${values.settings[i]?'on':''}`}/></span></label>)}</div></div></div>
  <div hidden={activeSection !== undefined && activeSection !== 'Priser'} role="tabpanel" id="settings-panel-Priser" aria-labelledby="settings-tab-Priser" onInvalidCapture={()=>onSectionChange?.('Priser')}><div className="col settings-column settings-single-column"><div className="card"><h3>Priser AI:n räknar med</h3><div className="col settings-column mt12">{priceFields}</div></div>{momentsCard}</div></div>
- <div hidden={activeSection !== undefined && activeSection !== 'Företag'} role="tabpanel" id="settings-panel-Företag" aria-labelledby="settings-tab-Företag" onInvalidCapture={()=>onSectionChange?.('Företag')}><div className="card"><div className="col settings-column">{identityFields}{company?.id && <CompanyLogo companyId={company.id}/>}</div></div></div>
+ <div hidden={activeSection !== undefined && activeSection !== 'Företag'} role="tabpanel" id="settings-panel-Företag" aria-labelledby="settings-tab-Företag" onInvalidCapture={()=>onSectionChange?.('Företag')}><div className="card"><div className="col settings-column">{identityFields}{company?.id && <CompanyLogo companyId={company.id} enabled={activeSection === undefined || activeSection === 'Företag'}/>}</div></div></div>
  </div>}
  {onboarding&&momentsCard}
  {saveTarget ? createPortal(saveBar, saveTarget) : saveBar}</form>;

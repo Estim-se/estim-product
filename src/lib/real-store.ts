@@ -14,8 +14,8 @@ export interface RealAi {
   write(id: string, v: Draft["v"], ch: "email" | "sms" | "wa"): Promise<unknown>;
 }
 
-const time = (value: string) =>
-  new Date(value).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+const TIME_FMT = new Intl.DateTimeFormat("sv-SE", { hour: "2-digit", minute: "2-digit" });
+const time = (value: string) => TIME_FMT.format(new Date(value));
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 const rows = (value: unknown): string[][] =>
@@ -59,45 +59,94 @@ function parsePendingSender(raw: unknown): PendingSender | null {
 
 export function workspaceState(data: WorkspaceData, previous: EstimState): EstimState {
   const drafts: Record<string, Draft> = {};
-  data.drafts.forEach((d) => {
+  for (const d of data.drafts) {
+    const warn = strings(d.warnings);
     drafts[d.thread_id] = {
       text: d.text,
       v: d.variant === "kort" || d.variant === "formell" ? d.variant : "std",
       ch: d.channel,
       att: strings(d.attachments),
       edited: d.edited,
-      warn: strings(d.warnings),
-      review: d.needs_review && strings(d.warnings).length > 0,
+      warn,
+      review: d.needs_review && warn.length > 0,
     };
-  });
+  }
+
+  // Pre-index all related collections in O(N) maps so hydration scales linearly instead of O(T*M + T*A).
+  const customersById = new Map(data.customers.map((c) => [c.id, c]));
+  const quoteByThread = new Map<string, WorkspaceData["quotes"][number]>();
+  for (const q of data.quotes) {
+    if (!quoteByThread.has(q.thread_id)) quoteByThread.set(q.thread_id, q);
+  }
+  const deliveriesByMsg = new Map<string, { id: string; name: string }[]>();
+  for (const d of data.documentDeliveries ?? []) {
+    if (!d.message_id) continue;
+    let list = deliveriesByMsg.get(d.message_id);
+    if (!list) {
+      list = [];
+      deliveriesByMsg.set(d.message_id, list);
+    }
+    list.push({ id: d.id, name: d.name });
+  }
+  const outgoingByThread = new Map<string, WorkspaceData["messages"][number]>();
+  const visibleMsgsByThread = new Map<string, WorkspaceData["messages"][number][]>();
+  let aiCount = 0;
+  for (const m of data.messages) {
+    if (m.from === "ai") aiCount++;
+    if (m.from === "vv" || m.from === "ai") outgoingByThread.set(m.thread_id, m);
+    if (m.delivery_status === "sent" || deliveriesByMsg.has(m.id)) {
+      let list = visibleMsgsByThread.get(m.thread_id);
+      if (!list) {
+        list = [];
+        visibleMsgsByThread.set(m.thread_id, list);
+      }
+      list.push(m);
+    }
+  }
+  const auditByThread = new Map<string, WorkspaceData["audit"][number][]>();
+  for (const a of data.audit) {
+    const after = a.after;
+    if (after && typeof after === "object" && !Array.isArray(after)) {
+      const tid = (after as Record<string, unknown>)["thread_id"];
+      if (typeof tid === "string") {
+        let list = auditByThread.get(tid);
+        if (!list) {
+          list = [];
+          auditByThread.set(tid, list);
+        }
+        list.push(a);
+      }
+    }
+  }
+
+  const now = Date.now();
   const threads: Thread[] = data.threads.map((t) => {
-    const c = data.customers.find((c) => c.id === t.customer_id);
-    const q = data.quotes.find((q) => q.thread_id === t.id);
-    const outgoing = data.messages
-      .filter((m) => m.thread_id === t.id && (m.from === "vv" || m.from === "ai"))
-      .at(-1);
-    const msgs = data.messages
-      .filter(
-        (m) =>
-          m.thread_id === t.id &&
-          (m.delivery_status === "sent" ||
-            data.documentDeliveries?.some((d) => d.message_id === m.id)),
-      )
-      .map((m) => ({
+    const c = customersById.get(t.customer_id);
+    const q = quoteByThread.get(t.id);
+    const outgoing = outgoingByThread.get(t.id);
+    const msgs = (visibleMsgsByThread.get(t.id) ?? []).map((m) => {
+      const att = strings(m.attachments);
+      return {
         id: m.id,
         from: m.from,
         auto: m.from === "ai",
         ch: m.channel ?? t.channel,
         time: time(m.sent_at),
         text: m.delivery_status === "sent" ? m.text : "Dokument skickat",
-        att: strings(m.attachments),
+        att,
         attachmentFiles: toAttachmentItems(m.attachment_files),
-        documents:
-          data.documentDeliveries
-            ?.filter((d) => d.message_id === m.id)
-            .map((d) => ({ id: d.id, name: d.name })) ?? [],
-        quote: strings(m.attachments).some((a) => a.startsWith("Offert")),
-      }));
+        documents: deliveriesByMsg.get(m.id) ?? [],
+        quote: att.some((a) => a.startsWith("Offert")),
+      };
+    });
+    const threadAudit = auditByThread.get(t.id);
+    const events: [string, string][] = [];
+    if (threadAudit) {
+      for (let i = threadAudit.length - 1; i >= 0; i--) {
+        const a = threadAudit[i]!;
+        events.push([time(a.created_at), auditTimeline(a)]);
+      }
+    }
     return {
       deliveryError:
         outgoing?.channel === "wa" && outgoing.delivery_status === "not_sent"
@@ -124,7 +173,7 @@ export function workspaceState(data: WorkspaceData, previous: EstimState): Estim
       email: c?.email || "—",
       job: t.job,
       status:
-        t.status === "analys" && Date.now() - new Date(t.updated_at).getTime() > 90000
+        t.status === "analys" && now - new Date(t.updated_at).getTime() > 90000
           ? "svar"
           : t.status,
       read: t.read,
@@ -138,18 +187,7 @@ export function workspaceState(data: WorkspaceData, previous: EstimState): Estim
       facts: rows(t.facts),
       why: t.why,
       att: [],
-      events: data.audit
-        .filter((a) => {
-          const after = a.after;
-          return (
-            after &&
-            typeof after === "object" &&
-            !Array.isArray(after) &&
-            after["thread_id"] === t.id
-          );
-        })
-        .reverse()
-        .map((a) => [time(a.created_at), auditTimeline(a)]),
+      events,
       q: q
         ? {
             nr: q.nr,
@@ -171,7 +209,7 @@ export function workspaceState(data: WorkspaceData, previous: EstimState): Estim
       ? data.company.settings.map(Boolean)
       : previous.settings,
     sel: threads.some((t) => t.id === previous.sel) ? previous.sel : (threads[0]?.id ?? ""),
-    stats: { ai: data.messages.filter((m) => m.from === "ai").length, sek: 0 },
+    stats: { ai: aiCount, sek: 0 },
   };
 }
 
@@ -225,47 +263,97 @@ export function createRealStore() {
     const d = state.drafts[id];
     if (!ai || !d) return;
     const ch = d.ch === "sms" || d.ch === "wa" ? d.ch : "email";
-    update((s) => {
-      const x = s.drafts[id];
-      if (x) x.busy = true;
-    });
+    patchDraft(id, (x) => ({ ...x, busy: true }));
     try {
+      // Saves pending text edits under the current variant; the new variant is shown once its reply exists.
+      flushDraft(id);
       await queue;
-      await withTimeout(ai.write(id, v, ch));
-      await reload?.();
+      const res = (await withTimeout(ai.write(id, v, ch))) as {
+        text?: unknown;
+        why?: unknown;
+        warnings?: unknown;
+        needs_review?: unknown;
+      } | null;
+      // Apply the generated reply immediately so the user sees it without waiting for a full reload.
+      if (res && typeof res.text === "string") {
+        const warn = strings(res.warnings);
+        patchDraft(id, (x) => ({
+          ...x,
+          text: res.text as string,
+          v,
+          edited: false,
+          warn,
+          review: Boolean(res.needs_review) && warn.length > 0,
+          busy: false,
+        }));
+        if (typeof res.why === "string") {
+          const nextWhy = res.why;
+          update((s) => {
+            const t = s.threads.find((th) => th.id === id);
+            if (t) t.why = nextWhy;
+          });
+        }
+        // Refresh full workspace quietly in the background without blocking the UI.
+        void reload?.().catch(() => {});
+      } else {
+        await reload?.();
+      }
     } catch {
       await aiFailed(id);
     } finally {
-      update((s) => {
-        const x = s.drafts[id];
-        if (x) x.busy = false;
-      });
+      patchDraft(id, (x) => (x.busy ? { ...x, busy: false } : x));
     }
   };
   let epoch = 0;
   const dirtyQuotes = new Set<string>();
+  const draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const draftRevisions = new Map<string, number>();
+  const dirtyDrafts = new Set<string>();
+  const DRAFT_DEBOUNCE_MS = 450;
+  // Optimistic thread fields (read, autopilot) are reapplied over polls that were read before the write landed.
+  const OPTIMISTIC_HOLD_MS = 30_000;
+  type ThreadPatch = { read?: boolean; autopilot?: boolean; until?: number };
+  const optimistic = new Map<string, ThreadPatch>();
+  const holdThread = (id: string, patch: Omit<ThreadPatch, "until">) => {
+    const { until: _settled, ...held } = optimistic.get(id) ?? {};
+    optimistic.set(id, { ...held, ...patch });
+  };
+  const settleThread = (id: string, failed: boolean, field: "read" | "autopilot") => {
+    const held = optimistic.get(id);
+    if (!held) return;
+    if (failed) {
+      delete held[field];
+      if (held.read === undefined && held.autopilot === undefined) optimistic.delete(id);
+    } else held.until = Date.now() + OPTIMISTIC_HOLD_MS;
+  };
   // Only known user-facing server messages are shown; anything else gets the generic text.
   const serverMessage = (error: unknown) =>
     error instanceof Error && USER_MESSAGES.has(error.message)
       ? error.message
       : "Ändringen kunde inte sparas. Försök igen.";
+  const notify = () => listeners.forEach((l) => l());
   const update = (fn: (s: EstimState) => void) => {
     state = structuredClone(state);
     fn(state);
-    listeners.forEach((l) => l());
+    notify();
+  };
+  // Shallow structural-sharing draft update: keeps state.threads reference-identical on every keystroke.
+  const patchDraft = (id: string, fn: (d: Draft) => Draft) => {
+    const cur = state.drafts[id];
+    if (!cur) return;
+    const next = fn(cur);
+    if (next === cur) return;
+    state = { ...state, drafts: { ...state.drafts, [id]: next } };
+    notify();
   };
   const toast = (text: string) => {
     clearTimeout(toastTimer);
-    update((s) => {
-      s.toast = text;
-    });
-    toastTimer = setTimeout(
-      () =>
-        update((s) => {
-          s.toast = "";
-        }),
-      3200,
-    );
+    state = { ...state, toast: text };
+    notify();
+    toastTimer = setTimeout(() => {
+      state = { ...state, toast: "" };
+      notify();
+    }, 3200);
   };
   // ownErrorToast: the caller shows its own (more specific) failure message.
   const persist = (input: RealMutation, refresh = false, ownErrorToast = false) => {
@@ -289,14 +377,51 @@ export function createRealStore() {
       });
     return task;
   };
-  const draftSave = (id: string) => {
+  const flushDraft = (id: string, onFailure?: () => void) => {
+    const pending = draftTimers.get(id);
+    if (pending) {
+      clearTimeout(pending);
+      draftTimers.delete(id);
+    }
     const draft = state.drafts[id];
-    if (draft)
-      void persist({
-        kind: "draft",
-        id,
-        draft: { ...draft, ch: draft.ch === "sms" ? "sms" : draft.ch === "wa" ? "wa" : "email" },
-      }).catch(() => {});
+    if (!draft) {
+      dirtyDrafts.delete(id);
+      return;
+    }
+    const rev = (draftRevisions.get(id) ?? 0) + 1;
+    draftRevisions.set(id, rev);
+    dirtyDrafts.add(id);
+    const snapshot = {
+      ...draft,
+      ch: draft.ch === "sms" ? ("sms" as const) : draft.ch === "wa" ? ("wa" as const) : ("email" as const),
+    };
+    void persist({ kind: "draft", id, draft: snapshot })
+      .then(() => {
+        if (draftRevisions.get(id) === rev) dirtyDrafts.delete(id);
+      })
+      .catch(() => {
+        if (draftRevisions.get(id) === rev) {
+          dirtyDrafts.delete(id);
+          onFailure?.();
+        }
+      });
+  };
+  const scheduleDraftSave = (id: string) => {
+    const prev = draftTimers.get(id);
+    if (prev) clearTimeout(prev);
+    const rev = (draftRevisions.get(id) ?? 0) + 1;
+    draftRevisions.set(id, rev);
+    dirtyDrafts.add(id);
+    draftTimers.set(
+      id,
+      setTimeout(() => {
+        draftTimers.delete(id);
+        flushDraft(id);
+      }, DRAFT_DEBOUNCE_MS),
+    );
+  };
+  const flushAllDrafts = () => {
+    for (const id of Array.from(draftTimers.keys())) flushDraft(id);
   };
   // Quote fields are visit-local until the explicit drawer save succeeds.
   const changeQuote = (fn: (q: Quote) => void) => {
@@ -338,14 +463,28 @@ export function createRealStore() {
       toast("Återställning finns bara i demoläge.");
     },
     select(id: string) {
-      update((s) => {
-        s.sel = id;
-        s.view = "desk";
-        s.page = "inkorg";
-        const t = s.threads.find((t) => t.id === id);
-        if (t) t.read = true;
-      });
-      void persist({ kind: "thread", id, read: true }).catch(() => {});
+      const target = state.threads.find((t) => t.id === id);
+      const wasUnread = Boolean(target && !target.read);
+      if (wasUnread) {
+        update((s) => {
+          s.sel = id;
+          s.view = "desk";
+          s.page = "inkorg";
+          const t = s.threads.find((th) => th.id === id);
+          if (t) t.read = true;
+        });
+        holdThread(id, { read: true });
+        void persist({ kind: "thread", id, read: true }).then(() => settleThread(id, false, "read")).catch(() => {
+          settleThread(id, true, "read");
+          update((s) => {
+            const t = s.threads.find((th) => th.id === id);
+            if (t) t.read = false;
+          });
+        });
+      } else {
+        state = { ...state, sel: id, view: "desk", page: "inkorg" };
+        notify();
+      }
     },
     toggleSetting(index: number) {
       update((s) => {
@@ -371,20 +510,30 @@ export function createRealStore() {
     toggleAuto(id: string) {
       const t = state.threads.find((t) => t.id === id);
       if (!t || t.ch !== "wa") return;
-      const autopilot = !t.autopilot;
+      const previous = t.autopilot;
+      const autopilot = !previous;
+      // Optimistic flip (0 ms) with rollback if the server write fails.
+      update((s) => {
+        const thread = s.threads.find((th) => th.id === id);
+        if (thread) thread.autopilot = autopilot;
+      });
+      holdThread(id, { autopilot });
       void persist({ kind: "thread", id, autopilot })
         .then(() => {
-          update((s) => {
-            const thread = s.threads.find((t) => t.id === id);
-            if (thread) thread.autopilot = autopilot;
-          });
+          settleThread(id, false, "autopilot");
           toast(
             autopilot
               ? "AI skickar svar automatiskt i den här WhatsApp-tråden."
               : "AI skriver utkast, du skickar",
           );
         })
-        .catch(() => {});
+        .catch(() => {
+          if (optimistic.get(id)?.autopilot === autopilot) settleThread(id, true, "autopilot");
+          update((s) => {
+            const thread = s.threads.find((th) => th.id === id);
+            if (thread && thread.autopilot === autopilot) thread.autopilot = previous;
+          });
+        });
     },
     setDraft(id: string, variant: Draft["v"]) {
       if (state.drafts[id]?.busy) return;
@@ -395,51 +544,62 @@ export function createRealStore() {
       if (d && !d.busy) void aiReply(id, d.v);
     },
     editDraft(id: string, text: string) {
-      update((s) => {
-        const d = s.drafts[id];
-        if (d) {
-          d.text = text;
-          d.edited = true;
-        }
-      });
-      draftSave(id);
+      patchDraft(id, (d) => ({ ...d, text, edited: true }));
+      scheduleDraftSave(id);
     },
     addAtt(id: string, value: string) {
-      update((s) => {
-        const d = s.drafts[id];
-        if (d && !d.att.includes(value)) d.att.push(value);
+      if (!value) return;
+      const before = state.drafts[id]?.att.slice();
+      patchDraft(id, (d) => (d.att.includes(value) ? d : { ...d, att: [...d.att, value] }));
+      flushDraft(id, () => {
+        if (before) patchDraft(id, (d) => ({ ...d, att: before }));
       });
-      draftSave(id);
     },
     delAtt(id: string, index: number) {
-      update((s) => {
-        s.drafts[id]?.att.splice(index, 1);
+      const before = state.drafts[id]?.att.slice();
+      patchDraft(id, (d) => ({ ...d, att: d.att.filter((_, i) => i !== index) }));
+      flushDraft(id, () => {
+        if (before) patchDraft(id, (d) => ({ ...d, att: before }));
       });
-      draftSave(id);
     },
     setCh(id: string, ch: string) {
       if (ch !== "email" && ch !== "sms" && ch !== "wa") return;
-      update((s) => {
-        const d = s.drafts[id];
-        if (d) d.ch = ch;
+      const before = state.drafts[id]?.ch;
+      patchDraft(id, (d) => ({ ...d, ch }));
+      flushDraft(id, () => {
+        if (before) patchDraft(id, (d) => ({ ...d, ch: before }));
       });
-      draftSave(id);
     },
     openDrawer(id: string) {
-      update((s) => {
-        s.drawer = id;
-      });
+      state = { ...state, drawer: id };
+      notify();
     },
     closeDrawer() {
       const id = state.drawer;
+      const wasDirty = Boolean(id && dirtyQuotes.has(id));
       if (id) dirtyQuotes.delete(id);
-      update((s) => {
-        s.drawer = null;
-        if (data) {
-          const persisted = workspaceState(data, s);
-          s.threads = persisted.threads;
-        }
-      });
+      if (wasDirty && id && data) {
+        const persistedQuote = data.quotes.find((q) => q.thread_id === id);
+        const restored: Quote | null = persistedQuote
+          ? {
+              nr: persistedQuote.nr,
+              owners: persistedQuote.owners,
+              addOn: persistedQuote.add_on,
+              prisform: persistedQuote.prisform,
+              lines: Array.isArray(persistedQuote.lines)
+                ? (persistedQuote.lines as unknown as Quote["lines"])
+                : [],
+            }
+          : null;
+        update((s) => {
+          s.drawer = null;
+          const t = s.threads.find((th) => th.id === id);
+          if (t) t.q = restored;
+        });
+      } else {
+        state = { ...state, drawer: null };
+        notify();
+      }
     },
     upd(index: number, key: "t" | "q" | "p", value: string) {
       changeQuote((q) => {
@@ -540,7 +700,7 @@ export function createRealStore() {
       id: string,
       input: { name?: string; email?: string; phone?: string; useCustomerId?: string },
     ) {
-      void persist({ kind: "approve-email-sender", id, ...input }, true, true)
+      return persist({ kind: "approve-email-sender", id, ...input }, true, true)
         .then(() => {
           toast("Avsändaren är godkänd.");
         })
@@ -550,7 +710,7 @@ export function createRealStore() {
     },
     // Merges a new email thread into the suggested existing open thread.
     mergeEmailThread(sourceId: string, targetId: string) {
-      void persist({ kind: "merge-email-thread", sourceId, targetId }, true, true)
+      return persist({ kind: "merge-email-thread", sourceId, targetId }, true, true)
         .then(() => {
           actions.select(targetId);
           toast("Trådarna är sammanslagna.");
@@ -578,12 +738,10 @@ export function createRealStore() {
         return;
       }
       if (d.busy) return;
-      update((s) => {
-        const draft = s.drafts[id];
-        if (draft) draft.busy = true;
-      });
+      patchDraft(id, (draft) => ({ ...draft, busy: true, sending: true }));
       void (async () => {
         try {
+          flushDraft(id);
           await queue;
           if (!delivery) throw new Error("Ingen anslutning.");
           const result = await delivery(id);
@@ -608,10 +766,7 @@ export function createRealStore() {
             });
           toast(message);
         } finally {
-          update((s) => {
-            const draft = s.drafts[id];
-            if (draft) draft.busy = false;
-          });
+          patchDraft(id, (draft) => ({ ...draft, busy: false, sending: false }));
         }
       })();
     },
@@ -682,34 +837,68 @@ export function createRealStore() {
     hydrate(next: WorkspaceData) {
       data = next;
       const previous = state;
+      const prevById = new Map(previous.threads.map((p) => [p.id, p]));
       state = workspaceState(next, state);
+      // Preserve in-progress local draft edits and busy/sending flags while polling runs.
+      for (const id of dirtyDrafts) {
+        if (previous.drafts[id]) state.drafts[id] = previous.drafts[id]!;
+      }
+      for (const [id, prevDraft] of Object.entries(previous.drafts)) {
+        if ((prevDraft.busy || prevDraft.sending) && state.drafts[id]) {
+          state.drafts[id] = {
+            ...state.drafts[id]!,
+            ...(prevDraft.busy ? { busy: true } : {}),
+            ...(prevDraft.sending ? { sending: true } : {}),
+          };
+        }
+      }
       let failed = false;
+      const now = Date.now();
       for (const t of state.threads) {
-        if (dirtyQuotes.has(t.id)) t.q = previous.threads.find((p) => p.id === t.id)?.q ?? t.q;
+        const held = optimistic.get(t.id);
+        if (held) {
+          const agrees =
+            (held.read === undefined || held.read === t.read) &&
+            (held.autopilot === undefined || held.autopilot === t.autopilot);
+          if ((agrees && held.until !== undefined) || (held.until !== undefined && now > held.until))
+            optimistic.delete(t.id);
+          else {
+            if (held.read !== undefined) t.read = held.read;
+            if (held.autopilot !== undefined) t.autopilot = held.autopilot;
+          }
+        }
+        const prev = prevById.get(t.id);
+        if (dirtyQuotes.has(t.id)) t.q = prev?.q ?? t.q;
         if (
-          previous.threads.find((p) => p.id === t.id)?.status === "analys" &&
+          prev?.status === "analys" &&
           t.status === "svar" &&
           !state.drafts[t.id]?.text &&
           state.drafts[t.id]?.warn?.includes("AI kunde inte svara just nu")
         )
           failed = true;
       }
-      listeners.forEach((l) => l());
+      notify();
       if (failed) toast("AI kunde inte svara just nu");
     },
     clear() {
       epoch++;
       clearTimeout(toastTimer);
+      for (const timer of draftTimers.values()) clearTimeout(timer);
+      draftTimers.clear();
+      draftRevisions.clear();
+      dirtyDrafts.clear();
       dirtyQuotes.clear();
+      optimistic.clear();
       data = null;
       mutate = undefined;
       reload = undefined;
       queue = Promise.resolve();
       writeError = false;
       state = emptyRealState();
-      listeners.forEach((l) => l());
+      notify();
     },
     async flush() {
+      flushAllDrafts();
       await queue;
       if (writeError) throw new Error("Kunde inte spara.");
     },
