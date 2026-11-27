@@ -16,7 +16,9 @@ import { env, optNumber } from "../_shared/nylas.ts";
 import { sendReplyWithRfcId } from "../_shared/mail-provider.ts";
 import { renderHtml } from "../_shared/mail-format.ts";
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// The local part may contain an apostrophe (o'brien@kund.se); separators that could add a recipient are refused.
+const EMAIL_RE = /^[^\s<>@,";:()]+@[^\s<>@,"';:()]+\.[^\s<>@,"';:()]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const enc = new TextEncoder();
 function safeEqual(a: string, b: string): boolean {
   const x = enc.encode(a),
@@ -35,7 +37,7 @@ Deno.serve(async (req) => {
 
   const input = (await req.json().catch(() => null)) as { message_id?: unknown } | null;
   const messageId = typeof input?.message_id === "string" ? input.message_id : "";
-  if (!/^[0-9a-f-]{36}$/i.test(messageId))
+  if (!UUID_RE.test(messageId))
     return json({ ok: false, reason: "invalid_message" }, 400);
 
   const db = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), {
@@ -62,7 +64,7 @@ Deno.serve(async (req) => {
   const [thread, conn, parent] = await Promise.all([
     db
       .from("threads")
-      .select("customer_id,job")
+      .select("customer_id,job,pending_sender")
       .eq("id", threadId)
       .eq("company_id", companyId)
       .maybeSingle(),
@@ -87,6 +89,8 @@ Deno.serve(async (req) => {
   if (thread.error || conn.error || parent.error)
     return json({ ok: false, reason: "lookup_failed" }, 500);
   if (!thread.data) return json({ ok: false, reason: "thread_missing" });
+  if (thread.data.pending_sender != null)
+    return json({ ok: false, reason: "pending_sender" }, 409);
 
   const mailbox = conn.data?.status === "active" ? (conn.data.grant_id as string) : null;
   if (!mailbox) {
@@ -106,6 +110,7 @@ Deno.serve(async (req) => {
     .eq("channel", "email")
     .in("delivery_status", ["sending", "sent"])
     .gte("created_at", since);
+  if (recent.error) return json({ ok: false, reason: "lookup_failed" }, 500);
   if ((recent.count ?? 0) > optNumber("EMAIL_HOURLY_CAP", 30))
     return json({ ok: false, reason: "rate_limited" });
 
@@ -115,6 +120,7 @@ Deno.serve(async (req) => {
     .eq("id", thread.data.customer_id)
     .eq("company_id", companyId)
     .maybeSingle();
+  if (customer.error) return json({ ok: false, reason: "lookup_failed" }, 500);
   const to = customer.data?.email?.trim().toLowerCase();
   if (!to || !EMAIL_RE.test(to)) return json({ ok: false, reason: "no_recipient" });
 
