@@ -194,9 +194,9 @@ jobs:
 
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        # Required current-app regressions; historical proposals are an explicit local opt-in.
-        # Ubuntu runners provide passwordless sudo; avoid Ubuntu's unprivileged-userns restriction.
-        run: sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py
+        # The launcher uses an unprivileged network namespace where available.
+        # Otherwise it uses sudo only to create the namespace, then drops privileges before Vitest.
+        run: python3 scripts/run-tests-isolated.py
 
       - name: No root-owned files left by the isolated tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

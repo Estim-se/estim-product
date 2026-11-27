@@ -29,7 +29,8 @@ describe('required and opt-in Samtal test discovery', () => {
   it('requires the isolation launcher in CI rather than direct Vitest or opt-in proposals', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
     const tests = workflow.split('      - name: Tests\n')[1]?.split('      - name: Review gate tests')[0];
-    expect(tests).toContain('sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py');
+    expect(tests).toContain('run: python3 scripts/run-tests-isolated.py');
+    expect(tests).not.toContain('sudo -n env PATH="$PATH"');
     expect(tests).not.toContain('continue-on-error');
     expect(tests).not.toContain('--samtal-proposals');
   });
@@ -42,5 +43,15 @@ describe('isolated runner dependencies', () => {
     expect(runner).toContain('".vite-temp"');
     const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
     expect(ci).toContain('No root-owned files left by the isolated tests');
+  });
+  it('creates the network namespace without running Vitest as root', () => {
+    const runner = readFileSync('scripts/ci/isolated-tests-run.py', 'utf8');
+    expect(runner).toContain('--map-current-user');
+    expect(runner).toContain('setpriv');
+    expect(runner).toContain('--no-new-privs');
+    expect(runner).toContain('test_process_must_not_be_root');
+    expect(runner).toContain('tests run as the invoking user');
+    const wrapper = readFileSync('scripts/run-tests-isolated.py', 'utf8');
+    expect(wrapper).toContain('scripts/ci/isolated-tests-run.py');
   });
 });

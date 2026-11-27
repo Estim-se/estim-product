@@ -1,8 +1,7 @@
 # Samtal test discovery and CI review
 
 Reviewed 2026-11-27 against the checked-in application and migrations, without remote database access.
-This is the test inventory and execution guide for the existing policy in root `AGENTS.md`, not another product policy.
-Root `AGENTS.md` was left unchanged because its existing content exceeds the platform's size limit; no standing rules were shortened.
+This is the Samtal test inventory and execution guide; root `AGENTS.md` defines the repository-wide test policy.
 
 ## Commands
 
@@ -15,21 +14,26 @@ bun run test src/test/samtal         # Focused current Samtal regressions
 bun run test:samtal-proposals        # Explicit historical proposal/harness tests only
 ```
 
-CI's required Tests step runs `sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py`. The launcher gives the disposable copy its own `node_modules` directory (per-package links, no shared cache directories), so Vite/Vitest caches such as `node_modules/.vite-temp` are written in the copy and the following Build step never meets root-owned files; a CI step fails if any root-owned file remains in the checkout. Running Vitest directly or setting isolation variables by hand is not valid test evidence.
+CI's required Tests step runs `python3 scripts/run-tests-isolated.py`. The wrapper gives the disposable copy its own
+`node_modules` directory (per-package links, no shared cache directories), so Vite/Vitest caches such as
+`node_modules/.vite-temp` stay inside the copy. The network launcher uses an unprivileged user/network namespace when
+available; otherwise it uses passwordless sudo only to create the network namespace, then drops to the invoking user
+before Vitest starts. CI also fails if any root-owned file remains in the checkout. Running Vitest directly or setting
+isolation variables by hand is not valid test evidence.
 It does not run the proposal configuration. No required discovery glob was changed.
 The opt-in configuration replaces (not concatenates) discovery with `docs/samtal/tests/**/*.{test,spec}.{ts,tsx}`.
 
 ### Prerequisites and isolation
 
-- Linux (or a Linux VM/WSL environment with namespace support), Python 3, `unshare`, `ip`, Node and installed Vitest/Bun dependencies.
+- Linux (or a Linux VM/WSL environment with namespace support), Python 3, `unshare`, `ip`, `setpriv`, Node and installed Vitest/Bun dependencies.
 - Complete PostgreSQL binaries **and extension libraries**, including `dict_snowball`. Ubuntu CI's versioned
   `/usr/lib/postgresql/<version>/bin` is supported by the existing local SQL helper.
-- Root network namespaces, or permitted unprivileged user/network namespaces. CI uses passwordless sudo because
-  Ubuntu may restrict unprivileged namespaces. If the guard fails, the command exits before Vitest starts.
+- Permitted unprivileged user/network namespaces, or passwordless sudo to create the network namespace when Ubuntu
+  restricts unprivileged namespaces. If neither route can be verified, the command exits before Vitest starts.
 - A temporary source copy excludes `.env*`, repository hooks/config/index, build output and symbolic links.
   Installed dependencies are linked read-only by convention, not an adversarial filesystem sandbox.
   Only inert Git objects/refs/HEAD are copied for guard tests that inspect committed source.
-- The existing `a10-isolated-run.py` checks a distinct network namespace, no external interfaces/routes, enables
+- `scripts/ci/isolated-tests-run.py` checks a distinct network namespace, no external interfaces/routes, enables
   loopback only, creates a fresh HOME, drops inherited credentials, and only then sets the local isolation attestation.
   Local PostgreSQL uses random Unix-socket directories and synthetic rows; services are mocked.
 - Never manually set `ESTIM_TEST_NET_ISOLATED=1` as a substitute for the launcher. No shared Supabase URL or key is passed.
