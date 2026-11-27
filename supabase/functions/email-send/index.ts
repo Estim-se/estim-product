@@ -16,7 +16,8 @@ import { env, optNumber } from "../_shared/nylas.ts";
 import { sendReplyWithRfcId } from "../_shared/mail-provider.ts";
 import { renderHtml } from "../_shared/mail-format.ts";
 
-const EMAIL_RE = /^[^\s<>@,"';:()]+@[^\s<>@,"';:()]+\.[^\s<>@,"';:()]+$/;
+// The local part may contain an apostrophe (o'brien@kund.se); separators that could add a recipient are refused.
+const EMAIL_RE = /^[^\s<>@,";:()]+@[^\s<>@,"';:()]+\.[^\s<>@,"';:()]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const enc = new TextEncoder();
 function safeEqual(a: string, b: string): boolean {

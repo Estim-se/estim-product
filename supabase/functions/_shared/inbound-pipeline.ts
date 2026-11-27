@@ -405,7 +405,7 @@ export async function ingestMail(
   }
   if (flood === "store_no_ai") console.info(`[${tag}] flood: stored without ai`);
 
-  const noReply = isNoReplySender(mail.fromEmail);
+  const noReply = isNoReplySender(mail.fromEmail, level);
   const unverified = mail.senderCheck === "fail";
 
   // Level 2+ (D17): resolve Message-ID thread match and open-thread merge hint before triage.
@@ -520,12 +520,16 @@ export async function ingestMail(
 
   // Store the message: at level 0 (and non-quarantined level 1), call existing estim_receive unchanged (D1/D2).
   // At level 1 quarantine and all level 2+ paths, call the email-only estim_receive_email RPC.
-  const stripUnsafe = (s: string): string => s.replace(/[\0\u202A-\u202E\u2066-\u2069]/g, "");
+  // NUL and bidi controls are removed and a lone surrogate (an emoji cut by a slice) is made well-formed,
+  // so only truly unstoreable input reaches the acknowledged 22P05/22021 path below.
+  const stripUnsafe = (s: string): string =>
+    s.replace(/[\0\u202A-\u202E\u2066-\u2069]/g, "").toWellFormed();
+  const cut = (s: string, max: number): string => s.slice(0, max).toWellFormed();
   const cleanText = stripUnsafe(mail.text);
   const cleanSubject = stripUnsafe(mail.subject);
   const cleanFromName = mail.fromName ? stripUnsafe(mail.fromName) : null;
   const sentAt = sentAtFor(mail.ts);
-  const job = (cleanSubject || "E-postförfrågan").slice(0, 120);
+  const job = cut(cleanSubject || "E-postförfrågan", 120);
   const rfcMessageId = th?.messageId ?? null;
   const inReplyTo = replyIds[0] ?? null;
 
@@ -569,7 +573,7 @@ export async function ingestMail(
           : {
               mode: "new_thread",
               customer_email: mail.fromEmail,
-              ...(cleanFromName ? { customer_name: cleanFromName.slice(0, 200) } : {}),
+              ...(cleanFromName ? { customer_name: cut(cleanFromName, 200) } : {}),
               text: cleanText,
               provider_message_id: mail.messageKey,
               ...(sentAt ? { sent_at: sentAt } : {}),
@@ -588,9 +592,9 @@ export async function ingestMail(
       text: cleanText,
       provider_message_id: mail.messageKey,
       ...((customer.name ?? cleanFromName)
-        ? { customer_name: stripUnsafe((customer.name ?? cleanFromName)!).slice(0, 200) }
+        ? { customer_name: cut(stripUnsafe((customer.name ?? cleanFromName)!), 200) }
         : {}),
-      ...(customer.phone ? { customer_phone: stripUnsafe(customer.phone).slice(0, 100) } : {}),
+      ...(customer.phone ? { customer_phone: cut(stripUnsafe(customer.phone), 100) } : {}),
       ...(sentAt ? { sent_at: sentAt } : {}),
       job,
     };
@@ -617,13 +621,13 @@ export async function ingestMail(
     jobId = result.job_id;
 
   // Mail-only columns on the message that receive just created.
-  const names = files.map((f) => f.name);
+  const names = files.map((f) => cut(stripUnsafe(f.name), 120));
   const extra = await db
     .from("messages")
     .update({
       attachments: names,
-      attachment_files: files,
-      email_subject: mail.subject.slice(0, 300),
+      attachment_files: files.map((f, i) => ({ ...f, name: names[i]! })),
+      email_subject: cut(cleanSubject, 300),
     })
     .eq("company_id", companyId)
     .eq("channel", "email")

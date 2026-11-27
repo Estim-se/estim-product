@@ -99,7 +99,9 @@ export function parseAuthResults(value: string): AuthResult[] {
 
 function domainOf(value: string | undefined): string {
   const raw = (value ?? "").trim().toLowerCase().replace(/^.*@/, "").replace(/\.$/, "");
-  if (!raw || /[\s/\\:?#]/.test(raw)) return "";
+  // Characters a host cannot contain are kept as-is, so the domain simply never aligns (fails closed).
+  // "%" too: new URL would percent-decode and remap an attacker-supplied domain.
+  if (!raw || /[\s/\\:?#%]/.test(raw)) return raw;
   try {
     return new URL(`http://${raw}`).hostname.toLowerCase();
   } catch {

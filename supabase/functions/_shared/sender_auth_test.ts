@@ -101,3 +101,10 @@ Deno.test("sender check: truncated 16 KB header fails closed even when an earlie
   assertEquals(padded.length, AUTH_RESULTS_VALUE_LIMIT);
   assertEquals(senderVerdict([ar(padded)], "info@kund.se"), "fail");
 });
+
+Deno.test("sender check: a From domain that is not a host never aligns and fails closed", () => {
+  const fail = "mx.example.com; dmarc=fail header.from=kund.se; spf=pass smtp.mailfrom=kund.se";
+  assertEquals(senderVerdict([ar(fail)], "ceo@kund.se/x"), "fail");
+  assertEquals(senderVerdict([ar(GMAIL)], "a@example.com/x"), "fail");
+  assertEquals(senderVerdict([ar(GMAIL)], "a@ex%61mple.com"), "fail");
+});

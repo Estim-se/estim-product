@@ -349,17 +349,20 @@ export function shouldSkip(
   return null;
 }
 
-/** True for senders you cannot reply to (typical for website forms): the real customer address must come from the mail text. */
 /** A short, safe label for logging an error: only our own status codes like "dispatch_500", otherwise the error type. Never the message text. */
 export function errCode(e: unknown): string {
   if (e instanceof Error && /^[a-z_]{2,30}_?\d{0,3}$/.test(e.message)) return e.message;
   return e instanceof Error ? e.name : "unknown";
 }
 
-export function isNoReplySender(email: string): boolean {
-  return /^(no[-_]?reply|do[-_]?not[-_]?reply|wordpress|wix|forms?|webform|contact[-_]?form|mailer|squarespace|webflow|typeform|noreply-[^@]*)@/i.test(
-    email.trim(),
-  );
+/**
+ * True for senders you cannot reply to (typical for website forms): the real customer address must come from the mail text.
+ * Level 0 keeps the original list; the wider list (form builders, mailer@) applies from EMAIL_INBOUND_LEVEL 1.
+ */
+export function isNoReplySender(email: string, level = 0): boolean {
+  const address = email.trim();
+  if (level < 1) return /^(no-?reply|do-?not-?reply|wordpress|wix|forms?|noreply-[^@]*)@/i.test(address);
+  return /^(no[-_]?reply|do[-_]?not[-_]?reply|wordpress|wix|forms?|webform|contact[-_]?form|mailer|squarespace|webflow|typeform|noreply-[^@]*)@/i.test(address);
 }
 
 /** Mail is stored as PLAIN TEXT only. React escapes it; no HTML from a customer is ever rendered. */
