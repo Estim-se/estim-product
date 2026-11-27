@@ -1,6 +1,3 @@
--- estim Samtal staged migration 13/13 from docs/samtal/a10-ring-bridge.sql (approved for Bygg Demo AB test, 2026-11-27).
--- DOCUMENTATION-ONLY compatibility bridge for previously approved A5/A6 Ring quote drafts.
--- Reuses the existing handoff request/receipt; no prices, quantities or assignment IDs are invented.
 CREATE FUNCTION public.samtal_a10_stage_ring_draft(p_actor uuid,p_company uuid,p_draft uuid,p_version integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE d samtal_ring_drafts; c samtal_calls; m samtal_a9_matches; h jsonb; existing samtal_ring_handoffs; receipt samtal_a9_quote_receipts; ids uuid[]; overflow boolean;

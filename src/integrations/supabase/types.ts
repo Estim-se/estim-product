@@ -3705,6 +3705,15 @@ export type Database = {
         }
         Returns: Json
       }
+      samtal_a10_stage_ring_draft: {
+        Args: {
+          p_actor: string
+          p_company: string
+          p_draft: string
+          p_version: number
+        }
+        Returns: Json
+      }
       samtal_a9_assignments: {
         Args: {
           p_call: string
