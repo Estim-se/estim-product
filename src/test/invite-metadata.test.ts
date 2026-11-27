@@ -13,6 +13,10 @@ describe('inviteTemplateData', () => {
     expect(Array.from(out)).toHaveLength(80);
     expect(out.endsWith('😀')).toBe(true);
   });
+  it('removes < and > so a name cannot add markup to the mail, and keeps &', () => {
+    expect(inviteTemplateData('<a href="https://x.se">Klicka</a>', 'Bygg & El AB')).toEqual({ inviter_name: 'a href="https://x.se"Klicka/a', company_name: 'Bygg & El AB' });
+    expect(inviteTemplateData('<>', '  <b>  ')).toEqual({ company_name: 'b' });
+  });
   it('never sets keys the profile trigger reads', () => {
     expect(Object.keys(inviteTemplateData('Anna', 'Firma'))).not.toContain('display_name');
   });
