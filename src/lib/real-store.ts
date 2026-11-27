@@ -263,8 +263,9 @@ export function createRealStore() {
     const d = state.drafts[id];
     if (!ai || !d) return;
     const ch = d.ch === "sms" || d.ch === "wa" ? d.ch : "email";
-    patchDraft(id, (x) => ({ ...x, v, busy: true }));
+    patchDraft(id, (x) => ({ ...x, busy: true }));
     try {
+      // Saves pending text edits under the current variant; the new variant is shown once its reply exists.
       flushDraft(id);
       await queue;
       const res = (await withTimeout(ai.write(id, v, ch))) as {
@@ -309,6 +310,22 @@ export function createRealStore() {
   const draftRevisions = new Map<string, number>();
   const dirtyDrafts = new Set<string>();
   const DRAFT_DEBOUNCE_MS = 450;
+  // Optimistic thread fields (read, autopilot) are reapplied over polls that were read before the write landed.
+  const OPTIMISTIC_HOLD_MS = 30_000;
+  type ThreadPatch = { read?: boolean; autopilot?: boolean; until?: number };
+  const optimistic = new Map<string, ThreadPatch>();
+  const holdThread = (id: string, patch: Omit<ThreadPatch, "until">) => {
+    const { until: _settled, ...held } = optimistic.get(id) ?? {};
+    optimistic.set(id, { ...held, ...patch });
+  };
+  const settleThread = (id: string, failed: boolean, field: "read" | "autopilot") => {
+    const held = optimistic.get(id);
+    if (!held) return;
+    if (failed) {
+      delete held[field];
+      if (held.read === undefined && held.autopilot === undefined) optimistic.delete(id);
+    } else held.until = Date.now() + OPTIMISTIC_HOLD_MS;
+  };
   // Only known user-facing server messages are shown; anything else gets the generic text.
   const serverMessage = (error: unknown) =>
     error instanceof Error && USER_MESSAGES.has(error.message)
@@ -456,7 +473,9 @@ export function createRealStore() {
           const t = s.threads.find((th) => th.id === id);
           if (t) t.read = true;
         });
-        void persist({ kind: "thread", id, read: true }).catch(() => {
+        holdThread(id, { read: true });
+        void persist({ kind: "thread", id, read: true }).then(() => settleThread(id, false, "read")).catch(() => {
+          settleThread(id, true, "read");
           update((s) => {
             const t = s.threads.find((th) => th.id === id);
             if (t) t.read = false;
@@ -498,8 +517,10 @@ export function createRealStore() {
         const thread = s.threads.find((th) => th.id === id);
         if (thread) thread.autopilot = autopilot;
       });
+      holdThread(id, { autopilot });
       void persist({ kind: "thread", id, autopilot })
         .then(() => {
+          settleThread(id, false, "autopilot");
           toast(
             autopilot
               ? "AI skickar svar automatiskt i den här WhatsApp-tråden."
@@ -507,6 +528,7 @@ export function createRealStore() {
           );
         })
         .catch(() => {
+          if (optimistic.get(id)?.autopilot === autopilot) settleThread(id, true, "autopilot");
           update((s) => {
             const thread = s.threads.find((th) => th.id === id);
             if (thread && thread.autopilot === autopilot) thread.autopilot = previous;
@@ -831,7 +853,20 @@ export function createRealStore() {
         }
       }
       let failed = false;
+      const now = Date.now();
       for (const t of state.threads) {
+        const held = optimistic.get(t.id);
+        if (held) {
+          const agrees =
+            (held.read === undefined || held.read === t.read) &&
+            (held.autopilot === undefined || held.autopilot === t.autopilot);
+          if ((agrees && held.until !== undefined) || (held.until !== undefined && now > held.until))
+            optimistic.delete(t.id);
+          else {
+            if (held.read !== undefined) t.read = held.read;
+            if (held.autopilot !== undefined) t.autopilot = held.autopilot;
+          }
+        }
         const prev = prevById.get(t.id);
         if (dirtyQuotes.has(t.id)) t.q = prev?.q ?? t.q;
         if (
@@ -853,6 +888,7 @@ export function createRealStore() {
       draftRevisions.clear();
       dirtyDrafts.clear();
       dirtyQuotes.clear();
+      optimistic.clear();
       data = null;
       mutate = undefined;
       reload = undefined;

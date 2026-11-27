@@ -15,6 +15,8 @@ export function Composer({ thread: t }: { thread: Thread }) {
   const workspace=useWorkspace();
   const real=workspace.mode==='real';
   const textarea = useRef<HTMLTextAreaElement>(null);
+  // The textarea exists only with a draft; the observer attaches when it appears.
+  const hasDraft = Boolean(d);
   // Resize on text changes without tearing down ResizeObserver on every keystroke.
   useLayoutEffect(() => {
     const el = textarea.current;
@@ -35,7 +37,7 @@ export function Composer({ thread: t }: { thread: Thread }) {
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [t.id]);
+  }, [t.id, hasDraft]);
   if (!d) return null;
   const needsSenderApproval = real && Boolean(t.pendingSender) && d.ch === 'email';
   const waDocIds = real && d.ch === 'wa' ? workspace.data?.drafts.find(row => row.thread_id === t.id)?.document_ids : null;

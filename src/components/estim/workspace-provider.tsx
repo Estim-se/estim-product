@@ -20,40 +20,17 @@ import { interpretRequest, writeReply } from "@/lib/ai-client";
 import { sendMessage } from "@/lib/channel.functions";
 export { useWorkspace } from "./workspace-context";
 
-/** Lightweight structural signature so unchanged background polls do not trigger full React re-renders. */
+/**
+ * Exact snapshot signature: an unchanged background poll skips the React update, and any changed field
+ * (delivery status, channel number, document name, quote version) still updates the workspace.
+ */
 function workspaceFingerprint(d: WorkspaceData): string {
-  const maxOf = <T,>(arr: T[] | undefined, pick: (x: T) => string | null | undefined) => {
-    let best = "";
-    for (const item of arr ?? []) {
-      const v = pick(item) ?? "";
-      if (v > best) best = v;
-    }
-    return best;
-  };
-  return [
-    d.company?.id ?? "",
-    d.company?.updated_at ?? "",
-    d.profile?.display_name ?? "",
-    d.role ?? "",
-    d.threads.length,
-    maxOf(d.threads, (t) => `${t.updated_at}:${t.status}:${t.read ? 1 : 0}:${t.pending_sender ? 1 : 0}`),
-    d.messages.length,
-    maxOf(d.messages, (m) => `${m.id}:${m.delivery_status}:${m.sent_at}`),
-    d.drafts.length,
-    maxOf(d.drafts, (x) => `${x.updated_at}:${x.text.length}`),
-    d.quotes.length,
-    maxOf(d.quotes, (q) => `${q.id}:${q.version}`),
-    d.customers.length,
-    maxOf(d.customers, (c) => c.updated_at),
-    d.moments.length,
-    maxOf(d.moments, (m) => m.updated_at),
-    d.audit.length,
-    d.audit[0]?.id ?? "",
-    d.channels.length,
-    d.documentDeliveries?.length ?? 0,
-    d.documentLibrary?.length ?? 0,
-  ].join("|");
+  return JSON.stringify(d);
 }
+/** Time-derived thread state (AI fallback after 90 s, WhatsApp 24 h window) is recomputed at least this often. */
+const REHYDRATE_MS = 60_000;
+/** Pending draft saves get this long to finish before sign-out continues. */
+const SIGN_OUT_FLUSH_MS = 3_000;
 
 /** Isolated child so pathname changes update document.title without re-rendering WorkspaceProvider. */
 function CompanyDocumentTitle({ companyName }: { companyName: string | null }) {
@@ -91,6 +68,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const identityEpoch = useRef(0);
   const lastFingerprint = useRef("");
   const hasDataRef = useRef(false);
+  const lastHydrate = useRef(0);
   const read = useServerFn(loadWorkspace);
   const write = useServerFn(mutateWorkspace);
   const send = useServerFn(sendMessage);
@@ -105,11 +83,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (epoch !== identityEpoch.current) return undefined;
       setError("");
       const fp = workspaceFingerprint(next);
-      if (!opts?.force && hasDataRef.current && fp === lastFingerprint.current) {
+      if (
+        !opts?.force &&
+        hasDataRef.current &&
+        fp === lastFingerprint.current &&
+        Date.now() - lastHydrate.current < REHYDRATE_MS
+      ) {
         return next;
       }
       lastFingerprint.current = fp;
       hasDataRef.current = true;
+      lastHydrate.current = Date.now();
       setData(next);
       realStore.hydrate(next);
       return next;
@@ -122,17 +106,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [write],
   );
 
+  // No dependency list: realStore.clear() (sign-out, logged-out start) drops the connection, and the
+  // re-render that follows must reconnect it before the next sign-in writes anything.
   useEffect(() => {
     realStore.connect(mutate, async () => {
       await refresh({ force: true });
     });
     realStore.connectAi({ interpret: interpretRequest, write: writeReply });
     realStore.connectDelivery((id) => send({ data: { id } }));
-  }, [realStore, mutate, refresh, send]);
+  });
+
+  // Debounced draft edits are saved when the tab is hidden or closed.
+  useEffect(() => {
+    if (mode !== "real" || !signedIn) return;
+    const save = () => void realStore.flush().catch(() => {});
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") save();
+    };
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [mode, signedIn, realStore]);
 
   useEffect(() => {
     let alive = true;
     let generation = 0;
+    function signedOutState() {
+      hasDataRef.current = false;
+      lastFingerprint.current = "";
+      setSignedIn(false);
+      setMode("demo");
+      setData(null);
+      realStore.clear();
+      setLoading(false);
+    }
     async function resolve(initialBoot: boolean) {
       const own = ++generation;
       // Avoid blanking the whole screen on background auth refreshes once workspace data is loaded.
@@ -141,13 +151,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const { data: sessionData, error: authError } = await supabase.auth.getSession();
       if (!alive || generation !== own) return;
       if (!sessionData.session?.user || authError) {
-        hasDataRef.current = false;
-        lastFingerprint.current = "";
-        setSignedIn(false);
-        setMode("demo");
-        setData(null);
-        realStore.clear();
-        setLoading(false);
+        signedOutState();
         return;
       }
       setSignedIn(true);
@@ -155,6 +159,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         await refresh({ force: initialBoot });
       } catch {
+        // getSession only reads the local session; a revoked one is confirmed with the server.
+        const { data: verified, error: verifyError } = await supabase.auth.getUser();
+        if (!alive || generation !== own) return;
+        // A network failure (AuthRetryableFetchError) keeps the session; a rejected one signs out locally.
+        if (!verified.user && verifyError?.name !== "AuthRetryableFetchError") {
+          signedOutState();
+          void supabase.auth.signOut({ scope: "local" });
+          return;
+        }
         if (alive) setError("Kunde inte läsa företaget. Försök igen.");
       }
       if (alive && generation === own) setLoading(false);
@@ -184,22 +197,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [realStore, refresh, queryClient, router]);
 
-  // Poll while visible: fast (4s) during active AI analysis, calm (20s) when idle, paused when tab is hidden.
+  // Poll as on main while visible (4 s during AI analysis, 10 s idle). A hidden tab keeps polling every 30 s so
+  // unread counts still update, and catches up at once when it becomes visible again.
   const analysing = useSyncAnalysing(realStore);
   useEffect(() => {
     if (mode !== "real" || !signedIn) return;
     let inFlight = false;
+    let lastPoll = Date.now();
     const poll = () => {
-      if (inFlight || (typeof document !== "undefined" && document.visibilityState !== "visible"))
-        return;
+      if (inFlight) return;
       inFlight = true;
-      void refresh()
+      lastPoll = Date.now();
+      void refresh({ force: analysing })
         .catch(() => {})
         .finally(() => {
           inFlight = false;
         });
     };
-    const timer = setInterval(poll, analysing ? 4000 : 20000);
+    const timer = setInterval(
+      () => {
+        const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+        if (!hidden || Date.now() - lastPoll >= 30_000) poll();
+      },
+      analysing ? 4000 : 10000,
+    );
     const onVisibility = () => {
       if (document.visibilityState === "visible") poll();
     };
@@ -211,6 +232,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [mode, analysing, signedIn, refresh]);
 
   const signOut = useCallback(async () => {
+    await Promise.race([
+      realStore.flush().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, SIGN_OUT_FLUSH_MS)),
+    ]);
     identityEpoch.current++;
     hasDataRef.current = false;
     lastFingerprint.current = "";

@@ -70,8 +70,7 @@ export const loadWorkspace = createServerFn({ method: "POST" })
         .from("audit_log")
         .select("*")
         .eq("company_id", cid)
-        .order("created_at", { ascending: false })
-        .limit(250),
+        .order("created_at", { ascending: false }),
       db.from("channels").select("*").eq("company_id", cid),
       db
         .from("company_document_deliveries")
