@@ -984,6 +984,47 @@ export type Database = {
           },
         ]
       }
+      samtal_a10_handoffs: {
+        Row: {
+          call_id: string
+          company_id: string
+          content_removed: boolean
+          created_at: string
+          customer_id: string
+          message_id: string
+          request_id: string
+          thread_id: string
+        }
+        Insert: {
+          call_id: string
+          company_id: string
+          content_removed?: boolean
+          created_at?: string
+          customer_id: string
+          message_id: string
+          request_id: string
+          thread_id: string
+        }
+        Update: {
+          call_id?: string
+          company_id?: string
+          content_removed?: boolean
+          created_at?: string
+          customer_id?: string
+          message_id?: string
+          request_id?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_a10_handoffs_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: true
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+        ]
+      }
       samtal_a9_matches: {
         Row: {
           assignment_candidates: string[]
@@ -3636,6 +3677,23 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_a10_handoff: {
+        Args: {
+          p_actor?: string
+          p_assignment: string
+          p_call: string
+          p_company: string
+          p_create: boolean
+          p_customer: string
+          p_identity: Json
+          p_job?: string
+          p_request: string
+          p_title: string
+          p_token?: string
+          p_version: number
+        }
+        Returns: Json
+      }
       samtal_a9_assignments: {
         Args: {
           p_call: string
