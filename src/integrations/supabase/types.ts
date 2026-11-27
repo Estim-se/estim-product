@@ -984,6 +984,90 @@ export type Database = {
           },
         ]
       }
+      samtal_audio_ledger: {
+        Row: {
+          attempts: number
+          audio_path: string
+          call_id: string | null
+          cleanup_token: string | null
+          cleanup_until: string | null
+          closure_evidence: string | null
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          queue: string
+          retire_after: string | null
+          retry_after: string
+          state: string
+          updated_at: string
+          upload_token: string
+          upload_until: string
+          verification_count: number
+          verified_at: string | null
+          writer_closed_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          audio_path: string
+          call_id?: string | null
+          cleanup_token?: string | null
+          cleanup_until?: string | null
+          closure_evidence?: string | null
+          company_id: string
+          created_at?: string
+          error_code?: string | null
+          id: string
+          queue?: string
+          retire_after?: string | null
+          retry_after?: string
+          state?: string
+          updated_at?: string
+          upload_token?: string
+          upload_until?: string
+          verification_count?: number
+          verified_at?: string | null
+          writer_closed_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          audio_path?: string
+          call_id?: string | null
+          cleanup_token?: string | null
+          cleanup_until?: string | null
+          closure_evidence?: string | null
+          company_id?: string
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          queue?: string
+          retire_after?: string | null
+          retry_after?: string
+          state?: string
+          updated_at?: string
+          upload_token?: string
+          upload_until?: string
+          verification_count?: number
+          verified_at?: string | null
+          writer_closed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_audio_ledger_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_audio_ledger_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       samtal_calls: {
         Row: {
           audio_path: string | null
@@ -1002,6 +1086,7 @@ export type Database = {
           number_id: string | null
           provider: string
           provider_call_id: string
+          safety_version: number
           started_at: string
           status: string
           thread_id: string | null
@@ -1026,6 +1111,7 @@ export type Database = {
           number_id?: string | null
           provider: string
           provider_call_id: string
+          safety_version?: number
           started_at: string
           status?: string
           thread_id?: string | null
@@ -1050,6 +1136,7 @@ export type Database = {
           number_id?: string | null
           provider?: string
           provider_call_id?: string
+          safety_version?: number
           started_at?: string
           status?: string
           thread_id?: string | null
@@ -1092,6 +1179,169 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "company_members"
             referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
+      samtal_dispatch_outbox: {
+        Row: {
+          accepted_at: string | null
+          attempts: number
+          call_id: string | null
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          error_code: string | null
+          id: string
+          job_id: string | null
+          lease_until: string | null
+          next_attempt: string
+          running_observed_at: string | null
+          state: string
+          token: string | null
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          attempts?: number
+          call_id?: string | null
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          job_id?: string | null
+          lease_until?: string | null
+          next_attempt?: string
+          running_observed_at?: string | null
+          state?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          attempts?: number
+          call_id?: string | null
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          job_id?: string | null
+          lease_until?: string | null
+          next_attempt?: string
+          running_observed_at?: string | null
+          state?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_dispatch_outbox_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_dispatch_outbox_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_dispatch_outbox_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: true
+            referencedRelation: "ai_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_erasure_requests: {
+        Row: {
+          actor_id: string
+          call_id: string | null
+          company_id: string
+          created_at: string
+          id: string
+          scope: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          actor_id: string
+          call_id?: string | null
+          company_id: string
+          created_at?: string
+          id: string
+          scope: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string
+          call_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          scope?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_erasure_requests_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_erasure_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_inbox_receipts: {
+        Row: {
+          call_id: string
+          company_id: string
+          created_at: string
+          result: Json
+          updated_at: string
+        }
+        Insert: {
+          call_id: string
+          company_id: string
+          created_at?: string
+          result: Json
+          updated_at?: string
+        }
+        Update: {
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          result?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_inbox_receipts_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_inbox_receipts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1199,6 +1449,120 @@ export type Database = {
             referencedColumns: ["company_id", "user_id"]
           },
         ]
+      }
+      samtal_replay_denials: {
+        Row: {
+          company_id: string
+          created_at: string
+          event_digest: string
+          expires_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          event_digest: string
+          expires_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          event_digest?: string
+          expires_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      samtal_reviews: {
+        Row: {
+          actor_id: string | null
+          call_id: string
+          company_id: string
+          created_at: string
+          decided_at: string | null
+          decision: string
+          request_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          actor_id?: string | null
+          call_id: string
+          company_id: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string
+          request_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string | null
+          call_id?: string
+          company_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decision?: string
+          request_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_reviews_company_id_call_id_fkey"
+            columns: ["company_id", "call_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_calls"
+            referencedColumns: ["company_id", "id"]
+          },
+          {
+            foreignKeyName: "samtal_reviews_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      samtal_runtime_limits: {
+        Row: {
+          created_at: string
+          default_tenant_dispatch: number
+          default_tenant_processing: number
+          dispatch_retry_budget: number
+          global_dispatch: number
+          global_processing: number
+          id: boolean
+          ingest_hourly_reservations: number
+          scan_budget: number
+          tenant_pending: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_tenant_dispatch?: number
+          default_tenant_processing?: number
+          dispatch_retry_budget?: number
+          global_dispatch?: number
+          global_processing?: number
+          id?: boolean
+          ingest_hourly_reservations?: number
+          scan_budget?: number
+          tenant_pending?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_tenant_dispatch?: number
+          default_tenant_processing?: number
+          dispatch_retry_budget?: number
+          global_dispatch?: number
+          global_processing?: number
+          id?: boolean
+          ingest_hourly_reservations?: number
+          scan_budget?: number
+          tenant_pending?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       samtal_settings: {
         Row: {
@@ -1308,6 +1672,56 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "company_members"
             referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
+      samtal_tenant_state: {
+        Row: {
+          cleanup_cursor: string
+          company_id: string
+          created_at: string
+          dispatch_cursor: string
+          dispatch_limit: number | null
+          erasure_cursor: string | null
+          legacy_inventory_verified_at: string | null
+          process_cursor: string
+          process_limit: number | null
+          retired_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          cleanup_cursor?: string
+          company_id: string
+          created_at?: string
+          dispatch_cursor?: string
+          dispatch_limit?: number | null
+          erasure_cursor?: string | null
+          legacy_inventory_verified_at?: string | null
+          process_cursor?: string
+          process_limit?: number | null
+          retired_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cleanup_cursor?: string
+          company_id?: string
+          created_at?: string
+          dispatch_cursor?: string
+          dispatch_limit?: number | null
+          erasure_cursor?: string | null
+          legacy_inventory_verified_at?: string | null
+          process_cursor?: string
+          process_limit?: number | null
+          retired_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_tenant_state_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2168,6 +2582,110 @@ export type Database = {
         Returns: string
       }
       my_company: { Args: never; Returns: string }
+      samtal_audio_access_guarded: {
+        Args: { p_actor: string; p_call: string; p_company: string }
+        Returns: string
+      }
+      samtal_begin_delete: {
+        Args: { p_call: string; p_company: string; p_reason: string }
+        Returns: boolean
+      }
+      samtal_certify_legacy_inventory: {
+        Args: { p_company: string; p_evidence: string }
+        Returns: boolean
+      }
+      samtal_certify_writer_closed: {
+        Args: { p_audio: string; p_company: string; p_evidence: string }
+        Returns: boolean
+      }
+      samtal_claim_cleanup: {
+        Args: { p_lease_seconds: number; p_limit: number }
+        Returns: {
+          attempts: number
+          audio_path: string
+          call_id: string | null
+          cleanup_token: string | null
+          cleanup_until: string | null
+          closure_evidence: string | null
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          queue: string
+          retire_after: string | null
+          retry_after: string
+          state: string
+          updated_at: string
+          upload_token: string
+          upload_until: string
+          verification_count: number
+          verified_at: string | null
+          writer_closed_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "samtal_audio_ledger"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      samtal_claim_cleanup_class: {
+        Args: { p_lease_seconds: number; p_limit: number; p_queue: string }
+        Returns: {
+          attempts: number
+          audio_path: string
+          call_id: string | null
+          cleanup_token: string | null
+          cleanup_until: string | null
+          closure_evidence: string | null
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          queue: string
+          retire_after: string | null
+          retry_after: string
+          state: string
+          updated_at: string
+          upload_token: string
+          upload_until: string
+          verification_count: number
+          verified_at: string | null
+          writer_closed_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "samtal_audio_ledger"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      samtal_claim_dispatch: {
+        Args: { p_lease_seconds: number; p_limit: number }
+        Returns: {
+          accepted_at: string | null
+          attempts: number
+          call_id: string | null
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          error_code: string | null
+          id: string
+          job_id: string | null
+          lease_until: string | null
+          next_attempt: string
+          running_observed_at: string | null
+          state: string
+          token: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "samtal_dispatch_outbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       samtal_claim_jobs: {
         Args: { p_lease_seconds: number; p_limit: number }
         Returns: {
@@ -2190,6 +2708,34 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      samtal_commit_private: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_job: string
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_configure_tenant_limits: {
+        Args: {
+          p_actor: string
+          p_company: string
+          p_dispatch: number
+          p_processing: number
+        }
+        Returns: boolean
+      }
+      samtal_confirm_review: {
+        Args: {
+          p_actor: string
+          p_call: string
+          p_company: string
+          p_decision: string
+          p_request: string
+        }
+        Returns: boolean
       }
       samtal_decide_task: {
         Args: { p_decision: string; p_task: string }
@@ -2215,6 +2761,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      samtal_dispatch_live: {
+        Args: { p_company: string; p_outbox: string; p_token: string }
+        Returns: boolean
+      }
       samtal_due_for_deletion: {
         Args: { p_limit: number }
         Returns: {
@@ -2223,10 +2773,64 @@ export type Database = {
           company_id: string
         }[]
       }
+      samtal_erase_batch: {
+        Args: { p_company: string; p_limit: number }
+        Returns: number
+      }
+      samtal_finish_audio: {
+        Args: {
+          p_audio: string
+          p_call: string
+          p_company: string
+          p_token: string
+          p_uploaded: boolean
+        }
+        Returns: boolean
+      }
+      samtal_finish_cleanup: {
+        Args: {
+          p_audio: string
+          p_company: string
+          p_removed: boolean
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_finish_dispatch: {
+        Args: {
+          p_accepted: boolean
+          p_company: string
+          p_outbox: string
+          p_retry_seconds: number
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_inbox_guarded: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_extraction: Json
+          p_job: string
+          p_summary: string
+          p_tasks: Json
+          p_title: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_ingest_recover: {
+        Args: { p_extension: string; p_request: string; payload: Json }
+        Returns: Json
+      }
       samtal_is_owner: { Args: never; Returns: boolean }
       samtal_mark_deleted: {
         Args: { p_call: string; p_company: string }
         Returns: boolean
+      }
+      samtal_observe_dispatch: {
+        Args: { p_company: string; p_limit: number }
+        Returns: number
       }
       samtal_purge_secret_valid: {
         Args: { p_secret: string }
@@ -2241,6 +2845,143 @@ export type Database = {
           p_state: string
           p_step: string
           p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_request_erasure: {
+        Args: {
+          p_actor: string
+          p_call: string
+          p_company: string
+          p_request: string
+        }
+        Returns: boolean
+      }
+      samtal_reserve_audio: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_extension: string
+          p_request: string
+        }
+        Returns: {
+          attempts: number
+          audio_path: string
+          call_id: string | null
+          cleanup_token: string | null
+          cleanup_until: string | null
+          closure_evidence: string | null
+          company_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          queue: string
+          retire_after: string | null
+          retry_after: string
+          state: string
+          updated_at: string
+          upload_token: string
+          upload_until: string
+          verification_count: number
+          verified_at: string | null
+          writer_closed_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "samtal_audio_ledger"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      samtal_restart_guarded: {
+        Args: { p_actor: string; p_call: string; p_company: string }
+        Returns: boolean
+      }
+      samtal_retire_ledger: {
+        Args: { p_company: string; p_limit: number }
+        Returns: number
+      }
+      samtal_retry_guarded: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_error: string
+          p_job: string
+          p_retry_seconds: number
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_safety_live: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_job: string
+          p_token: string
+        }
+        Returns: boolean
+      }
+      samtal_safety_lock: {
+        Args: { p_call: string; p_company: string }
+        Returns: {
+          audio_path: string | null
+          caller_phone: string | null
+          classification: string | null
+          company_id: string
+          content_deleted_at: string | null
+          created_at: string
+          customer_id: string | null
+          delete_after: string
+          duration_seconds: number | null
+          ended_at: string | null
+          error_code: string | null
+          extraction: Json | null
+          id: string
+          number_id: string | null
+          provider: string
+          provider_call_id: string
+          safety_version: number
+          started_at: string
+          status: string
+          thread_id: string | null
+          transcript: Json | null
+          updated_at: string
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "samtal_calls"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      samtal_track_orphan: {
+        Args: { p_company: string; p_path: string }
+        Returns: string
+      }
+      samtal_v2_deadline: { Args: { p_until: string }; Returns: undefined }
+      samtal_v2_inbox_core: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_extraction: Json
+          p_job: string
+          p_summary: string
+          p_tasks: Json
+          p_title: string
+          p_token: string
+        }
+        Returns: Json
+      }
+      samtal_v2_try_tenant: { Args: { p_company: string }; Returns: boolean }
+      samtal_write_stage: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_job: string
+          p_stage: string
+          p_token: string
+          p_value: Json
         }
         Returns: boolean
       }
