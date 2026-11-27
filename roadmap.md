@@ -157,3 +157,10 @@
 - Delete WhatsApp threads for Hassan + Mohamed (done)
 
 - [x] Anbud: unsourced calculation posts are flagged (Låg, "Källa saknas – kontrollera", Antaganden) instead of failing; demolition looked up in el-rambeskrivning/AF
+
+## Samtal live test (Bygg Demo AB, Daniel)
+- [ ] Plan approved incl. list of shared DB changes (waiting on user)
+- [ ] Stage A1–A10 additive migrations in draft (not applied until accept)
+- [ ] Testsamtal entry on Samtal page -> real pipeline -> Inkorg + Offertutkast
+- [ ] Block all external sending for samtal threads; WhatsApp/email unchanged
+- [ ] Run only Samtal/WhatsApp/email/tender test files, network-isolated

@@ -53,7 +53,20 @@ All new objects are `samtal_*` tables/functions. Shared-table touches (need your
 4. Then enable only Bygg Demo AB; test.
 5. Rollback: disable the company flag (instant stop); new functions are left inert. Test data is removed by exact recorded IDs only (calls, threads, quotes created after the snapshot), with your approval.
 
-## 7. Open points before I start
+## 7. Complete list of shared database changes (everything else is new `samtal_*`)
+
+| # | Existing object | Change | Effect on WhatsApp / email / Anbud |
+|---|---|---|---|
+| 1 | `customers` | new indexes (company + normalized phone, company + name) | none, read speed only |
+| 2 | `threads` | new index (company + customer + channel) | none |
+| 3 | `quotes`, `messages` | new indexes (company + thread) | none |
+| 4 | `customers` / `threads` / `messages` | written only by a **new** function that takes exact IDs and refuses any company except `f9df621c…` | existing rows untouched; no AI job created, so no auto-reply |
+| 5 | `estim_quote` | called as-is, **not modified** | none |
+| 6 | send path (`estim_prepare_send` / delivery) | **not modified**; the new server function and UI refuse `samtal` threads | none |
+
+No existing table column, trigger, policy or function is changed or dropped. Test calls never use the WhatsApp or email channel, so auto-reply and notification mail cannot fire.
+
+## 8. Open points before I start
 
 - Known blocker from A8: worker capacity ~5 calls/min — fine for a demo, not for production.
 - The A9 incident remains unresolved; this plan doesn't change that.
