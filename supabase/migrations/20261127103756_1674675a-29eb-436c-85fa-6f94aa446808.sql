@@ -1,25 +1,3 @@
--- estim Samtal staged migration 5/13 from docs/samtal/a5-draft-management.sql (approved for Bygg Demo AB test, 2026-11-27).
--- estim Samtal A5 (UNAPPLIED SQL CANDIDATE – documentation only, never run against preview or production).
--- Applies after priority-1-coordinated-v2.sql, a1-provider-transcript.sql and a3-a4-ring-estim.sql.
---
--- Draft management, date-only deadlines, material lists and employee enrollment for Ring estim.
---   * Drafts get Swedish states (behover_granskas, kund_saknas, godkand, avvisad, klar), an optimistic version, the
---     deciding actor id and time. Every change goes through samtal_ring_decide, which locks the row, checks the
---     actor's membership/role in the draft's company and the expected version, and is idempotent: repeating the
---     same decision returns ok without a new version; a different decision on a decided draft returns 'conflict'
---     with the current state, so nobody's decision is overwritten silently.
---   * Approval only changes the state of an internal Samtal draft. Nothing here sends a quotation, places an order,
---     contacts a customer or writes to quotes/threads/drafts/messages.
---   * Deletion removes the draft and leaves a content-free tombstone (call id, kind, sha256 of the title), so a
---     retried commit, a stale worker or a duplicate provider event cannot recreate it.
---   * Deadlines: due_date (a date) is always kept; due_at only when a time was spoken or a default was applied, and
---     due_time_source says which ('angiven' or 'standard').
---   * Enrollment: an owner registers a phone number for a member ("Väntar på verifiering"). That is never an
---     identity: samtal_ring_identities rows are created only by samtal_ring_verify_enrollment, called by the
---     server with trusted provider evidence. Revocation revokes the identity immediately (fail closed).
--- All functions are service-role only; the actor is the verified auth user passed by an authenticated server handler.
-
--- ---- Drafts ----
 ALTER TABLE public.samtal_ring_drafts DROP CONSTRAINT IF EXISTS samtal_ring_drafts_state_check;
 UPDATE public.samtal_ring_drafts SET state = CASE state WHEN 'utkast' THEN 'behover_granskas' WHEN 'bekraftad' THEN 'godkand' ELSE state END;
 ALTER TABLE public.samtal_ring_drafts
@@ -33,11 +11,9 @@ ALTER TABLE public.samtal_ring_drafts
   ADD COLUMN decided_at timestamptz,
   ADD COLUMN edited_by uuid,
   ADD COLUMN edited_at timestamptz;
--- A3/A4 rows carried a 16:00 time that nobody said; keep their date and drop the invented time.
 UPDATE public.samtal_ring_drafts SET due_date = (due_at AT TIME ZONE 'Europe/Stockholm')::date, due_at = NULL WHERE due_at IS NOT NULL;
 ALTER TABLE public.samtal_ring_drafts ADD CONSTRAINT samtal_ring_drafts_time_source CHECK ((due_at IS NULL) = (due_time_source IS NULL));
 
--- Content-free record of deleted drafts. Service role only.
 CREATE TABLE public.samtal_ring_draft_tombstones (
   call_id uuid NOT NULL,
   kind text NOT NULL,
@@ -53,7 +29,6 @@ ALTER TABLE public.samtal_ring_draft_tombstones ENABLE ROW LEVEL SECURITY;
 CREATE FUNCTION public.samtal_ring_title_hash(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = public, pg_catalog AS $$
   SELECT encode(sha256(convert_to(t, 'UTF8')), 'hex') $$;
 
--- On insert (samtal_ring_commit): skip tombstoned drafts, move the date out of the body, start in the right state.
 CREATE FUNCTION public.samtal_ring_draft_insert() RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   IF EXISTS (SELECT 1 FROM samtal_ring_draft_tombstones t WHERE t.call_id = NEW.call_id AND t.kind = NEW.kind AND t.title_hash = samtal_ring_title_hash(NEW.title)) THEN RETURN NULL;END IF;
@@ -68,12 +43,10 @@ BEGIN
 END $$;
 CREATE TRIGGER samtal_ring_draft_insert BEFORE INSERT ON public.samtal_ring_drafts FOR EACH ROW EXECUTE FUNCTION public.samtal_ring_draft_insert();
 
--- The actor may act on a draft when the company is active and they are its owner, or the draft is their own.
 CREATE FUNCTION public.samtal_ring_may_act(p_actor uuid, d public.samtal_ring_drafts) RETURNS boolean LANGUAGE sql STABLE SET search_path = public AS $$
   SELECT EXISTS (SELECT 1 FROM company_members m JOIN companies x ON x.id = m.company_id AND x.active
     WHERE m.company_id = d.company_id AND m.user_id = p_actor AND (m.role = 'ägare' OR d.user_id = p_actor)) $$;
 
--- Validates an edit. Only listed keys; no prices are required; material rows are bounded and typed.
 CREATE FUNCTION public.samtal_ring_valid_patch(d public.samtal_ring_drafts, p jsonb) RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path = public AS $$
 DECLARE r jsonb;
 BEGIN
@@ -98,21 +71,16 @@ BEGIN
   RETURN true;
 END $$;
 
--- One decision or edit. Actions: godkann, avvisa, klar, redigera, koppla_kund, koppla_projekt.
--- Returns {status: ok|conflict|denied|not_found|invalid, state, version}.
 CREATE FUNCTION public.samtal_ring_decide(p_actor uuid, p_draft uuid, p_expected_version integer, p_action text, p_value jsonb DEFAULT '{}'::jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE d samtal_ring_drafts; target text; dd date; tt text; items jsonb;
 BEGIN
   SELECT * INTO d FROM samtal_ring_drafts WHERE id = p_draft FOR UPDATE;
-  -- Not found and not allowed look the same to the caller: no existence oracle across companies.
   IF NOT FOUND OR p_actor IS NULL OR NOT samtal_ring_may_act(p_actor, d) THEN RETURN jsonb_build_object('status','not_found');END IF;
-  -- A draft whose call content was deleted is not decided on (private deletion wins).
   IF EXISTS (SELECT 1 FROM samtal_calls c WHERE c.id = d.call_id AND c.content_deleted_at IS NOT NULL) AND p_action <> 'avvisa'
     THEN RETURN jsonb_build_object('status','denied','reason','content_deleted','state',d.state,'version',d.version);END IF;
   target := CASE p_action WHEN 'godkann' THEN 'godkand' WHEN 'avvisa' THEN 'avvisad' WHEN 'klar' THEN 'klar' ELSE NULL END;
   IF target IS NOT NULL THEN
-    -- Idempotent repeat of the same decision.
     IF d.state = target THEN RETURN jsonb_build_object('status','ok','state',d.state,'version',d.version,'repeat',true);END IF;
     IF p_expected_version IS DISTINCT FROM d.version THEN RETURN jsonb_build_object('status','conflict','state',d.state,'version',d.version);END IF;
     IF target = 'godkand' AND d.state <> 'behover_granskas' THEN
@@ -124,7 +92,6 @@ BEGIN
   END IF;
   IF p_action NOT IN ('redigera','koppla_kund','koppla_projekt') THEN RETURN jsonb_build_object('status','invalid');END IF;
   IF p_expected_version IS DISTINCT FROM d.version THEN RETURN jsonb_build_object('status','conflict','state',d.state,'version',d.version);END IF;
-  -- Decided drafts are not edited; reject and start from a new note instead.
   IF d.state IN ('avvisad','klar') OR d.state = 'godkand' AND p_action <> 'koppla_projekt' THEN RETURN jsonb_build_object('status','conflict','state',d.state,'version',d.version);END IF;
   IF p_action = 'koppla_kund' THEN
     IF NOT EXISTS (SELECT 1 FROM customers WHERE id = (p_value->>'customer_id')::uuid AND company_id = d.company_id) THEN RETURN jsonb_build_object('status','invalid','reason','customer');END IF;
@@ -137,7 +104,6 @@ BEGIN
     IF NOT samtal_ring_valid_patch(d, p_value) THEN RETURN jsonb_build_object('status','invalid');END IF;
     dd := CASE WHEN p_value ? 'due_date' THEN (p_value->>'due_date')::date ELSE d.due_date END;
     tt := CASE WHEN p_value ? 'due_time' THEN p_value->>'due_time' ELSE NULL END;
-    -- Manually edited rows are marked by the editor; evidence is kept only for rows that still exist unchanged.
     items := p_value->'items';
     UPDATE samtal_ring_drafts SET
       title = CASE WHEN p_value ? 'title' THEN trim(p_value->>'title') ELSE title END,
@@ -156,7 +122,6 @@ EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('status','conflic
           WHEN invalid_text_representation OR datetime_field_overflow OR invalid_datetime_format THEN RETURN jsonb_build_object('status','invalid');
 END $$;
 
--- "Radera": removes the draft for good and leaves a content-free tombstone. Idempotent.
 CREATE FUNCTION public.samtal_ring_delete_draft(p_actor uuid, p_draft uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE d samtal_ring_drafts;
@@ -168,7 +133,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok');
 END $$;
 
--- ---- Employee enrollment ----
 CREATE TABLE public.samtal_ring_enrollments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -184,7 +148,6 @@ CREATE TABLE public.samtal_ring_enrollments (
   updated_at timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (company_id, user_id) REFERENCES public.company_members(company_id, user_id) ON DELETE CASCADE
 );
--- One open enrollment per member and provider.
 CREATE UNIQUE INDEX samtal_ring_enrollments_open ON public.samtal_ring_enrollments(company_id, user_id, provider) WHERE state <> 'aterkallad';
 CREATE INDEX samtal_ring_enrollments_identity ON public.samtal_ring_enrollments(identity_id);
 REVOKE ALL ON public.samtal_ring_enrollments FROM PUBLIC, anon, authenticated;
@@ -194,7 +157,6 @@ ALTER TABLE public.samtal_ring_enrollments ENABLE ROW LEVEL SECURITY;
 CREATE FUNCTION public.samtal_ring_is_owner(p_actor uuid, p_company uuid) RETURNS boolean LANGUAGE sql STABLE SET search_path = public AS $$
   SELECT EXISTS (SELECT 1 FROM company_members m JOIN companies x ON x.id = m.company_id AND x.active WHERE m.company_id = p_company AND m.user_id = p_actor AND m.role = 'ägare') $$;
 
--- "Anslut medarbetare": owner only, member of the same company; creates a pending row and nothing that resolves calls.
 CREATE FUNCTION public.samtal_ring_enroll(p_actor uuid, p_company uuid, p_user uuid, p_provider text, p_phone text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE e samtal_ring_enrollments;
@@ -212,9 +174,6 @@ BEGIN
 EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('status','conflict');
 END $$;
 
--- Called only by the server after the provider has proven, with its own signed evidence, that account p_account_ref
--- belongs to this enrollment (p_evidence_verified). No evidence, a revoked enrollment, an inactive company or an
--- account already bound to another person fails closed. The phone number alone never verifies anything.
 CREATE FUNCTION public.samtal_ring_verify_enrollment(p_enrollment uuid, p_provider text, p_account_ref text, p_evidence_verified boolean) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE e samtal_ring_enrollments; i uuid;
@@ -240,7 +199,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok');
 END $$;
 
--- "Återkalla anslutning": owner only; revokes the identity at once so later calls fail closed. Idempotent.
 CREATE FUNCTION public.samtal_ring_revoke_enrollment(p_actor uuid, p_enrollment uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE e samtal_ring_enrollments;
@@ -253,7 +211,6 @@ BEGIN
   RETURN jsonb_build_object('status','ok');
 END $$;
 
--- Owner view of the company's enrollments (no account references are returned).
 CREATE FUNCTION public.samtal_ring_enrollments_for(p_actor uuid, p_company uuid) RETURNS TABLE(id uuid, user_id uuid, provider text, phone_e164 text, state text, created_at timestamptz)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT e.id, e.user_id, e.provider, e.phone_e164, e.state, e.created_at FROM samtal_ring_enrollments e

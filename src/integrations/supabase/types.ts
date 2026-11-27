@@ -1690,6 +1690,38 @@ export type Database = {
           },
         ]
       }
+      samtal_ring_draft_tombstones: {
+        Row: {
+          call_id: string
+          company_id: string
+          deleted_at: string
+          kind: string
+          title_hash: string
+        }
+        Insert: {
+          call_id: string
+          company_id: string
+          deleted_at?: string
+          kind: string
+          title_hash: string
+        }
+        Update: {
+          call_id?: string
+          company_id?: string
+          deleted_at?: string
+          kind?: string
+          title_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_ring_draft_tombstones_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       samtal_ring_drafts: {
         Row: {
           body: Json
@@ -1697,13 +1729,21 @@ export type Database = {
           company_id: string
           created_at: string
           customer_id: string | null
+          decided_at: string | null
+          decided_by: string | null
           due_at: string | null
+          due_date: string | null
+          due_time_source: string | null
+          edited_at: string | null
+          edited_by: string | null
           id: string
           kind: string
           needs_review: boolean
+          project_ref: string | null
           state: string
           title: string
           user_id: string | null
+          version: number
         }
         Insert: {
           body?: Json
@@ -1711,13 +1751,21 @@ export type Database = {
           company_id: string
           created_at?: string
           customer_id?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
           due_at?: string | null
+          due_date?: string | null
+          due_time_source?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           kind: string
           needs_review?: boolean
+          project_ref?: string | null
           state?: string
           title: string
           user_id?: string | null
+          version?: number
         }
         Update: {
           body?: Json
@@ -1725,13 +1773,21 @@ export type Database = {
           company_id?: string
           created_at?: string
           customer_id?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
           due_at?: string | null
+          due_date?: string | null
+          due_time_source?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           kind?: string
           needs_review?: boolean
+          project_ref?: string | null
           state?: string
           title?: string
           user_id?: string | null
+          version?: number
         }
         Relationships: [
           {
@@ -1761,6 +1817,73 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "company_members"
             referencedColumns: ["company_id", "user_id"]
+          },
+        ]
+      }
+      samtal_ring_enrollments: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          identity_id: string | null
+          phone_e164: string
+          provider: string
+          requested_by: string
+          revoked_at: string | null
+          revoked_by: string | null
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          identity_id?: string | null
+          phone_e164: string
+          provider: string
+          requested_by: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          identity_id?: string | null
+          phone_e164?: string
+          provider?: string
+          requested_by?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samtal_ring_enrollments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samtal_ring_enrollments_company_id_user_id_fkey"
+            columns: ["company_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["company_id", "user_id"]
+          },
+          {
+            foreignKeyName: "samtal_ring_enrollments_identity_id_fkey"
+            columns: ["identity_id"]
+            isOneToOne: false
+            referencedRelation: "samtal_ring_identities"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3484,6 +3607,41 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      samtal_ring_decide: {
+        Args: {
+          p_action: string
+          p_actor: string
+          p_draft: string
+          p_expected_version: number
+          p_value?: Json
+        }
+        Returns: Json
+      }
+      samtal_ring_delete_draft: {
+        Args: { p_actor: string; p_draft: string }
+        Returns: Json
+      }
+      samtal_ring_enroll: {
+        Args: {
+          p_actor: string
+          p_company: string
+          p_phone: string
+          p_provider: string
+          p_user: string
+        }
+        Returns: Json
+      }
+      samtal_ring_enrollments_for: {
+        Args: { p_actor: string; p_company: string }
+        Returns: {
+          created_at: string
+          id: string
+          phone_e164: string
+          provider: string
+          state: string
+          user_id: string
+        }[]
+      }
       samtal_ring_ingest: {
         Args: {
           p_account_verified: boolean
@@ -3493,6 +3651,17 @@ export type Database = {
           payload: Json
         }
         Returns: Json
+      }
+      samtal_ring_is_owner: {
+        Args: { p_actor: string; p_company: string }
+        Returns: boolean
+      }
+      samtal_ring_may_act: {
+        Args: {
+          d: Database["public"]["Tables"]["samtal_ring_drafts"]["Row"]
+          p_actor: string
+        }
+        Returns: boolean
       }
       samtal_ring_pending_for: {
         Args: { p_actor: string }
@@ -3515,9 +3684,30 @@ export type Database = {
         }
         Returns: Json
       }
+      samtal_ring_revoke_enrollment: {
+        Args: { p_actor: string; p_enrollment: string }
+        Returns: Json
+      }
       samtal_ring_set_context: {
         Args: { p_actor: string; p_company: string }
         Returns: boolean
+      }
+      samtal_ring_title_hash: { Args: { t: string }; Returns: string }
+      samtal_ring_valid_patch: {
+        Args: {
+          d: Database["public"]["Tables"]["samtal_ring_drafts"]["Row"]
+          p: Json
+        }
+        Returns: boolean
+      }
+      samtal_ring_verify_enrollment: {
+        Args: {
+          p_account_ref: string
+          p_enrollment: string
+          p_evidence_verified: boolean
+          p_provider: string
+        }
+        Returns: Json
       }
       samtal_safety_live: {
         Args: {
