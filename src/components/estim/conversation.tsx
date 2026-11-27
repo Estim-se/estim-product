@@ -18,7 +18,8 @@ export function Conversation({ thread, contained = false, header }: { thread: Th
   const [farFromBottom, setFarFromBottom] = useState(false);
   const draft = state.drafts[thread.id];
   const pending = Boolean(draft && ['svar', 'oppnad'].includes(thread.status));
-  const content = JSON.stringify(thread.msgs);
+  const lastMsg = thread.msgs[thread.msgs.length - 1];
+  const content = `${thread.msgs.length}:${lastMsg?.id ?? ''}:${lastMsg?.text.length ?? 0}:${lastMsg?.documents?.length ?? 0}`;
   const draftContent = draft?.edited ? 'edited' : draft?.text;
   function goBottom() {
     const el = scroll.current;

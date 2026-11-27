@@ -73,4 +73,56 @@ describe('R1 real-mode rules',()=>{
   expect(write).toHaveBeenLastCalledWith({kind:'merge',keep:'a',drop:'b'});
   await vi.waitFor(()=>expect(store.getSnapshot().toast).toBe('Kunderna kunde inte slås ihop.'));
  });
+ it('debounces and coalesces draft edits, keeps threads referentially stable, and protects dirty drafts during hydrate',async()=>{
+  vi.useFakeTimers();
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null);store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[t];s.drafts[t.id]={text:'Start',v:'std',ch:'email',att:[],edited:false};});
+  const threadsBefore=store.getSnapshot().threads;
+  store.actions.editDraft(t.id,'H');store.actions.editDraft(t.id,'He');store.actions.editDraft(t.id,'Hej');store.actions.editDraft(t.id,'Hej kund');
+  expect(store.getSnapshot().threads).toBe(threadsBefore);
+  expect(write).toHaveBeenCalledTimes(0);
+  // Background poll while draft is dirty must not overwrite typed text.
+  store.hydrate({platform:false,role:'ägare',company:null,profile:null,threads:[],customers:[],messages:[],quotes:[],drafts:[{thread_id:t.id,company_id:'c1',text:'Gammal servertext',variant:'std',channel:'email',attachments:[],edited:false,warnings:[],needs_review:false,document_ids:null,created_at:'2026-11-27T08:00:00Z',updated_at:'2026-11-27T08:00:00Z'}],moments:[],audit:[],channels:[]} as never);
+  expect(store.getSnapshot().drafts[t.id]?.text).toBe('Hej kund');
+  vi.advanceTimersByTime(500);
+  vi.useRealTimers();
+  await store.flush();
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(write).toHaveBeenLastCalledWith(expect.objectContaining({kind:'draft',id:t.id,draft:expect.objectContaining({text:'Hej kund',edited:true})}));
+ });
+ it('skips redundant read writes on already-read threads and rolls back failed optimistic toggleAuto',async()=>{
+  const store=createRealStore(),write=vi.fn(async(_input:RealMutation)=>null);store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  store.actions.update(s=>{s.threads=[{...t,ch:'wa',read:true,autopilot:false}];});
+  store.actions.select(t.id);await store.flush();
+  expect(write).toHaveBeenCalledTimes(0);
+  write.mockRejectedValueOnce(new Error('network'));
+  store.actions.toggleAuto(t.id);
+  // Flips optimistically at 0 ms before server settles.
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(true);
+  await expect(store.flush()).rejects.toThrow();
+  await vi.waitFor(()=>expect(store.getSnapshot().threads[0]?.autopilot).toBe(false));
+ });
+ it('keeps an optimistic toggle over a poll read before the write landed, then follows the server',async()=>{
+  const store=createRealStore();let release:()=>void=()=>{};
+  const write=vi.fn((_input:RealMutation)=>new Promise<null>(r=>{release=()=>r(null);}));store.connect(write,async()=>{});
+  const t=initialThreads()[0];if(!t)throw new Error('Missing fixture');
+  const row={id:t.id,company_id:'c1',customer_id:'k1',channel:'wa',status:'svar',read:true,autopilot:false,whatsapp_auto_override:false,job:'Jobb',place:'',why:'',asks:[],facts:[],pending_sender:false,last_customer_wa_at:null,last_message_at:'2026-11-27T08:00:00Z',created_at:'2026-11-27T08:00:00Z',updated_at:'2026-11-27T08:00:00Z'};
+  const snapshot=(override:boolean)=>({platform:false,role:'ägare',company:{id:'c1',name:'Test AB',whatsapp_auto_reply:false,active:true},profile:null,threads:[{...row,whatsapp_auto_override:override}],customers:[],messages:[],quotes:[],drafts:[],moments:[],audit:[],channels:[]}) as never;
+  store.hydrate(snapshot(false));
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(false);
+  store.actions.toggleAuto(t.id);
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(true);
+  // A poll that was read before the write landed still has the old value.
+  store.hydrate(snapshot(false));
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(true);
+  await vi.waitFor(()=>expect(write).toHaveBeenCalledTimes(1));
+  release();await store.flush();
+  store.hydrate(snapshot(true));
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(true);
+  // Once the server agreed, a later change from elsewhere is shown.
+  store.hydrate(snapshot(false));
+  expect(store.getSnapshot().threads[0]?.autopilot).toBe(false);
+ });
 });
