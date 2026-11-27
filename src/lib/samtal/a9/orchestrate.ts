@@ -4,6 +4,11 @@ import { decideAssignment, decideCustomer, type Assignment, type AssignmentDecis
 export type Lease = { call: string; company: string; job: string; token: string };
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
 export type AssignmentAi = (input: { facts: Facts; assignments: Assignment[]; segments: Segment[] }) => Promise<unknown>;
+// A saved match answers 'repeat' with its stored state on a retry; the worker continues from that state.
+export function continueFrom<T extends { status: string }>(saved: T): T {
+  const state = (saved as { state?: unknown }).state;
+  return saved.status === 'repeat' && typeof state === 'string' ? { ...saved, status: state } : saved;
+}
 export async function prepareMatching(rpc: Rpc, lease: Lease, f: Facts, segments: Segment[], ai: AssignmentAi) {
   const args = { p_call: lease.call, p_company: lease.company, p_job: lease.job, p_token: lease.token };
   const lookup = await rpc('samtal_a9_candidates', { ...args, p_name: f.name, p_phone: f.phone, p_address: f.address });

@@ -5,7 +5,7 @@ import type { Interpretation } from '../interpretation';
 import type { VoiceNote } from '../ring/voice-note';
 import type { Transcript } from '../transcript';
 import { normalisePhone } from '../call';
-import { prepareMatching, type AssignmentAi, type Lease, type Rpc } from './orchestrate';
+import { continueFrom, prepareMatching, type AssignmentAi, type Lease, type Rpc } from './orchestrate';
 import type { Facts } from './matching';
 import { shortTitle } from '../a10/titles';
 export const a9Enabled = () => process.env['SAMTAL'] === '1' && process.env['SAMTAL_A9'] === '1';
@@ -29,7 +29,10 @@ export async function runA9Matching(db: SupabaseClient<Database>, lease: Lease, 
       default: throw new Error('invalid_matching_interface');
     }
   };
-  const result=await prepareMatching(rpc,lease,f,t.segments,ai);
+  const saved=await prepareMatching(rpc,lease,f,t.segments,ai);
+  // A retry after an interrupted handoff finds the match already saved ('repeat'); continue from the saved state
+  // instead of closing the job, so the call still reaches Inkorg. The handoff itself is idempotent per call.
+  const result=continueFrom(saved);
   if(result.status==='pending') return 'matching_needs_review';
   if(!['resolved','new','general','repeat'].includes(result.status)) return 'stopped';
   const { a10Enabled, handoffAutomatic } = await import('../a10/integration.server');

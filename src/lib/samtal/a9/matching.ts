@@ -43,6 +43,8 @@ export const selectionSchema = z.object({ intent: intentSchema, assignment_id: z
 export type Selection = z.infer<typeof selectionSchema>;
 export type AssignmentDecision = { state: 'linked' | 'new' | 'general' | 'ambiguous'; assignment_id: string | null; quote_id: string | null; intent: Intent; alternatives: string[]; quoteRequested: boolean; reason: string };
 export type Segment = { start: number; end: number; text: string };
+// The assignment's current quote: the highest version, whatever its number.
+export const currentQuote = (a: Assignment) => a.quotes.reduce<Assignment['quotes'][number] | null>((best, q) => !best || q.version > best.version ? q : best, null);
 const contentWords = (s: string) => normalText(s).split(' ').filter(w => w.length >= 4);
 const intentWords: Record<Intent, RegExp> = {
   follow_up: /(?:^|[^\p{L}])(hur går|uppfölj|följa upp|när kommer|klart|offerten|svar på|bokning|pratade tidigare|vi pratade|ringde tidigare|förra samtalet)/u,
@@ -73,20 +75,24 @@ export function decideAssignment(company: string, customer: string, f: Facts, as
   }
   const a = valid.find(a => a.id === s.assignment_id);
   if (!a) return hold('invalid_assignment');
-  const quote = s.quote_id ? a.quotes.find(q => q.id === s.quote_id) : null;
-  if (s.quote_id && !quote) return hold('invalid_quote');
+  // A quote's versions are its history, not alternatives: a change is always applied as a new version on top of the
+  // assignment's latest version (the database accepts only that one), so earlier versions stay untouched.
+  if (s.quote_id && !a.quotes.some(q => q.id === s.quote_id)) return hold('invalid_quote');
+  const latest = currentQuote(a);
+  const quote = s.quote_id || (latest && (s.intent === 'quote_change' || s.intent === 'additional_work')) ? latest : null;
   if (s.intent === 'quote_change' && !quote) return hold('quote_required');
   // Won work is a real assignment; a won quote may be followed up but must not be rewritten automatically.
   if (s.intent === 'quote_change' && a.status === 'vunnen') return hold('won_quote_change');
-  if (quote && quote.version !== Math.max(...a.quotes.map(q => q.version))) return hold('stale_quote');
   const quoteAnchor = quote && new RegExp(`(^|[^\\d])${quote.nr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\d]|$)`).test(s.source.text);
   const referenced = valid.filter(b => b.quotes.some(q => new RegExp(`(^|[^\\d])${q.nr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\d]|$)`).test(s.source.text)));
   if (quoteAnchor && referenced.length > 1) return hold('multiple_quote_references');
-  if (s.intent === 'quote_change' && a.quotes.length > 1 && !new RegExp(`version\\s+${quote?.version ?? 0}([^\\d]|$)`, 'iu').test(s.source.text)) return hold('quote_version_uncertain', s.intent);
+  // Different quote numbers on one assignment are real alternatives; only then must the call name which one.
+  if (s.intent === 'quote_change' && new Set(a.quotes.map(q => q.nr)).size > 1 && !quoteAnchor) return hold('quote_not_unique', s.intent);
   const jobWords = contentWords(a.job), sourceWords = contentWords(s.source.text);
   const jobAnchor = jobWords.length > 0 && jobWords.every(w => sourceWords.includes(w));
-  const addressAnchor = !!normalText(a.address) && cited.includes(normalText(a.address));
-  const competitors = valid.filter(b => b.id !== a.id && contentWords(b.job).length && contentWords(b.job).every(w => sourceWords.includes(w)) && (!addressAnchor || normalText(b.address) === normalText(a.address)));
+  // A stored address often carries the town ("Ekbacken 4, Alingsås") while the call names only the street.
+  const addressAnchor = [a.address, (a.address ?? '').split(',')[0]].some(x => !!normalText(x) && ` ${cited} `.includes(` ${normalText(x)} `));
+  const competitors = valid.filter(b => b.id !== a.id && contentWords(b.job).length && contentWords(b.job).every(w => sourceWords.includes(w)) && (!addressAnchor || sameAddress(b.address, a.address)));
   // With a single open assignment for this customer there is nothing to confuse it with: cited follow-up evidence is enough.
   const only = valid.length === 1;
   if (!quoteAnchor && !only && (!jobAnchor || competitors.length || valid.length > 1 && !addressAnchor)) return hold('assignment_not_unique', s.intent);
