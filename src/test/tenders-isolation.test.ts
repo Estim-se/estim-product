@@ -1,7 +1,8 @@
+import { integrationConfigured } from "./helpers/test-target";
 import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 
-const configured = Boolean(process.env['SUPABASE_URL'] && process.env['SUPABASE_SERVICE_ROLE_KEY'] && process.env['SUPABASE_PUBLISHABLE_KEY']);
+const configured = integrationConfigured();
 describe.skipIf(!configured)('Tender private storage and company isolation', () => {
   it('stores separate files, opens only own-company files and validates actual stored sizes', async () => {
     const url = process.env['SUPABASE_URL'] ?? '';

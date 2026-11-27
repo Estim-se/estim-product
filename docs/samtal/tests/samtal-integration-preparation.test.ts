@@ -1,8 +1,8 @@
 // Synthetic application flow against actual proposed SQL on disposable PostgreSQL; no production code activation.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
-import { proposedIntegration } from './helpers/samtal-integration-proposal';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from '../../../src/test/helpers/samtal-postgres-local';
+import { proposedIntegration } from '../../../src/test/helpers/samtal-integration-proposal';
 import type { Transcript } from '@/lib/samtal/transcript';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -20,7 +20,7 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal guarded application proposal,
     async remove(p:string){ if (failedRemoval) throw new Error('synthetic_removal_failure'); files.delete(p); },async sign(p:string,s:number){ return `synthetic:${s}:${p}`; } };
   beforeAll(async()=>{ pg=await disposableSamtalPostgres(); db=await pg.connect('service_role');
     // The exact unchanged shared claim function from the source migration; never invoke the actual provider.
-    const source=readFileSync(resolve(__dirname,'../../supabase/migrations/20261119103540_08f808ff-9be2-4a38-9c75-9d42d2298f5f.sql'),'utf8');
+    const source=readFileSync(resolve(process.cwd(),'supabase/migrations/20261119103540_08f808ff-9be2-4a38-9c75-9d42d2298f5f.sql'),'utf8');
     const start=source.indexOf('CREATE OR REPLACE FUNCTION public.estim_claim_job');
     const end=source.indexOf('$$;',start);
     await pg.admin.exec(source.slice(start,end+3));

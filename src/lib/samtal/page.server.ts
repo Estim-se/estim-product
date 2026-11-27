@@ -4,11 +4,15 @@
 //   - the names of the company's members (profiles are not readable across users);
 //   - short-lived signed links to audio, after the user's client has proven the call is visible to them;
 //   - starting a waiting call's job, for an owner, after the same proof.
+// Priority 1 V2: audio, restart and review go through service-only guarded database functions that
+// repeat the membership, tenant, deletion, expiry and review checks under the call lock. The actor is always the
+// verified user id from the auth middleware, never a value from the browser.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/integrations/supabase/types';
+import type { Database } from '@/lib/samtal/db-types';
 import { normalisePhone } from './call';
 import { requestTitle } from './inbox.server';
 import type { Interpretation } from './interpretation';
+import type { Alert, Snapshot } from './monitor/status';
 
 type Db = SupabaseClient<Database>;
 export const SAMTAL_LINK_SECONDS = 60;
@@ -25,7 +29,7 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys: 
   const [settings, numbers, calls, tasks, members] = await Promise.all([
     user.from('samtal_settings').select('auto_process, retention_days, provider, provider_status, provider_error').maybeSingle(),
     user.from('samtal_numbers').select('id, user_id, phone_e164, active').order('created_at'),
-    user.from('samtal_calls').select('id, user_id, caller_phone, started_at, duration_seconds, status, classification, error_code, thread_id, extraction, audio_path').order('started_at', { ascending: false }).limit(100),
+    user.from('samtal_calls').select('id, user_id, caller_phone, started_at, duration_seconds, status, classification, error_code, thread_id, extraction, audio_path, kind').order('started_at', { ascending: false }).limit(100),
     user.from('samtal_tasks').select('id, call_id, user_id, kind, title, due_at, address, state').order('created_at', { ascending: false }).limit(200),
     admin.from('company_members').select('user_id, role').eq('company_id', companyId),
   ]);
@@ -34,8 +38,34 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys: 
   const profiles = ids.length ? await admin.from('profiles').select('id, display_name').in('id', ids) : { data: [], error: null };
   const name = new Map((profiles.data ?? []).map(p => [p.id, p.display_name || 'Namnlös']));
   const waiting = await user.from('samtal_calls').select('id', { count: 'exact', head: true }).eq('status', 'mottagen');
+  // Pending reviews are read with the service client (the table has no user grants), bounded to the company and to
+  // calls the user's own client already returned. Only the call id is exposed.
+  const visible = (calls.data ?? []).map(c => c.id);
+  const reviews = visible.length
+    ? await admin.from('samtal_reviews').select('call_id').eq('company_id', companyId).eq('decision', 'pending').in('call_id', visible)
+    : { data: [], error: null };
+  if (reviews.error) throw new SamtalPageError('Samtal kunde inte läsas.');
+  const pending = new Set((reviews.data ?? []).map(r => r.call_id));
+  // Processing state for the list label only: job state and open A9 confirmation, bounded to visible calls.
+  const [jobs, matches] = visible.length ? await Promise.all([
+    admin.from('samtal_jobs').select('call_id, state, attempts').eq('company_id', companyId).in('call_id', visible),
+    admin.from('samtal_a9_matches').select('call_id, state, customer_id').eq('company_id', companyId).eq('state', 'pending').in('call_id', visible),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const job = new Map((jobs.data ?? []).map(j => [j.call_id, j]));
+  const match = new Map((matches.data ?? []).map(m => [m.call_id, m]));
+  const progress = (id: string, status: string): string => {
+    const m = match.get(id);
+    if (m) return m.customer_id ? 'uppdrag' : 'kund';
+    const j = job.get(id);
+    if (j?.state === 'failed' || status === 'fel') return 'misslyckad';
+    if (j?.state === 'queued' && j.attempts > 0) return 'retry';
+    if (j?.state === 'running') return 'bearbetas';
+    if (j?.state === 'done' || status === 'klar') return 'klar';
+    return status;
+  };
+  const monitor = owner ? await loadSamtalMonitor(admin, userId, companyId) : null;
   return {
-    owner, userId,
+    owner, userId, monitor,
     settings: settings.data ?? { auto_process: false, retention_days: 30, provider: null, provider_status: 'ej_ansluten', provider_error: null },
     keys, waiting: waiting.count ?? 0,
     members: (members.data ?? []).map(m => ({ user_id: m.user_id, role: m.role, name: name.get(m.user_id) ?? 'Namnlös' })),
@@ -44,7 +74,8 @@ export async function loadSamtalPage(user: Db, admin: Db, userId: string, keys: 
     calls: (calls.data ?? []).map(c => {
       const i = (c.extraction as { interpretation?: Interpretation } | null)?.interpretation;
       return { id: c.id, user_id: c.user_id, caller_phone: c.caller_phone, started_at: c.started_at, duration_seconds: c.duration_seconds, status: c.status,
-        classification: c.classification, error_code: c.error_code, thread_id: c.thread_id, title: i ? requestTitle(i) : null, has_audio: !!c.audio_path };
+        classification: c.classification, error_code: c.error_code, thread_id: c.thread_id, title: i && !pending.has(c.id) ? requestTitle(i) : null, has_audio: !!c.audio_path && c.status !== 'privat',
+        needs_review: pending.has(c.id), kind: c.kind, progress: progress(c.id, c.status) };
     }),
     tasks: tasks.data ?? [],
   };
@@ -96,24 +127,55 @@ export async function decideSamtalTask(user: Db, input: { id: string; decision: 
   return { state: input.decision };
 }
 
-// The user's own client must see the call (RLS); only then is a signed link made, for that company's folder only.
-export async function samtalAudioLink(user: Db, admin: Db, callId: string) {
+// The user's own client must see the call (RLS). The guarded function then repeats the checks under the call lock and
+// returns the allowed path; it is checked again after signing, so a call deleted or made private meanwhile gets no link.
+export async function samtalAudioLink(user: Db, admin: Db, callId: string, actorId: string) {
+  const { companyId } = await companyOf(user);
   const call = await user.from('samtal_calls').select('company_id, audio_path').eq('id', callId).maybeSingle();
-  if (call.error || !call.data?.audio_path || !call.data.audio_path.startsWith(`${call.data.company_id}/`)) throw new SamtalPageError('Inspelningen finns inte.');
-  const link = await admin.storage.from('samtal-audio').createSignedUrl(call.data.audio_path, SAMTAL_LINK_SECONDS);
+  if (call.error || !call.data?.audio_path || call.data.company_id !== companyId || !call.data.audio_path.startsWith(`${companyId}/`)) throw new SamtalPageError('Inspelningen finns inte.');
+  const guard = () => admin.rpc('samtal_audio_access_guarded', { p_call: callId, p_company: companyId, p_actor: actorId });
+  const before = await guard();
+  if (before.error || before.data !== call.data.audio_path) throw new SamtalPageError('Inspelningen finns inte.');
+  const link = await admin.storage.from('samtal-audio').createSignedUrl(before.data, SAMTAL_LINK_SECONDS);
   if (link.error || !link.data?.signedUrl) throw new SamtalPageError('Inspelningen kunde inte öppnas.');
+  const after = await guard();
+  if (after.error || after.data !== before.data) throw new SamtalPageError('Inspelningen finns inte.');
   return { url: link.data.signedUrl, expires_in: SAMTAL_LINK_SECONDS };
 }
 
-// An owner starts a waiting (paused) or failed call again. The call must be visible to the owner's own client.
-export async function startSamtalCall(user: Db, admin: Db, callId: string) {
+// An owner starts a waiting (paused) or failed call again. The guarded function rejects deleted, expired, private and
+// unreviewed uncertain calls; there are no direct job or call writes here any more.
+export async function startSamtalCall(user: Db, admin: Db, callId: string, actorId: string) {
   const { companyId, owner } = await companyOf(user);
   if (!owner) throw new SamtalPageError('Bara ägaren kan starta bearbetningen.');
   const call = await user.from('samtal_calls').select('id, company_id').eq('id', callId).maybeSingle();
   if (call.error || !call.data || call.data.company_id !== companyId) throw new SamtalPageError('Samtalet finns inte.');
-  const r = await admin.from('samtal_jobs').update({ state: 'queued', run_after: new Date().toISOString(), error_code: null })
-    .eq('call_id', callId).eq('company_id', companyId).in('state', ['paused', 'failed']).select('id');
+  const r = await admin.rpc('samtal_restart_guarded', { p_call: callId, p_company: companyId, p_actor: actorId });
   if (r.error) throw new SamtalPageError('Bearbetningen kunde inte startas.');
-  if (r.data?.length) await admin.from('samtal_calls').update({ status: 'mottagen', error_code: null }).eq('id', callId).eq('company_id', companyId);
-  return { started: !!r.data?.length };
+  return { started: r.data === true };
+}
+
+// An owner, or the employee the call belongs to, decides whether an uncertain call is business or private. The request
+// id comes from the page and stays the same across retries, so a repeated identical decision is answered as done; a
+// different earlier decision is reported, never overwritten. A private decision only starts deletion: the recording is
+// removed by the cleanup queue, so success never claims physical deletion.
+export async function reviewSamtalCall(user: Db, admin: Db, actorId: string, input: { call_id: string; request_id: string; decision: 'business' | 'private' }) {
+  const { companyId } = await companyOf(user);
+  const call = await user.from('samtal_calls').select('id, company_id').eq('id', input.call_id).maybeSingle();
+  if (call.error || !call.data || call.data.company_id !== companyId) throw new SamtalPageError('Samtalet finns inte.');
+  const r = await admin.rpc('samtal_confirm_review', { p_call: input.call_id, p_company: companyId, p_actor: actorId, p_request: input.request_id, p_decision: input.decision });
+  if (r.error) throw new SamtalPageError('Bedömningen kunde inte sparas. Försök igen.');
+  if (r.data !== true) throw new SamtalPageError('Samtalet kan inte bedömas. Det kan redan vara bedömt, raderat eller så saknar du behörighet.');
+  return { decision: input.decision, deletion_pending: input.decision === 'private' };
+}
+
+// A6: owner-only Systemstatus. samtal_monitor_company re-checks ownership in the database with the verified actor id.
+// Counts and alert rule names only. A monitoring failure never blocks the Samtal page: the panel is just omitted.
+export async function loadSamtalMonitor(admin: Db, actorId: string, companyId: string) {
+  try {
+    const { data, error } = await admin.rpc('samtal_monitor_company', { p_actor: actorId, p_company: companyId });
+    const r = data as { status?: string; snapshot?: Snapshot; larm?: Alert[] } | null;
+    if (error || r?.status !== 'ok' || !r.snapshot) return null;
+    return { snapshot: r.snapshot, alerts: Array.isArray(r.larm) ? r.larm.slice(0, 50) : [] };
+  } catch { return null; }
 }

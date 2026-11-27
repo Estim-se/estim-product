@@ -2,8 +2,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, docSql, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
-import { proposedIntegration, type ProposedJob } from './helpers/samtal-integration-proposal';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, docSql, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from '../../../src/test/helpers/samtal-postgres-local';
+import { proposedIntegration, type ProposedJob } from '../../../src/test/helpers/samtal-integration-proposal';
 
 describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal independent PostgreSQL sessions: supported races and review reproductions',()=>{
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x:LocalSession,y:LocalSession,z:LocalSession;
