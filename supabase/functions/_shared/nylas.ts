@@ -4,6 +4,7 @@
 // response bodies. Log short error codes only.
 
 import { headerValueLimit } from "./sender-auth.ts";
+import { resendFromAddress } from "./resend.ts";
 
 const enc = new TextEncoder();
 
@@ -331,11 +332,14 @@ export function shouldSkip(
   const from = msg.from[0]?.email.trim().toLowerCase();
   if (!from) return "no_sender";
   if (from === ownEmail.trim().toLowerCase()) return "own_message";
+  const systemFrom = resendFromAddress();
+  if (systemFrom && from === systemFrom) return "estim_system_mail";
   // Bounces are never customers. No-reply senders are NOT skipped here: website forms often come from
   // such an address, so the triage step decides (see isNoReplySender).
   if (/^(mailer-daemon|postmaster|bounce[s]?)@/i.test(from)) return "automated_sender";
   for (const h of msg.headers) {
     const name = h.name.toLowerCase();
+    if (name === "x-estim-system-mail") return "estim_system_mail";
     if (name === "list-unsubscribe" || name === "list-id") return "mailing_list";
     if (name === "precedence" && /bulk|junk|list/i.test(h.value)) return "bulk";
     if (name === "auto-submitted" && !/^no$/i.test(h.value.trim())) return "auto_submitted";
