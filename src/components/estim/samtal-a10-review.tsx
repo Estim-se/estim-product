@@ -57,13 +57,13 @@ export function SamtalA10ReviewPanel() {
  const choose=async(c:Call)=>{setActive(c.call);setChoice(null);setNewIdentity(false);setTitle(c.title);setError('');if(c.state==='new'){setChoice({version:c.version,customers:[],assignments:[]});return;}try{const r=await options({data:{call:c.call,customer:c.customer_id}}) as Options;setChoice(r);}catch{setError('Kund och uppdrag kunde inte läsas.');}};
  const handoff=async(c:Call,customer:string|null,assignment:string|null,version:number,create=false)=>{
   const key=[c.call,customer,assignment,create,name,address,title].join(':');const request=requests.current.get(key)??crypto.randomUUID();requests.current.set(key,request);setBusy(true);setError('');
-  try{await complete({data:{call:c.call,version,request,customer,assignment,create,identity:create&&!customer?{name,address,phone:null}:null,title:title||c.title}});await refresh();requests.current.delete(key);setActive(null);return true;}
+  try{const done=await complete({data:{call:c.call,version,request,customer,assignment,create,identity:create&&!customer?{name,address,phone:null}:null,title:title||c.title}}) as {thread_id?:string}|null;await refresh();if(done?.thread_id)actions.select(done.thread_id);requests.current.delete(key);setActive(null);return true;}
   catch(e){setError(e instanceof Error?e.message:'Valet kunde inte sparas.');return false;}finally{setBusy(false);}
  };
  if(!calls.length)return null;
  return <section id="samtal-bekrafta" className="card mt16 space-y-4 min-w-0" aria-label="Bekräfta kund och uppdrag">
-  <h3>Bekräfta kund och uppdrag</h3>
-  <div className="sub">Systemet var inte säkert på vilken kund eller vilket uppdrag samtalet gäller. Välj rätt, så hamnar samtalet i Inkorgen med ett offertutkast. Inget skickas till kunden.</div>
+  <h3>Samtal att bekräfta</h3>
+  <div className="sub">Systemet är inte säkert på vilken kund eller vilket uppdrag samtalet gäller. Välj rätt kund och uppdrag, så läggs samtalet in här i Inkorgen och offertutkast och uppgifter tas fram. Inget skickas till kunden.</div>
   {calls.map(c=><div key={c.call} className="border-b border-border pb-4 space-y-3 min-w-0">
    {c.state==='resolved'&&c.assignment_id?<>
     <Button variant="prototype" className="btn btn-ghost btn-sm" onClick={()=>{const id=c.assignment_id;if(!id)return;void workspace.refresh().then(()=>{actions.select(id);void navigate({to:'/'});});}}>Öppna uppdrag</Button>

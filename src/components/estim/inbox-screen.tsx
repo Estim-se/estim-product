@@ -14,6 +14,7 @@ import { NewRequest, type RequestPrefill } from './new-request';
 import { Button } from '@/components/ui/button';
 import { customerKeyOf, latestActivityOrder, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
 import { CustomerHub } from './customer-hub';
+import { SamtalA10ReviewPanel } from './samtal-a10-review';
 
 export function InboxScreen() {
   const { state, actions } = useEstim();
@@ -126,6 +127,9 @@ export function InboxScreen() {
           </div>
         </header>
       )}
+
+      {/* estim Samtal: calls whose customer or assignment is uncertain wait here until confirmed. */}
+      {real && <SamtalA10ReviewPanel />}
 
       <div className={`ib2 fadein real-inbox${mobileThread ? ' thread-open' : ''} tab-${tab}`}>
         <InboxList

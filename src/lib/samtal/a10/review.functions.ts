@@ -38,7 +38,7 @@ export const completeSamtalA10Handoff=createServerFn({method:'POST'}).middleware
  const call=await asSamtal(context.supabase).from('samtal_calls').select('id,user_id').eq('company_id',member.company_id).eq('id',data.call).maybeSingle();
  if(call.error||!call.data||member.role!=='ägare'&&call.data.user_id!==context.userId)throw new Error('Du saknar behörighet.');
  const {supabaseAdmin}=await import('@/lib/samtal/admin.server');
- const {handoffReviewed,proposalRpc}=await import('./integration.server');return handoffReviewed(proposalRpc(supabaseAdmin),member.company_id,context.userId,data);
+ const {handoffReviewed,proposalRpc}=await import('./integration.server');return handoffReviewed(proposalRpc(supabaseAdmin),member.company_id,context.userId,data,supabaseAdmin);
 });
 const saveSchema=reviewedQuoteSchema.extend({mode:z.enum(['append','replace'])});
 export const saveSamtalA10Quote=createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator((raw:unknown)=>{assertBoundedInput(raw);return saveSchema.parse(raw);}).handler(async({data,context})=>{
