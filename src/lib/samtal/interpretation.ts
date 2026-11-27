@@ -21,7 +21,8 @@ const rawSchema = z.object({
   uncertain: z.array(z.object({ text: z.string().trim().min(1).max(300), source }).strict()).max(20),
   next_steps: z.array(z.object({
     kind: z.enum(SAMTAL_STEP_KINDS), title: z.string().trim().min(1).max(200),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(), time: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(), // A time in words ("förmiddag") is not a clock time: drop it to null instead of rejecting the whole answer.
+    time: z.string().nullable().transform(t => (t !== null && /^\d{2}:\d{2}$/.test(t) ? t : null)),
     address: z.string().trim().max(300).nullable(), source,
   }).strict()).max(5),
 }).strict();
@@ -81,6 +82,6 @@ export const interpretationToolSchema = {
     } },
     uncertain: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false, required: ['text', 'source'], properties: { text: { type: 'string' }, source: span } } },
     next_steps: { type: 'array', maxItems: 5, items: { type: 'object', additionalProperties: false, required: ['kind', 'title', 'date', 'time', 'address', 'source'], properties: {
-      kind: { type: 'string', enum: [...SAMTAL_STEP_KINDS] }, title: { type: 'string' }, date: nullableString, time: nullableString, address: nullableString, source: span } } },
+      kind: { type: 'string', enum: [...SAMTAL_STEP_KINDS] }, title: { type: 'string' }, date: nullableString, time: { type: ['string', 'null'], description: 'HH:MM, bara om en klockslag sägs; annars null' }, address: nullableString, source: span } } },
   },
 };
