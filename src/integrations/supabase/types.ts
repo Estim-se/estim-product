@@ -2823,6 +2823,10 @@ export type Database = {
         Args: { p_extension: string; p_request: string; payload: Json }
         Returns: Json
       }
+      samtal_ingest_transcript: {
+        Args: { p_transcript: Json; payload: Json }
+        Returns: Json
+      }
       samtal_is_owner: { Args: never; Returns: boolean }
       samtal_mark_deleted: {
         Args: { p_call: string; p_company: string }

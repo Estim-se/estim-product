@@ -1,16 +1,3 @@
--- estim Samtal staged migration 2/13 from docs/samtal/a1-provider-transcript.sql (approved for Bygg Demo AB test, 2026-11-27).
--- estim Samtal A1 – provider-delivered transcript (CANDIDATE, NOT APPLIED).
--- Applies on top of docs/samtal/priority-1-coordinated-v2.sql, in the same transaction or right after it.
--- Documentation only: never run against a connected database without separate approval.
---
--- One new service-role-only function. No table, column, policy, grant or existing function changes.
--- Registration mirrors samtal_ingest_recover (receiving number -> company, tenant lock, replay denials, backpressure,
--- duplicate key provider + provider_call_id), but reserves no audio. The transcript is stored only when:
---   * its provenance names the same provider and provider call id as the payload,
---   * the call is not deleted, private, erased, past its deadline, or in a retired tenant,
---   * the call has no transcript yet and its job is still at 'transkribera' and not running.
--- The job then moves to 'tolka', so speech to text is skipped. Company and employee always come from the number.
-
 CREATE FUNCTION public.samtal_ingest_transcript(payload jsonb, p_transcript jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE n samtal_numbers;c samtal_calls;j samtal_jobs;s samtal_settings;l samtal_runtime_limits;digest text;
@@ -54,14 +41,10 @@ END $$;
 REVOKE ALL ON FUNCTION public.samtal_ingest_transcript(jsonb,jsonb) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.samtal_ingest_transcript(jsonb,jsonb) TO service_role;
 
--- The V2 claim admits only calls with a recording. Same function, one condition widened: a call is also claimable when
--- it carries a stored provider transcript (only samtal_ingest_transcript writes one, with matching provenance).
--- Everything else in the claim (fair tenant admission, limits, review hold, deletion checks) is unchanged.
 CREATE OR REPLACE FUNCTION public.samtal_claim_jobs(p_limit integer,p_lease_seconds integer) RETURNS SETOF public.samtal_jobs
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE t record;j samtal_jobs;c samtal_calls;l samtal_runtime_limits;n integer:=0;active_global integer;tenant_active integer;target uuid;
 BEGIN
-  -- Nonblocking short admission mutex; never wait on a company while holding it.
   IF NOT pg_try_advisory_xact_lock(hashtextextended('samtal:v2:process-admission',0)) THEN RETURN;END IF;
   SELECT * INTO l FROM samtal_runtime_limits;SELECT count(*) INTO active_global FROM samtal_jobs WHERE state='running' AND lease_until>clock_timestamp();
   FOR t IN SELECT q.company_id FROM samtal_tenant_state q WHERE q.retired_at IS NULL AND EXISTS(SELECT 1 FROM samtal_jobs pending_job WHERE pending_job.company_id=q.company_id AND pending_job.run_after<=clock_timestamp() AND(pending_job.state='queued' OR(pending_job.state='running' AND pending_job.lease_until<=clock_timestamp())))
