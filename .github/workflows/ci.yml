@@ -192,9 +192,20 @@ jobs:
           fi
           xargs -0 node_modules/.bin/eslint --no-warn-ignored -- < "$RUNNER_TEMP/lint-files"
 
-      - name: Tests
+      - name: Tests (isolated)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: node_modules/.bin/vitest run
+        run: |
+          set -euo pipefail
+          isolated="$(mktemp -d /tmp/estim-test.XXXXXX)"
+          trap 'rm -rf "$isolated"' EXIT
+          tar --exclude=.git -cf - . | tar -xf - -C "$isolated"
+          find "$isolated" -name '.env*' -exec rm -rf {} +
+          # CI guard tests inspect HEAD; create a credential-free snapshot instead of copying runner metadata.
+          git -C "$isolated" init --quiet
+          git -C "$isolated" add -A
+          git -C "$isolated" -c user.name='CI test snapshot' -c user.email='ci-test@example.invalid' -c commit.gpgsign=false commit --quiet -m 'Isolated test snapshot'
+          cd "$isolated"
+          python3 scripts/ci/isolated-tests-run.py node_modules/.bin/vitest run
 
       # The review gate's engine (.github/review/): Python's standard library only, nothing to install.
       - name: Review gate tests

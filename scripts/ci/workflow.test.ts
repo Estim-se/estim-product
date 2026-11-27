@@ -78,6 +78,25 @@ describe('ci.yml: the guards run without the checkout\'s .env files', () => {
   });
 });
 
+describe('ci.yml: Vitest runs in verified network isolation', () => {
+  it('uses the copied launcher, strips env files, and creates a clean git snapshot for guard tests', () => {
+    const test = steps().find(s => s.name === 'Tests (isolated)');
+    const run = test?.run ?? '';
+    const normalize = (source: string) => source.replace(/\r\n/g, '\n');
+    const runnerCopy = normalize(readFileSync('scripts/ci/isolated-tests-run.py', 'utf8'))
+      .replace('usage: isolated-tests-run.py', 'usage: a10-isolated-run.py');
+    const docsCopy = normalize(readFileSync('docs/samtal/a10-isolated-run.py', 'utf8'));
+    expect(run).toContain('tar --exclude=.git');
+    expect(run).toContain(`find "$isolated" -name '.env*' -exec rm -rf {} +`);
+    expect(run).toContain('git -C "$isolated" init --quiet');
+    expect(run).toContain('git -C "$isolated" add -A');
+    expect(run).toContain('git -C "$isolated" -c user.name=');
+    expect(run).toContain('python3 scripts/ci/isolated-tests-run.py node_modules/.bin/vitest run');
+    expect(test?.env).toEqual({});
+    expect(runnerCopy).toBe(docsCopy);
+  });
+});
+
 describe('ci.yml: no step can change the base commit or a later guard', () => {
   it('passes the base as the output of the step with id base, never through GITHUB_ENV or GITHUB_PATH (security review)', () => {
     const all = steps();
