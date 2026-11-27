@@ -36,6 +36,10 @@ use the editor.
 - The n8n flows are never changed without the owner's explicit yes. Email and channels are agreed with Dennis.
 - After every merge: run the tender tests locally (totals unchanged) and all WhatsApp and email tests.
 - Tests run the same in every terminal: `vitest.config.ts` normalises a lower-case Windows drive letter, so `vi.mock` applies; never trust a local result where mocks did not apply.
+- Keep interactive mutations responsive: parallelise independent reads/writes, debounce and coalesce draft keystroke saves, clear pending saves before explicit actions, and avoid per-keystroke HTTP or full-workspace serialisation.
+- Prefer optimistic UI with busy-state and rollback handling for reversible toggles and mutations; use stable keys and memoise only expensive derived values.
+- Keep polling and realtime updates quiet: avoid rerenders when a workspace snapshot is unchanged, pause background-tab polling, and lazy-load hidden settings tabs only when opened.
+- Add staleTime and enabled controls to cached reads whose data does not change on every interaction; keep server mutations invalidation or direct patching targeted.
 
 ## App structure
 - Refresh incoming AI interpretation before drafting; derive estimate ranges in code so follow-ups use current job details and catalog prices.
