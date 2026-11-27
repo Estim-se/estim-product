@@ -1,3 +1,5 @@
+import { requireLocalIsolation } from "./helpers/test-target";
+requireLocalIsolation(process.env);
 import "@testing-library/jest-dom/vitest";
 
 Object.defineProperty(window, "scrollTo", {

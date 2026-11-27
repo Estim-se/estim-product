@@ -1,0 +1,21 @@
+# The review gate's trigger. It runs on the pull request with no permissions and does nothing. review.yml runs when it
+# completes (workflow_run), so main's workflow and main's code review every PR, never the PR's own copy of them.
+name: review-intake
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions: {}
+
+jobs:
+  intake:
+    # An edit matters only when it moved the PR onto main (V9). Other edits skip this job, and review.yml ignores an
+    # intake that didn't succeed.
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Hand over to review.yml
+        run: echo "The review runs in review.yml, from main."

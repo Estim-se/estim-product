@@ -1,8 +1,8 @@
 // Test-only disposable PostgreSQL. Never accepts an external URL, credentials or environment database configuration.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import postgres from 'postgres';
 import { SCHEMA, newReceive, normPhone } from './samtal-inbox-db';
 
@@ -23,14 +23,35 @@ export async function scalar<T>(db: LocalSession, statement: string, params: unk
   return row.v;
 }
 
+// initdb and pg_ctl from PATH, else from the newest versioned install: Debian/Ubuntu (GitHub's Ubuntu runners ship
+// PostgreSQL under /usr/lib/postgresql/<version>/bin, which is not on PATH) or Homebrew on macOS.
+const versionedBins = (parent: string, prefix: string) => {
+  let entries: string[];
+  try { entries = readdirSync(parent).filter(e => e.startsWith(prefix)); } catch { return []; }
+  const version = (e: string) => Number.parseFloat(e.slice(prefix.length).replace(/^@/, '')) || 0;
+  return entries.sort((a, b) => version(b) - version(a)).map(e => join(parent, e, 'bin'));
+};
+const executable = (file: string) => { try { accessSync(file, constants.X_OK); return true; } catch { return false; } };
+const postgresBinDir = [
+  ...(process.env['PATH'] ?? '').split(delimiter).filter(Boolean),
+  ...versionedBins('/usr/lib/postgresql', ''),
+  ...versionedBins('/opt/homebrew/opt', 'postgresql'), ...versionedBins('/usr/local/opt', 'postgresql'),
+].find(dir => executable(join(dir, 'initdb')) && executable(join(dir, 'pg_ctl')));
+/** False when no initdb/pg_ctl pair exists; the Samtal PostgreSQL suites then skip instead of failing. */
+export const LOCAL_POSTGRES_AVAILABLE = postgresBinDir !== undefined;
+if (!LOCAL_POSTGRES_AVAILABLE) process.stderr.write('Skipping Samtal PostgreSQL tests: initdb and pg_ctl were not found on PATH, '
+  + 'in /usr/lib/postgresql/<version>/bin or in Homebrew. Install PostgreSQL to run them.\n');
+
 export async function disposableSamtalPostgres(candidate = 'priority-1-safety-draft.sql') {
+  if (!postgresBinDir) throw new Error('local_postgres_unavailable');
+  const bin = postgresBinDir;
   const directory = mkdtempSync(join(tmpdir(), 'samtal-pg-'));
   const data = join(directory, 'data'), socket = join(directory, 'socket');
   mkdirSync(socket);
   const root = process.getuid?.() === 0;
   const user = root ? 'nobody' : execFileSync('id', ['-un'], { encoding: 'utf8' }).trim();
-  const run = (binary: string, args: string[]) => execFileSync(root ? 'runuser' : binary,
-    root ? ['-u', user, '--', binary, ...args] : args, { stdio: 'pipe', timeout: 60000 });
+  const run = (binary: 'initdb' | 'pg_ctl', args: string[]) => execFileSync(root ? 'runuser' : join(bin, binary),
+    root ? ['-u', user, '--', join(bin, binary), ...args] : args, { stdio: 'pipe', timeout: 60000 });
   const sessions: LocalSession[] = [];
   let started = false;
   const close = async () => {

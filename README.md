@@ -17,10 +17,15 @@ Useful local checks:
 
 ```sh
 npx tsc --noEmit
-npx vitest run
 npx vite build
 deno test --allow-env --allow-net supabase/functions/_shared/
 ```
+
+### Tests
+
+Run required CI tests with `bun run test`. Run historical Samtal proposals explicitly with
+`bun run test:samtal-proposals`. Both commands require Linux network-namespace isolation and installed dependencies;
+see [Samtal test inventory, prerequisites and results](docs/samtal/testing.md).
 
 ## 2. Core Environment Variables / Secrets
 

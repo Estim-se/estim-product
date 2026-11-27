@@ -14,6 +14,7 @@ import { NewRequest, type RequestPrefill } from './new-request';
 import { Button } from '@/components/ui/button';
 import { customerKeyOf, latestActivityOrder, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
 import { CustomerHub } from './customer-hub';
+import { pendingCallThreads, SAMTAL_ITEM, SamtalCallDetails, SamtalCallPane, SamtalCallTasks, useSamtalCalls } from './samtal-inbox';
 
 export function InboxScreen() {
   const { state, actions } = useEstim();
@@ -30,6 +31,10 @@ export function InboxScreen() {
   const activity = new Map(workspace.data?.threads.map(t => [t.id, Math.max(Date.parse(t.last_message_at), Date.parse(t.updated_at))]));
   workspace.data?.drafts.forEach(d => activity.set(d.thread_id, Math.max(activity.get(d.thread_id) ?? 0, Date.parse(d.updated_at))));
   const orderedThreads = real ? latestActivityOrder(threads, activity) : threads;
+  // estim Samtal: calls awaiting confirmation are ordinary list items until they are confirmed or dismissed.
+  const samtalCalls = useSamtalCalls();
+  const callItems = real ? pendingCallThreads(samtalCalls) : [];
+  const [callSel, setCallSel] = useState<string | null>(null);
   const pending = Boolean(current && state.drafts[current.id] && ['svar', 'oppnad'].includes(current.status));
 
   const currentCustomerKey = current ? customerKeyOf(current) : '';
@@ -59,6 +64,8 @@ export function InboxScreen() {
   }, [current?.id, showingHub]);
 
   function select(id: string, customerKey?: string, isMulti?: boolean) {
+    if (id.startsWith(SAMTAL_ITEM)) { setCallSel(id); setViewingHubKey(null); setMobileThread(true); setTab('chat'); return; }
+    setCallSel(null);
     // Opening the hub only points at the customer; a conversation is marked read when it is opened.
     if (isMulti && customerKey) actions.update(s => { s.sel = id; });
     else actions.select(id);
@@ -127,10 +134,11 @@ export function InboxScreen() {
         </header>
       )}
 
+
       <div className={`ib2 fadein real-inbox${mobileThread ? ' thread-open' : ''} tab-${tab}`}>
         <InboxList
-          threads={orderedThreads}
-          selected={selected}
+          threads={[...callItems, ...orderedThreads]}
+          selected={callSel ?? selected}
           filter={filter}
           real={real}
           onFilter={filter => actions.update(s => { s.filter = filter; })}
@@ -141,7 +149,15 @@ export function InboxScreen() {
           }}
         />
 
-        {current && (
+        {callSel && (
+          <>
+            <div className="tv" id="inbox-chat"><SamtalCallPane id={callSel} onDone={id => { setCallSel(null); if (id) actions.select(id); }} /></div>
+            <section id="inbox-info" className="inbox-info"><div className="info-scroll"><div className="ctx">
+              {(() => { const t = callItems.find(c => c.id === callSel); return t ? <CustomerCard thread={t} /> : null; })()}
+              <SamtalCallTasks id={callSel} /></div></div></section>
+          </>
+        )}
+        {!callSel && current && (
           <>
             <div className="tv" id="inbox-chat">
               {showingHub ? (
@@ -165,7 +181,7 @@ export function InboxScreen() {
                   }}
                 />
               ) : (
-                <Conversation thread={current} contained />
+                <>{real && <SamtalCallDetails threadId={current.id} />}<Conversation thread={current} contained /></>
               )}
             </div>
 
@@ -192,6 +208,7 @@ export function InboxScreen() {
                       onCreateQuote={real && !current.q ? () => void workspace.realStore.createQuote(current.id) : undefined}
                     />
                     <ContextPanel thread={current} />
+                    {real && <div className="ctx"><SamtalCallTasks id={current.id} /></div>}
                   </>
                 )}
               </div>

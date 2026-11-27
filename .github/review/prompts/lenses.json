@@ -1,0 +1,6 @@
+{
+  "general": "Lens: everything the review rules list, for a small or light change: bugs, security, unproven or weakened checks, and generated files edited by hand.",
+  "correctness": "Lens: correctness and intent. Does the changed code do what pr.md says, including every WHEN/THEN line in it? Look for logic errors, lost or swallowed errors, double sends, data loss, messages that reach a customer without a person approving, changed totals, and behaviour the description doesn't mention, in the changed code and in the code it calls or is called by.",
+  "security": "Lens: the security clauses (SEC*) only. Check each one against the change: Edge Function guards, server function middleware, public routes, the service-role client, row-level security and grants, security definer functions, where the company comes from, and secrets or personal data in code, logs and errors.",
+  "tests": "Lens: unproven or weakened (UNP*), plus cross-file contracts. Is every changed behaviour proven by a test that would fail without the change? Look for lowered gates, skipped or deleted tests, changed expected values, migrations changed or dropped, and WHEN/THEN criteria in pr.md the change misses. For every changed function, type or export, find its callers with Grep under head/ and check they still agree."
+}

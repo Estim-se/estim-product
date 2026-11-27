@@ -43,7 +43,7 @@ export function folderAdapter(folder: string): SamtalAdapter {
       return { calls, rejected };
     },
     async openAudio(call) {
-      if (call.provider !== 'test' || call.audio.kind !== 'file') throw new Error('not_a_test_call');
+      if (call.provider !== 'test' || !call.audio || call.audio.kind !== 'file') throw new Error('not_a_test_call');
       const path = inside(call.audio.path);
       if ((await stat(path)).size > SAMTAL_MAX_AUDIO_BYTES) throw new Error('audio_too_large');
       return { bytes: new Uint8Array(await readFile(path)), contentType: SAMTAL_AUDIO_TYPES[call.audio.extension]!, extension: call.audio.extension };

@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import { z } from 'zod';
 import { assertBoundedInput } from './input-limits';
 import { deliverChannel } from './channel-delivery';
+import { SAMTAL_TEST_SEND_BLOCKED, samtalTestSendBlocked } from './samtal/test-mode';
 import { deliverDocumentReply } from '../../supabase/functions/_shared/document-delivery';
 
 export const saveWhatsAppChannel = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth])
@@ -25,11 +26,16 @@ export const sendMessage = createServerFn({ method: 'POST' }).middleware([requir
     const prepared = await db.rpc('estim_prepare_send', { tid: data.id });
     if (prepared.error || !prepared.data) throw new Error('Svaret kunde inte sparas. Försök igen.');
     const { supabaseAdmin: admin } = await import('@/integrations/supabase/client.server');
-    const [message, customer] = await Promise.all([
+    const [message, customer, samtal] = await Promise.all([
       db.from('messages').select('channel,text').eq('id', prepared.data).eq('company_id', thread.data.company_id).single(),
       db.from('customers').select('phone').eq('id', thread.data.customer_id).single(),
+      // Samtal test mode: any Samtal message in this thread blocks external delivery (checked with the service client).
+      admin.from('messages').select('id').eq('thread_id', data.id).eq('company_id', thread.data.company_id).eq('channel', 'samtal').limit(1),
     ]);
+    if (samtal.error) throw new Error('Svaret kunde inte skickas. Försök igen.');
+    const testBlocked = samtalTestSendBlocked(thread.data.company_id, (samtal.data ?? []).length > 0);
     const deliver = async (input: Parameters<typeof deliverChannel>[0]) => {
+      if (testBlocked) return { sent: false, error: SAMTAL_TEST_SEND_BLOCKED, providerId: null };
       if (input.channel !== 'wa') return deliverChannel(input);
       try { return await deliverDocumentReply(admin, prepared.data, input); }
       catch { return { sent: false, error: 'WhatsApp-svaret eller dokumentet kunde inte skickas. Försök igen.', providerId: null }; }

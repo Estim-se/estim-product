@@ -1,18 +1,13 @@
-// estim Samtal A7 hardening (unapplied): durable webhook security and database-enforced provider tenancy.
-// Five unapplied patches (priority-1 x2, a1-a2, a7-provider-framework, a7-hardening) are applied to a disposable copy;
-// the database is a disposable local PostgreSQL with the V2 candidate, a1-provider-transcript.sql and
-// a7-durable-webhook.sql. Independent sessions stand in for separate application instances. Everything external is
-// synthetic: provider format, HMAC reference secrets, recording hosts (fetch is a stub that must never be reached).
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { createHmac } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 import { supabaseOver } from './helpers/samtal-supabase-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff'];
 const SECRET = 'synthetic-secret-0123456789abcdef-current';
 const A_NUMBER = '+46701111111', B_NUMBER = '+46702222222', SHARED = '+46108888888', CUSTOMER = '+46709999999';
 const TEXT = 'Hej, det är Karin Holm. Jag behöver byta elcentralen i villan på Storgatan 4 i Uppsala.';
@@ -31,7 +26,7 @@ function signed(body: string, o: { t?: number; nonce?: string } = {}) {
   return new Request('https://local.invalid/hook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-synthetic-timestamp': t, 'x-synthetic-signature': `v1=${sig}` }, body });
 }
 
-describe('Samtal A7 hardening (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 hardening (current implementation + local SQL fixture)', () => {
   let dir = '', du: M, sec: M, ref: M, ingestMod: M, rf: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
   const files = new Map<string, Uint8Array>();
@@ -43,7 +38,7 @@ describe('Samtal A7 hardening (unapplied patch + SQL candidate)', () => {
     for (const f of ['src/lib/samtal', 'src/lib/input-limits.ts', 'src/components/estim/samtal-page.tsx', 'src/routes/api/public/samtal-worker.ts', 'src/routes/api/public/samtal-purge.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [du, sec, ref, ingestMod, rf] = await Promise.all(['provider/durable.server.ts', 'provider/webhook-security.server.ts', 'provider/reference-provider.ts', 'ingest.server.ts', 'provider/recording-fetch.server.ts'].map(load));
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');

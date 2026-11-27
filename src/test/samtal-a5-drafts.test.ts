@@ -1,17 +1,12 @@
-// estim Samtal A5 (Ring estim draft management, reminders, materials, employee enrollment): synthetic tests of the
-// UNAPPLIED patch docs/samtal/a5-draft-management.diff (on top of all earlier Samtal patches) and the SQL candidate
-// docs/samtal/a5-draft-management.sql in a disposable local PostgreSQL 17. No preview/production database, Storage,
-// secret, flag, provider or AI model is touched. All names, numbers and addresses are invented.
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
+import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
-  'v1-migration-app-fix.diff', 'v1-test-migration.diff', 'a3-a4-ring-estim.diff', 'a5-draft-management.diff'];
 // Wednesday 25 November 2026, 09:00 in Stockholm.
 const CALLED = '2026-11-25T08:00:00.000Z';
 const STAFF2 = 'a0000000-0000-4000-8000-000000000003';
@@ -26,7 +21,7 @@ const none = { value: null, source: null };
 const raw = (o: Record<string, unknown> = {}) => ({ classification: 'jobb', private_spans: [], customer: { name: none, address: none, place: none }, project: none, work: [], agreements: [],
   measurements: [], materials: [], tasks: [], reminders: [], quote: { needed: false, deadline: null, source: null }, customer_notes: [], follow_ups: [], uncertain: [], ...o });
 
-describe('Samtal A5 draft management (unapplied patch + SQL candidate)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A5 draft management (current implementation + local SQL fixture)', () => {
   let dir = '', dl: M, da: M, vn: M, dr: M, en: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession, y: LocalSession;
   const q = <T,>(s: string, p: unknown[] = []) => pg.admin.query<T>(s, p);
@@ -54,7 +49,7 @@ describe('Samtal A5 draft management (unapplied patch + SQL candidate)', () => {
       'src/test/samtal-adapter.test.ts', 'src/test/samtal-behandling.test.ts', 'src/test/samtal-inkorg-steg.test.ts', 'src/test/samtal-sida.test.ts', 'src/test/samtal-retention.test.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [dl, da, vn, dr, en] = await Promise.all(['ring/deadline.ts', 'ring/draft-actions.ts', 'ring/voice-note.ts', 'ring/drafts.ts', 'ring/enrollment.ts'].map(load)) as [M, M, M, M, M];
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');

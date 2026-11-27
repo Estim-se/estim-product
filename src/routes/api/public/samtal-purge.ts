@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 // estim Samtal: hourly deletion after each company's retention (pg_cron → pg_net, header x-estim-secret).
-// The secret is checked against Supabase Vault in the database; the response holds counts only.
+// The secret is checked against Supabase Vault in the database; the response holds counts only. With the V2 patch the
+// counts separate confirmed removals from recordings still pending deletion.
 export const Route = createFileRoute('/api/public/samtal-purge')({
   server: { handlers: { POST: async ({ request }) => {
-    const { supabaseAdmin: db } = await import('@/integrations/supabase/client.server');
+    const { supabaseAdmin: db } = await import('@/lib/samtal/admin.server');
     const { purgeDueCalls, purgeSecretValid } = await import('@/lib/samtal/purge.server');
     if (!await purgeSecretValid(db, request.headers.get('x-estim-secret'))) return Response.json({ error: 'Åtkomst nekad.' }, { status: 401 });
     try { return Response.json({ ok: true, ...await purgeDueCalls(db) }); }
