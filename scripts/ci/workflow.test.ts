@@ -94,8 +94,10 @@ describe('ci.yml: Vitest runs in verified network isolation', () => {
     expect(run).toContain('python3 scripts/ci/isolated-tests-run.py node_modules/.bin/vitest run');
     expect(test?.env).toEqual({});
     expect(runnerCopy).toContain("[sudo, '-n', unshare, '--net', 'true']");
-    expect(runnerCopy).toContain("f'--reuid={os.getuid()}'");
+    expect(runnerCopy).toContain("def inside_root(uid, gid, command):");
+    expect(runnerCopy).toContain("f'--reuid={uid}'");
     expect(runnerCopy).toContain("'--clear-groups', '--no-new-privs'");
+    expect(runnerCopy).toContain("'--inside-root'");
     expect(runnerCopy).toBe(docsCopy);
   });
 });

@@ -14,15 +14,29 @@ def inside(command):
     parent = os.environ.get('A10_PARENT_NETNS')
     if not parent or os.readlink('/proc/self/ns/net') == parent:
         raise SystemExit('isolation_namespace_not_changed')
-    subprocess.run(['ip', 'link', 'set', 'lo', 'up'], check=True)
+    loopback = next((interface for interface in interfaces if interface['ifname'] == 'lo'), None)
+    if loopback and 'UP' not in loopback.get('flags', []):
+        subprocess.run(['ip', 'link', 'set', 'lo', 'up'], check=True)
     os.environ['ESTIM_TEST_NET_ISOLATED'] = '1'
     os.environ['ESTIM_TEST_MODE'] = 'local'
     print('A10 isolation verified: distinct network namespace; no external routes; local services only', flush=True)
     raise SystemExit(subprocess.call(command))
 
+def inside_root(uid, gid, command):
+    subprocess.run(['ip', 'link', 'set', 'lo', 'up'], check=True)
+    setpriv = shutil.which('setpriv')
+    if not setpriv:
+        raise SystemExit('isolation_unavailable')
+    raise SystemExit(subprocess.call([
+        setpriv, f'--reuid={uid}', f'--regid={gid}',
+        '--clear-groups', '--no-new-privs', *command,
+    ]))
+
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--inside':
         inside(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == '--inside-root':
+        inside_root(int(sys.argv[2]), int(sys.argv[3]), sys.argv[4:])
     if len(sys.argv) < 2:
         raise SystemExit('usage: a10-isolated-run.py <local command> [args]')
     for executable in ('unshare', 'ip'):
@@ -66,10 +80,9 @@ if __name__ == '__main__':
                     raise SystemExit('isolation_unavailable')
                 print('Using sudo only to create the network namespace; tests run as the invoking user', flush=True)
                 preserved_env = [f'{key}={value}' for key, value in env.items()]
-                command = [
-                    sudo, '-n', unshare, '--net', setpriv,
-                    f'--reuid={os.getuid()}', f'--regid={os.getgid()}',
-                    '--clear-groups', '--no-new-privs',
-                    env_command, '-i', *preserved_env, *child,
+                root_child = [
+                    sys.executable, script, '--inside-root',
+                    str(os.getuid()), str(os.getgid()), *child,
                 ]
+                command = [sudo, '-n', unshare, '--net', env_command, '-i', *preserved_env, *root_child]
         raise SystemExit(subprocess.call(command, cwd=cwd, env=env))
