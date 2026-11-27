@@ -39,26 +39,33 @@ function due(t: CallTask) {
   return t.due_hint ? `${day} ${t.due_hint}` : day;
 }
 
-function CallBody({ c }: { c: ReviewCall }) {
-  return <>
-    <div className="small"><b>Sammanfattning:</b> {c.summary || c.title}</div>
-    {!!c.tasks?.length && <div className="small"><b>Uppgifter och påminnelser</b><ul className="mt8">{c.tasks.map(t =>
-      <li key={t.id}>{TASK_KIND[t.kind] ?? t.kind}: {t.title}{due(t) ? ` · ${due(t)}` : ''}{t.address ? ` · ${t.address}` : ''} <span className="xs muted">({TASK_STATE[t.state] ?? t.state})</span></li>)}</ul></div>}
-    {!!c.transcript?.length && <details className="small"><summary>Visa samtalet</summary><div className="mt8 space-y-1">{c.transcript.map((l, i) =>
-      <p key={i}>{l.speaker && <b>{l.speaker}: </b>}{l.text}</p>)}</div></details>}
-  </>;
+function Tasks({ c }: { c: ReviewCall }) {
+  if (!c.tasks?.length) return null;
+  return <div className="card"><h3>Uppgifter och påminnelser</h3><div className="kv">{c.tasks.map(t =>
+    <div key={t.id}><span>{TASK_KIND[t.kind] ?? t.kind}</span><span>{t.title}{due(t) ? ` · ${due(t)}` : ''} <span className="xs muted">({TASK_STATE[t.state] ?? t.state})</span></span></div>)}</div></div>;
+}
+function Transcript({ c }: { c: ReviewCall }) {
+  if (!c.transcript?.length) return null;
+  return <details className="small"><summary>Visa samtalet</summary><div className="mt8 space-y-1">{c.transcript.map((l, i) =>
+    <p key={i}>{l.speaker && <b>{l.speaker}: </b>}{l.text}</p>)}</div></details>;
 }
 
-// The selected unconfirmed call, shown in the conversation column.
+// The selected unconfirmed call, shown in the conversation column; nothing is attached to a customer until confirmed.
 export function SamtalCallPane({ id, onDone }: { id: string; onDone: (threadId: string | null) => void }) {
   const call = useSamtalCalls().find(c => SAMTAL_ITEM + c.call === id);
   if (!call) return <div className="card m16 small muted">Samtalet är redan hanterat.</div>;
-  return <div className="card m16 space-y-3 min-w-0" aria-label="Samtal att bekräfta"><CallBody c={call} /><SamtalA10ReviewPanel only={call.call} onDone={onDone} /></div>;
+  return <div className="card m16 space-y-3 min-w-0" aria-label="Samtal att bekräfta">
+    <div className="small"><b>Sammanfattning:</b> {call.summary || call.title}</div><Transcript c={call} />
+    <SamtalA10ReviewPanel only={call.call} onDone={onDone} /></div>;
+}
+export function SamtalCallTasks({ id }: { id: string }) {
+  const call = useSamtalCalls().find(c => SAMTAL_ITEM + c.call === id || c.thread_id === id);
+  return call ? <Tasks c={call} /> : null;
 }
 
-// A confirmed call inside its ordinary conversation: summary, tasks and the original transcript.
+// A confirmed call inside its ordinary conversation: the original transcript (the summary is the call's message).
 export function SamtalCallDetails({ threadId }: { threadId: string }) {
-  const calls = useSamtalCalls().filter(c => c.thread_id === threadId);
+  const calls = useSamtalCalls().filter(c => c.thread_id === threadId && c.transcript?.length);
   if (!calls.length) return null;
-  return <div className="space-y-3 min-w-0 p16" aria-label="Samtal">{calls.map(c => <div key={c.call} className="space-y-2"><CallBody c={c} /><SamtalA10ReviewPanel only={c.call} /></div>)}</div>;
+  return <div className="p16 min-w-0">{calls.map(c => <Transcript key={c.call} c={c} />)}</div>;
 }

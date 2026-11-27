@@ -31,6 +31,12 @@ export async function runA9Matching(db: SupabaseClient<Database>, lease: Lease, 
   if(!['resolved','new','general','repeat'].includes(result.status)) return 'stopped';
   const { a10Enabled, handoffAutomatic } = await import('../a10/integration.server');
   if (a10Enabled() && result.status === 'resolved') return await handoffAutomatic(db,lease,f.text||'Arbete') ? 'done' : 'stopped';
+  // A clearly new customer or assignment is created automatically; a possible duplicate stops in the database and
+  // the call waits for confirmation in Inkorg instead.
+  if (a10Enabled() && result.status === 'new') {
+    const phone = normalisePhone(f.phone) ?? normalisePhone(f.kind === 'telefonsamtal' ? f.callerPhone : null);
+    return await handoffAutomatic(db,lease,f.text||'Arbete',{name:f.name,address:f.address,phone}) ? 'done' : 'matching_needs_review';
+  }
   // A matching result is not a shared Inbox receipt. Never feed it through legacy phone rematching.
   const done=await db.rpc('samtal_release_job',{p_job:lease.job,p_token:lease.token,p_state:'done',p_step:'klar',p_error:'shared_handoff_approval_required',p_retry_seconds:0});
   return !done.error && done.data===true ? 'done' : 'stopped';

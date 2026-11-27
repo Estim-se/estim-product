@@ -173,3 +173,4 @@
 
 - [x] Samtal i Inkorg (signed-in browser check unavailable): unconfirmed calls in the normal list, confirmation inside the selected conversation, remove separate section, tasks shown in conversation, transcript accessible.
 - [x] Samtal tasks/reminders DB fix, due day + time-of-day words, dismiss duplicate calls.
+- [x] Samtal: clearly new customers/assignments handed off automatically; confirmation only on ambiguity; tasks right column, transcript center; separate quote review removed from Inkorg.

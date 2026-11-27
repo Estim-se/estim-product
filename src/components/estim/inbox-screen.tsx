@@ -14,7 +14,7 @@ import { NewRequest, type RequestPrefill } from './new-request';
 import { Button } from '@/components/ui/button';
 import { customerKeyOf, latestActivityOrder, SCROLL_JUMP_THRESHOLD, scrollToEdge } from '@/lib/inbox-layout';
 import { CustomerHub } from './customer-hub';
-import { pendingCallThreads, SAMTAL_ITEM, SamtalCallDetails, SamtalCallPane, useSamtalCalls } from './samtal-inbox';
+import { pendingCallThreads, SAMTAL_ITEM, SamtalCallDetails, SamtalCallPane, SamtalCallTasks, useSamtalCalls } from './samtal-inbox';
 
 export function InboxScreen() {
   const { state, actions } = useEstim();
@@ -150,7 +150,12 @@ export function InboxScreen() {
         />
 
         {callSel && (
-          <div className="tv" id="inbox-chat"><SamtalCallPane id={callSel} onDone={id => { setCallSel(null); if (id) actions.select(id); }} /></div>
+          <>
+            <div className="tv" id="inbox-chat"><SamtalCallPane id={callSel} onDone={id => { setCallSel(null); if (id) actions.select(id); }} /></div>
+            <section id="inbox-info" className="inbox-info"><div className="info-scroll"><div className="ctx">
+              {(() => { const t = callItems.find(c => c.id === callSel); return t ? <CustomerCard thread={t} /> : null; })()}
+              <SamtalCallTasks id={callSel} /></div></div></section>
+          </>
         )}
         {!callSel && current && (
           <>
@@ -203,6 +208,7 @@ export function InboxScreen() {
                       onCreateQuote={real && !current.q ? () => void workspace.realStore.createQuote(current.id) : undefined}
                     />
                     <ContextPanel thread={current} />
+                    {real && <div className="ctx"><SamtalCallTasks id={current.id} /></div>}
                   </>
                 )}
               </div>

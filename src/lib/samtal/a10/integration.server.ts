@@ -12,11 +12,15 @@ export function proposalRpc(db:SupabaseClient<Database>):ProposalRpc {
   const invoke=db.rpc.bind(db) as unknown as ProposalRpc;
   return (name,args)=>{if(!['samtal_a10_handoff','samtal_a10_commit_quote','samtal_a10_stage_ring_draft'].includes(name))throw new Error('invalid_a10_interface');return invoke(name,args);};
 }
-export async function handoffAutomatic(db:SupabaseClient<Database>,lease:Lease,title:string) {
+export async function handoffAutomatic(db:SupabaseClient<Database>,lease:Lease,title:string,identity?:{name:string|null;address:string|null;phone:string|null}) {
   if(!a10Enabled())return false;
   const found=await db.from('samtal_a9_matches').select('customer_id,assignment_id,state,version').eq('company_id',lease.company).eq('call_id',lease.call).single();
-  if(found.error||!found.data||found.data.state!=='resolved'||!found.data.customer_id||!found.data.assignment_id)return false;
-  const r=await proposalRpc(db)('samtal_a10_handoff',{p_call:lease.call,p_company:lease.company,p_version:found.data.version,p_request:lease.call,p_customer:found.data.customer_id,p_assignment:found.data.assignment_id,p_create:false,p_identity:null,p_title:title.slice(0,200),p_actor:null,p_job:lease.job,p_token:lease.token});
+  if(found.error||!found.data)return false;
+  // 'new': no existing customer (or no existing assignment for a confidently matched customer). A new customer needs
+  // both a name and an address; nothing is invented.
+  const create=found.data.state==='new';
+  if(create?(!found.data.customer_id&&(!identity?.name||!identity.address)):(found.data.state!=='resolved'||!found.data.customer_id||!found.data.assignment_id))return false;
+  const r=await proposalRpc(db)('samtal_a10_handoff',{p_call:lease.call,p_company:lease.company,p_version:found.data.version,p_request:lease.call,p_customer:found.data.customer_id,p_assignment:create?null:found.data.assignment_id,p_create:create,p_identity:create&&!found.data.customer_id?identity:null,p_title:title.slice(0,200),p_actor:null,p_job:lease.job,p_token:lease.token});
   if(r.error)throw new Error('a10_handoff_failed');
   const result=r.data as {status?:string;thread_id?:string;message_id?:string}|null;
   if(result?.status!=='ok')return false;
