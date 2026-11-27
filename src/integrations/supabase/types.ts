@@ -3658,6 +3658,16 @@ export type Database = {
         }
         Returns: Json
       }
+      samtal_a9_commit_quote: {
+        Args: {
+          p_call: string
+          p_company: string
+          p_expected_quote: string
+          p_expected_version: number
+          p_lines: Json
+        }
+        Returns: Json
+      }
       samtal_a9_confirm: {
         Args: {
           p_actor: string
