@@ -7,6 +7,7 @@ import { assertBoundedInput } from '../../input-limits';
 import { parseHandoff, reviewedQuoteSchema, type SourceRow } from './contracts';
 import type { Database } from '@/lib/samtal/db-types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { assignmentTitle, fullAddress, shortTitle } from './titles';
 const ready=()=>{if(process.env['SAMTAL']!=='1'||process.env['SAMTAL_A9']!=='1'||process.env['SAMTAL_A10']!=='1')throw new Error('Samtal är inte tillgängligt.');};
 async function membership(db:SupabaseClient<Database>,actor:string) {const r=await db.from('company_members').select('company_id,role').eq('user_id',actor).maybeSingle();if(r.error||!r.data)throw new Error('Du saknar behörighet.');return r.data;}
 const object=(v:unknown):Record<string,unknown>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{};
@@ -29,18 +30,22 @@ export const getSamtalA10Review=createServerFn({method:'POST'}).middleware([requ
  const visible=new Map((calls.data??[]).map(c=>[c.id,c]));
  return {enabled:true as const,catalog:catalog.data??[],calls:(matches.data??[]).flatMap(m=>{
   const c=visible.get(m.call_id);if(!c)return [];const e=object(c.extraction),n=object(e['voice_note']),i=object(e['interpretation']),f=object(i['fields']);
-  const title=text(object(f['description'])['value'])|| (Array.isArray(n['work'])?text(n['work'][0]):'') || 'Arbete';
+  const description=text(object(f['description'])['value'])|| (Array.isArray(n['work'])?text(n['work'][0]):'') || 'Arbete';
+  // A short label for the assignment; the full description stays the Inbox message and the source row.
+  const title=i['fields']?assignmentTitle(i as Parameters<typeof assignmentTitle>[0],description):shortTitle(description)||'Arbete';
   const approved=object((ringDrafts.data??[]).find(d=>d.call_id===m.call_id)?.body);
   const material=Array.isArray(approved['rows'])?approved['rows']:Array.isArray(approved['items'])?approved['items']:Array.isArray(n['materials'])?n['materials']:[];
   const rows:SourceRow[]=material.slice(0,100).map(raw=>{const r=object(raw);return {description:text(r['item'])||text(r['description']),quantity:typeof r['quantity']==='number'?r['quantity']:null,unit:typeof r['unit']==='string'?r['unit']:null,moment_id:null,evidence:typeof r['evidence']==='string'?r['evidence']:null};});
-  if(!rows.length)rows.push({description:title,quantity:null,unit:null,moment_id:null,evidence:title});
-  return [{call:m.call_id,version:m.version,state:m.state,customer_id:m.customer_id,assignment_id:m.assignment_id,quote_requested:m.quote_requested,quote_saved:savedQuotes.has(m.call_id),intent:m.intent,title,rows,summary:text(object(i['summary'])['value'])||text(i['summary'])||title,transcript:transcriptLines(c.transcript),thread_id:c.thread_id??null,started_at:c.started_at??null,tasks:(tasks.data??[]).filter((t:{call_id:string})=>t.call_id===m.call_id) as CallTask[],heard:{name:text(object(f['customer_name'])['value'])||text(object(n['customer'])['name'])||null,phone:text(object(f['customer_phone'])['value'])||null,caller:c.caller_phone??null,address:text(object(f['address'])['value'])||text(object(n['customer'])['address'])||null}}];
+  if(!rows.length)rows.push({description,quantity:null,unit:null,moment_id:null,evidence:shortTitle(description,200)});
+  return [{call:m.call_id,version:m.version,state:m.state,customer_id:m.customer_id,assignment_id:m.assignment_id,quote_requested:m.quote_requested,quote_saved:savedQuotes.has(m.call_id),intent:m.intent,title,rows,summary:text(object(i['summary'])['value'])||text(i['summary'])||description,transcript:transcriptLines(c.transcript),thread_id:c.thread_id??null,started_at:c.started_at??null,tasks:(tasks.data??[]).filter((t:{call_id:string})=>t.call_id===m.call_id) as CallTask[],heard:{name:text(object(f['customer_name'])['value'])||text(object(n['customer'])['name'])||null,phone:text(object(f['customer_phone'])['value'])||null,caller:c.caller_phone??null,address:fullAddress(text(object(f['address'])['value'])||text(object(n['customer'])['address']),text(object(f['place'])['value']))}}];
  })};
 });
 export const completeSamtalA10Handoff=createServerFn({method:'POST'}).middleware([requireSupabaseAuth]).inputValidator(parseHandoff).handler(async({data,context})=>{
  ready();const member=await membership(asSamtal(context.supabase),context.userId);
- const call=await asSamtal(context.supabase).from('samtal_calls').select('id,user_id').eq('company_id',member.company_id).eq('id',data.call).maybeSingle();
+ const call=await asSamtal(context.supabase).from('samtal_calls').select('id,user_id,caller_phone').eq('company_id',member.company_id).eq('id',data.call).maybeSingle();
  if(call.error||!call.data||member.role!=='ägare'&&call.data.user_id!==context.userId)throw new Error('Du saknar behörighet.');
+ // A new customer gets the number the call came from unless another number was given.
+ if(data.identity&&!data.identity.phone)data={...data,identity:{...data.identity,phone:call.data.caller_phone??null}};
  const {supabaseAdmin}=await import('@/lib/samtal/admin.server');
  const {handoffReviewed,proposalRpc}=await import('./integration.server');return handoffReviewed(proposalRpc(supabaseAdmin),member.company_id,context.userId,data,supabaseAdmin);
 });

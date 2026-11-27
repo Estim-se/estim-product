@@ -5,6 +5,7 @@ import type { Lease } from '../a9/orchestrate';
 import type { HandoffInput } from './contracts';
 import type { Interpretation } from '../interpretation';
 import { suggestedTasks } from '../inbox.server';
+import { shortTitle } from './titles';
 export const a10Enabled=()=>process.env['SAMTAL']==='1'&&process.env['SAMTAL_A9']==='1'&&process.env['SAMTAL_A10']==='1';
 // Local proposal types are intentionally separate from generated production schema types.
 export type ProposalRpc=(name:string,args:Record<string,unknown>)=>Promise<{data:unknown;error:unknown}>;
@@ -20,7 +21,7 @@ export async function handoffAutomatic(db:SupabaseClient<Database>,lease:Lease,t
   // both a name and an address; nothing is invented.
   const create=found.data.state==='new';
   if(create?(!found.data.customer_id&&(!identity?.name||!identity.address)):(found.data.state!=='resolved'||!found.data.customer_id||!found.data.assignment_id))return false;
-  const r=await proposalRpc(db)('samtal_a10_handoff',{p_call:lease.call,p_company:lease.company,p_version:found.data.version,p_request:lease.call,p_customer:found.data.customer_id,p_assignment:create?null:found.data.assignment_id,p_create:create,p_identity:create&&!found.data.customer_id?identity:null,p_title:title.slice(0,200),p_actor:null,p_job:lease.job,p_token:lease.token});
+  const r=await proposalRpc(db)('samtal_a10_handoff',{p_call:lease.call,p_company:lease.company,p_version:found.data.version,p_request:lease.call,p_customer:found.data.customer_id,p_assignment:create?null:found.data.assignment_id,p_create:create,p_identity:create&&!found.data.customer_id?identity:null,p_title:shortTitle(title)||'Arbete',p_actor:null,p_job:lease.job,p_token:lease.token});
   if(r.error)throw new Error('a10_handoff_failed');
   const result=r.data as {status?:string;thread_id?:string;message_id?:string}|null;
   if(result?.status!=='ok')return false;
@@ -55,7 +56,7 @@ export async function continueAfterHandoff(db:SupabaseClient<Database>,company:s
   try{await dispatchAiJob(job.data.id as string);}catch{console.error('samtal_continue_dispatch_failed');}
 }
 export async function handoffReviewed(rpc:ProposalRpc,company:string,actor:string,input:HandoffInput,db?:SupabaseClient<Database>) {
-  const r=await rpc('samtal_a10_handoff',{p_call:input.call,p_company:company,p_version:input.version,p_request:input.request,p_customer:input.customer,p_assignment:input.assignment,p_create:input.create,p_identity:input.identity,p_title:input.title,p_actor:actor,p_job:null,p_token:null});
+  const r=await rpc('samtal_a10_handoff',{p_call:input.call,p_company:company,p_version:input.version,p_request:input.request,p_customer:input.customer,p_assignment:input.assignment,p_create:input.create,p_identity:input.identity,p_title:shortTitle(input.title)||'Arbete',p_actor:actor,p_job:null,p_token:null});
   if(r.error)throw new Error('Valet kunde inte sparas.');
   const result=r.data as {status?:string;thread_id?:string;customer_id?:string;message_id?:string}|null;
   if(result?.status!=='ok')throw new Error(result?.status==='stale'?'Underlaget har ändrats. Läs in samtalet igen.':'Kund och uppdrag behöver kontrolleras.');

@@ -16,6 +16,8 @@ import type {CatalogMoment} from '../../../supabase/functions/_shared/build-quot
 import type {z} from 'zod';
 import type {quoteSchema} from '@/lib/real.schemas';
 type Quote=z.infer<typeof quoteSchema>;
+// Only short plain-language messages reach the user; anything that looks like raw data or JSON is replaced.
+const friendly=(e:unknown,fallback:string)=>{const m=e instanceof Error?e.message.trim():'';return m&&m.length<=160&&!/[{}\[\]"]/.test(m)?m:fallback;};
 type Call={call:string;version:number;state:string;customer_id:string|null;assignment_id:string|null;quote_requested:boolean;intent:string|null;title:string;rows:SourceRow[];heard?:{name:string|null;phone:string|null;caller:string|null;address:string|null}};
 type Options={version:number;customers:{id:string;name:string;address:string|null}[];assignments:{id:string;job:string;address:string|null}[]};
 type NumericLine=Quote['lines'][number];
@@ -54,14 +56,14 @@ export function SamtalA10ReviewPanel({only,onDone}:{only?:string;onDone?:(thread
  if(q.isError)return <section className="mt16"><p role="alert" className="text-destructive">Samtalsunderlaget kunde inte läsas.</p><Button variant="prototype" className="btn btn-ghost btn-sm" onClick={()=>void q.refetch()}>Försök igen</Button></section>;
  if(!q.data?.enabled||!company)return null;
  const calls=q.data.calls.filter(c=>(!only||c.call===only)&&(c.state==='pending'||c.state==='new'||c.state==='resolved'&&c.quote_requested&&!c.quote_saved));
- const choose=async(c:Call)=>{setActive(c.call);setChoice(null);setNewIdentity(false);setTitle(c.title);setError('');if(c.state==='new'){setChoice({version:c.version,customers:[],assignments:[]});return;}try{const r=await options({data:{call:c.call,customer:c.customer_id}}) as Options;setChoice(r);}catch{setError('Kund och uppdrag kunde inte läsas.');}};
+ const choose=async(c:Call)=>{setActive(c.call);setChoice(null);setNewIdentity(false);setTitle(c.title);setName(c.heard?.name??'');setAddress(c.heard?.address??'');setError('');if(c.state==='new'){setChoice({version:c.version,customers:[],assignments:[]});return;}try{const r=await options({data:{call:c.call,customer:c.customer_id}}) as Options;setChoice(r);}catch{setError('Kund och uppdrag kunde inte läsas.');}};
  const handoff=async(c:Call,customer:string|null,assignment:string|null,version:number,create=false)=>{
   const key=[c.call,customer,assignment,create,name,address,title].join(':');const request=requests.current.get(key)??crypto.randomUUID();requests.current.set(key,request);setBusy(true);setError('');
-  try{const done=await complete({data:{call:c.call,version,request,customer,assignment,create,identity:create&&!customer?{name,address,phone:null}:null,title:title||c.title}}) as {thread_id?:string}|null;await refresh();if(done?.thread_id)actions.select(done.thread_id);requests.current.delete(key);setActive(null);onDone?.(done?.thread_id??null);return true;}
-  catch(e){setError(e instanceof Error?e.message:'Valet kunde inte sparas.');return false;}finally{setBusy(false);}
+  try{const done=await complete({data:{call:c.call,version,request,customer,assignment,create,identity:create&&!customer?{name:name.trim(),address:address.trim(),phone:c.heard?.phone??c.heard?.caller??null}:null,title:title||c.title}}) as {thread_id?:string}|null;await refresh();if(done?.thread_id)actions.select(done.thread_id);requests.current.delete(key);setActive(null);onDone?.(done?.thread_id??null);return true;}
+  catch(e){setError(friendly(e,'Valet kunde inte sparas.'));return false;}finally{setBusy(false);}
  };
  if(!calls.length)return null;
- const drop=async(c:Call)=>{setBusy(true);setError('');try{await dismiss({data:{call:c.call,version:c.version}});await refresh();onDone?.(null);}catch(e){setError(e instanceof Error?e.message:'Samtalet kunde inte avfärdas.');}finally{setBusy(false);}};
+ const drop=async(c:Call)=>{setBusy(true);setError('');try{await dismiss({data:{call:c.call,version:c.version}});await refresh();onDone?.(null);}catch(e){setError(friendly(e,'Samtalet kunde inte avfärdas.'));}finally{setBusy(false);}};
  return <section id="samtal-bekrafta" className="space-y-4 min-w-0" aria-label="Bekräfta kund och uppdrag">
   <div className="sub">Systemet är inte säkert på vilken kund eller vilket uppdrag samtalet gäller. Välj rätt kund och uppdrag, så kopplas samtalet dit och offertutkast och uppgifter tas fram. Inget skickas till kunden.</div>
   {calls.map(c=><div key={c.call} className="border-b border-border pb-4 space-y-3 min-w-0">
@@ -74,7 +76,7 @@ export function SamtalA10ReviewPanel({only,onDone}:{only?:string;onDone?:(thread
     {active===c.call&&choice&&<>
      {!newIdentity&&(c.customer_id?<SamtalAssignmentChoice options={choice.assignments} onConfirm={(assignment,request)=>{requests.current.set([c.call,c.customer_id,assignment,false,name,address,title].join(':'),request);return handoff(c,c.customer_id,assignment,choice.version,assignment===null);}}/>:<SamtalMatchingReview customers={choice.customers} {...(c.heard?{heard:c.heard}:{})} loadAssignments={async customer=>{const r=await options({data:{call:c.call,customer}}) as Options;return {options:r.assignments,version:r.version};}} confirm={(customer,assignment,request,version)=>{requests.current.set([c.call,customer,assignment,false,name,address,title].join(':'),request);return handoff(c,customer,assignment,version,assignment===null);}}/>)}
      <Button variant="prototype" className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>setNewIdentity(v=>!v)}>{newIdentity?'Välj befintlig kund':'Ny kund och nytt uppdrag'}</Button>
-     {newIdentity&&<form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void handoff(c,null,null,choice.version,true);}}><label>Namn<input className="input w-full" value={name} maxLength={200} onChange={e=>setName(e.target.value)}/></label><label>Adress<input className="input w-full" value={address} maxLength={200} onChange={e=>setAddress(e.target.value)}/></label><label className="sm:col-span-2">Uppdrag<input className="input w-full" value={title} maxLength={200} onChange={e=>setTitle(e.target.value)}/></label><Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy||!name.trim()||!address.trim()||!title.trim()}>Bekräfta kund och uppdrag</Button></form>}
+     {newIdentity&&<form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void handoff(c,null,null,choice.version,true);}}><label>Namn<input className="input w-full" name="samtal-customer-name" autoComplete="off" value={name} maxLength={200} onChange={e=>setName(e.target.value)}/></label><label>Adress<input className="input w-full" name="samtal-customer-address" autoComplete="off" value={address} maxLength={200} onChange={e=>setAddress(e.target.value)}/></label><label className="sm:col-span-2">Uppdrag<input className="input w-full" name="samtal-assignment-title" autoComplete="off" value={title} maxLength={80} onChange={e=>setTitle(e.target.value)}/></label><Button type="submit" variant="prototype" className="btn btn-sm" disabled={busy||!name.trim()||!address.trim()||!title.trim()}>Bekräfta kund och uppdrag</Button></form>}
     </>}
    </>}
   </div>)}
