@@ -8,10 +8,10 @@ import { invitationStatus, parseManagement, type ManagementInput } from '@/lib/a
 import { useWorkspace } from './workspace-provider';
 import { Icon } from './icon';
 
-export function ManagementPage({ companyId }: { companyId?: string }) {
+export function ManagementPage({ companyId, enabled = true }: { companyId?: string; enabled?: boolean }) {
   const workspace = useWorkspace();
   const read = useServerFn(loadManagement), write = useServerFn(manageAccess);
-  const query = useQuery({ queryKey: ['management', companyId ?? 'platform'], queryFn: () => read({ data: companyId ? { companyId } : {} }), enabled: workspace.signedIn && workspace.mode === 'real', retry: false });
+  const query = useQuery({ queryKey: ['management', companyId ?? 'platform'], queryFn: () => read({ data: companyId ? { companyId } : {} }), enabled: enabled && workspace.signedIn && workspace.mode === 'real', staleTime: 60_000, retry: false });
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const [name, setName] = useState(''), [email, setEmail] = useState('');
   async function act(input: ManagementInput) {

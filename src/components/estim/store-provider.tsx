@@ -16,3 +16,9 @@ export function useEstim() {
   const state = useSyncExternalStore(active.subscribe, active.getSnapshot, active.getSnapshot);
   return { state, actions: active.actions };
 }
+export function useEstimActions() {
+  const store = useContext(EstimContext);
+  if (!store) throw new Error('EstimProvider is required');
+  const workspace = useWorkspace();
+  return (workspace.mode === 'real' ? workspace.realStore : store).actions;
+}

@@ -23,20 +23,26 @@ export const loadManagement = createServerFn({ method: 'POST' }).middleware([req
   const companies = await query;
   if (companies.error) throw new Error('Kunde inte läsa företagen.');
   const result = await Promise.all((companies.data ?? []).map(async company => {
-    const [members, invitations, requests, activity, audit] = await Promise.all([
+    const [members, invitations, requests, audit] = await Promise.all([
       db.from('company_members').select('user_id,role').eq('company_id', company.id),
       db.from('company_invitations').select('id,email,role,expires_at,accepted_at,revoked_at').eq('company_id', company.id).order('created_at', { ascending: false }),
       db.from('threads').select('id', { count: 'exact', head: true }).eq('company_id', company.id),
-      db.from('audit_log').select('created_at').eq('company_id', company.id).order('created_at', { ascending: false }).limit(1),
       db.from('audit_log').select('id,event,actor_name,created_at').eq('company_id', company.id).order('created_at', { ascending: false }).limit(20),
     ]);
-    if ([members, invitations, requests, activity, audit].some(r => r.error)) throw new Error('Kunde inte läsa företaget.');
-    const people = await Promise.all((members.data ?? []).map(async member => {
-      const [user, profile] = await Promise.all([db.auth.admin.getUserById(member.user_id), db.from('profiles').select('display_name').eq('id', member.user_id).maybeSingle()]);
-      if (user.error || profile.error) throw new Error('Kunde inte läsa användaren.');
-      return { ...member, email: user.data.user?.email ?? '', name: profile.data?.display_name ?? '' };
+    if ([members, invitations, requests, audit].some(r => r.error)) throw new Error('Kunde inte läsa företaget.');
+    const memberRows = members.data ?? [];
+    const memberIds = memberRows.map(m => m.user_id);
+    const profilesRes = memberIds.length
+      ? await db.from('profiles').select('id,display_name').in('id', memberIds)
+      : { data: [] as { id: string; display_name: string }[], error: null };
+    if (profilesRes.error) throw new Error('Kunde inte läsa användaren.');
+    const names = new Map((profilesRes.data ?? []).map(p => [p.id, p.display_name]));
+    const people = await Promise.all(memberRows.map(async member => {
+      const user = await db.auth.admin.getUserById(member.user_id);
+      if (user.error) throw new Error('Kunde inte läsa användaren.');
+      return { ...member, email: user.data.user?.email ?? '', name: names.get(member.user_id) ?? '' };
     }));
-    return { ...company, members: people, invitations: invitations.data ?? [], requests: requests.count ?? 0, activity: activity.data?.[0]?.created_at ?? company.updated_at, audit: audit.data ?? [] };
+    return { ...company, members: people, invitations: invitations.data ?? [], requests: requests.count ?? 0, activity: audit.data?.[0]?.created_at ?? company.updated_at, audit: audit.data ?? [] };
   }));
   return result;
 });
