@@ -5,7 +5,6 @@ import { purgeDueCalls } from '@/lib/samtal/purge.server';
 import type { Database, Json } from '@/lib/samtal/db-types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Transcript } from '@/lib/samtal/transcript';
-import { defineSamtalSafetyTests } from './helpers/samtal-safety-db';
 
 const company = '0000000a-0000-4000-8000-000000000000';
 const callId = 'c0000000-0000-4000-8000-000000000001';
@@ -133,5 +132,3 @@ describe('Samtal purge per-call recovery', () => {
     expect(await purgeDueCalls(f.db)).toEqual({ claimed: 2, removed: 2, pending: 0, erased: 0 });
   });
 });
-
-defineSamtalSafetyTests();

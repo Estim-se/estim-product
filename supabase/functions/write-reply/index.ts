@@ -20,6 +20,7 @@ import { calc, type Quote } from "../_shared/calc.ts";
 import { factSheet, findUnknownAmounts, usesFixedPriceWording } from "../_shared/amounts.ts";
 import { continueReply, firstCompanyReply, visitNeeded, priceNeeded } from '../_shared/reply-policy.ts';
 import { loadConversation, formatConversation } from '../_shared/conversation.ts';
+import { normaliseInterpretation } from '../_shared/interpretation-shape.ts';
 import { documentsEnabled, selectDocuments, requestedDocuments, documentPromiseWithoutAttachment, type LibraryDocument } from '../_shared/document-policy.ts';
 import { whatsappReplyFocus, whatsappPriceRelevant, whatsappContentProblems } from '../_shared/whatsapp-reply-policy.ts';
 
@@ -59,7 +60,8 @@ Deno.serve(async (req) => {
     variant: pick(input?.variant ?? draft.data?.variant, ["std", "kort", "formell"] as const, "std"),
     messages: msgs.data.map((m) => ({ from: m.from, text: m.text, time: m.sent_at })),
     quote: q.data ? { nr: q.data.nr, owners: q.data.owners, addOn: q.data.add_on, prisform: q.data.prisform, lines: q.data.lines } as Quote : null,
-    interpretation: threadRow.data.interpretation as StoredInterpretation | null,
+    // Interpretations saved earlier may carry a list field as a single string; read them as lists.
+    interpretation: threadRow.data.interpretation && typeof threadRow.data.interpretation === 'object' && !Array.isArray(threadRow.data.interpretation) ? normaliseInterpretation(threadRow.data.interpretation as Record<string, unknown>) as StoredInterpretation : null,
     attachments: (input?.channel ?? draft.data?.channel) === 'wa' ? [] : Array.isArray(draft.data?.attachments) ? draft.data.attachments as string[] : [],
     suggested_times: [] as string[],
   };

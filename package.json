@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run",
+    "test": "python3 scripts/run-tests-isolated.py",
+    "test:samtal-proposals": "python3 scripts/run-tests-isolated.py --samtal-proposals",
     "test:watch": "vitest"
   },
   "overrides": {

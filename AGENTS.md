@@ -37,6 +37,29 @@ use the editor.
 - After every merge: run the tender tests locally (totals unchanged) and all WhatsApp and email tests.
 - Tests run the same in every terminal: `vitest.config.ts` normalises a lower-case Windows drive letter, so `vi.mock` applies; never trust a local result where mocks did not apply.
 
+## CI and accepted tests
+
+- `.github/workflows/ci.yml` is the source of truth for required checks. The default suite uses the Vitest discovery
+  patterns in `vitest.config.ts` and runs through `scripts/run-tests-isolated.py`; locally use `bun run test`, and
+  in CI use `python3 scripts/run-tests-isolated.py`. Direct Vitest runs or manually setting isolation variables are
+  not valid CI evidence.
+- The launcher creates a credential-free source copy and verifies a distinct network namespace with no external
+  routes before setting `ESTIM_TEST_*`. It uses an unprivileged namespace where available; otherwise sudo is limited
+  to namespace creation and test execution drops to the invoking user. Preserve this isolation and the CI check for
+  root-owned files after tests.
+- Tests matching `src/**/*.{test,spec}.{ts,tsx}` or `scripts/ci/**/*.test.ts` are required on every pull request.
+  Keep the default suite deterministic and limited to committed behavior, synthetic data, fakes, and existing
+  disposable local services. Do not use production/preview databases, customer data, real provider calls, secrets, or
+  external network access.
+- Do not put tests for proposed, unapplied, or otherwise unimplemented behavior in default discovery. Keep them
+  outside the default globs in an explicit opt-in suite; current Samtal proposals use `docs/samtal/tests/` and
+  `bun run test:samtal-proposals`. Never hide failing regression tests by skipping or deleting them.
+- Get explicit user approval before adding tests that require a new service, binary, secret, external network,
+  special permission, or separate workflow. Include approved setup, execution, isolation, and cleanup in CI, and
+  document the exact local command in the same change; do not rely on an undocumented developer-machine setup.
+- Changes to test discovery, isolation launchers, CI test commands, or test dependencies must update this policy,
+  the relevant workflow, and its tests together.
+
 ## Pull requests and the review gate
 
 - Every pull request targets `main`, so the gate reviews it; don't stack pull requests on other branches. Independent

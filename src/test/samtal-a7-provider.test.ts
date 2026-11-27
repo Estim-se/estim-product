@@ -1,11 +1,5 @@
-// estim Samtal A7 (unapplied): provider integration framework and webhook security.
-// The four unapplied patches (priority-1-app-patch.diff, priority-1-app-patch-remaining.diff, a1-a2-app-patch.diff and
-// a7-provider-framework.diff) are applied to a disposable copy of the Samtal modules; the end-to-end part runs against
-// the V2 SQL candidate plus a1-provider-transcript.sql in a disposable local PostgreSQL.
-//
-// Everything external is SYNTHETIC: the provider mapping (not Lynes), the HMAC reference verifier, recording hosts
-// (fetch is a local stub; nothing leaves the machine), speech to text and the AI classifier.
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { createHmac } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -13,7 +7,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { disposableSamtalPostgres, LOCAL_POSTGRES_AVAILABLE, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff'];
 const SECRET = 'synthetic-secret-0123456789abcdef-current';
 const OLD_SECRET = 'synthetic-secret-0123456789abcdef-previous';
 const A_NUMBER = '+46701111111', B_NUMBER = '+46702222222', SHARED = '+46108888888', CUSTOMER = '+46709999999';
@@ -81,7 +74,7 @@ function signed(body: string, o: { secret?: string; t?: number; sig?: string | n
   return new Request('https://local.invalid/synthetic-webhook', { method: 'POST', headers, body });
 }
 
-describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unapplied patch)', () => {
+describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (current implementation)', () => {
   let dir = '', fw: M, sec: M, idm: M, rf: M, evm: M, ref: M, ingestMod: M, proc: M, inbox: M;
   let pg: Awaited<ReturnType<typeof disposableSamtalPostgres>>, x: LocalSession;
   const files = new Map<string, Uint8Array>();
@@ -92,12 +85,13 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unappl
     for (const f of ['src/lib/samtal', 'src/lib/input-limits.ts', 'src/components/estim/samtal-page.tsx', 'src/routes/api/public/samtal-worker.ts', 'src/routes/api/public/samtal-purge.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     const load = (f: string) => import(/* @vite-ignore */ path.join(dir, 'src/lib/samtal', f));
     [fw, sec, idm, rf, evm, ref, ingestMod, proc, inbox] = await Promise.all(['provider/framework.server.ts', 'provider/webhook-security.server.ts', 'provider/identity.ts', 'provider/recording-fetch.server.ts',
       'provider/events.ts', 'provider/reference-provider.ts', 'ingest.server.ts', 'process.server.ts', 'inbox.server.ts'].map(load));
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');
     await pg.admin.exec(readFileSync(path.join(ROOT, 'docs/samtal/a1-provider-transcript.sql'), 'utf8'));
+    await pg.admin.exec("ALTER TABLE samtal_calls ADD COLUMN kind text NOT NULL DEFAULT 'telefonsamtal'");
     x = await pg.connect('service_role');
   }, 90000);
   afterAll(async () => { await pg?.close(); if (dir) rmSync(dir, { recursive: true, force: true }); vi.unstubAllEnvs(); });
@@ -116,7 +110,7 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unappl
     { provider: 'synthetic', account_ref: 'acct-b-other', company_id: B, user_id: other, business_number: B_NUMBER, verified: true, active: true },
   ];
   const integration = (o: Record<string, unknown> = {}) => ({
-    id: 'synthetic', maxBodyBytes: 64 * 1024, recordingPolicy: { allowedHosts: ['rec.synthetic.invalid'] },
+    id: 'synthetic', maxBodyBytes: 64 * 1024, recordingPolicy: { enabled: true, allowedHosts: ['rec.synthetic.invalid'] },
     verifier: sec.hmacReferenceVerifier({ secrets: [SECRET, OLD_SECRET], signatureHeader: 'x-synthetic-signature', timestampHeader: 'x-synthetic-timestamp', prefix: 'v1=', toleranceSeconds: 300 }),
     normalize: ref.syntheticNormalize('synthetic'), ...o,
   });
@@ -254,7 +248,7 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unappl
   });
 
   describe('safe recording retrieval (stubbed fetch, never the network)', () => {
-    const policy = { allowedHosts: ['rec.synthetic.invalid'], maxBytes: 16, timeoutMs: 50, maxRedirects: 1 };
+    const policy = { enabled: true, allowedHosts: ['rec.synthetic.invalid'], maxBytes: 16, timeoutMs: 50, maxRedirects: 1 };
     const get = (url: string, f: typeof fetch, o: Record<string, unknown> = {}) => rf.fetchRecording({ url, now: NOW, policy, fetch: f, ...o });
     const ok = (body: BodyInit | null = new Uint8Array([1, 2]), h: Record<string, string> = { 'content-type': 'audio/mpeg' }, status = 200) => vi.fn(async () => new Response(body, { status, headers: h }));
     it('refuses untrusted URLs before any request (SSRF)', async () => {
@@ -324,7 +318,7 @@ describe.skipIf(!LOCAL_POSTGRES_AVAILABLE)('Samtal A7 provider framework (unappl
     });
   });
 
-  describe('end to end against local PostgreSQL (patched ingestCall)', () => {
+  describe('end to end against local PostgreSQL (current ingestCall)', () => {
     it('transcript-only provider call is ingested and processed without audio or a Berget key', async () => {
       const { d } = deps();
       const r = await post(d, completedTranscriptOnly('t-only'));

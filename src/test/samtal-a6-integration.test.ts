@@ -1,8 +1,5 @@
-// estim Samtal A6 integration: synthetic tests of the UNAPPLIED SQL candidate docs/samtal/a6-integration.sql and the
-// unapplied app patch docs/samtal/a6-integration.diff, in a disposable local PostgreSQL 17 and a temporary copy.
-// No preview/production database, Storage, secret, flag, provider, AI model or alert channel is touched.
-// All companies, employees, accounts and transcripts are invented.
-import { execFileSync } from 'node:child_process';
+// Required regression coverage of the current checked-in Samtal modules.
+// Synthetic services and disposable local SQL only; historical patches are not reapplied.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,8 +7,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { disposableSamtalPostgres, scalar, LOCAL_A as A, LOCAL_B as B, LOCAL_OWNER as owner, LOCAL_STAFF as staff, LOCAL_OTHER as other, type LocalSession } from './helpers/samtal-postgres-local';
 
 const ROOT = process.cwd();
-const PATCHES = ['priority-1-app-patch.diff', 'priority-1-app-patch-remaining.diff', 'a1-a2-app-patch.diff', 'a7-provider-framework.diff', 'a7-hardening.diff',
-  'v1-migration-app-fix.diff', 'v1-test-migration.diff', 'a3-a4-ring-estim.diff', 'a5-draft-management.diff', 'a6-monitoring.diff', 'a6-integration.diff'];
 const A_NUMBER = '+46701111111';
 const EMPLOYEES = Array.from({ length: 20 }, (_, i) => `e0000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
 type J = Record<string, unknown> & { status: string; call_id?: string };
@@ -37,7 +32,7 @@ describe('Samtal A6 integration: counters wired to real processing state (unappl
       'src/test/samtal-adapter.test.ts', 'src/test/samtal-behandling.test.ts', 'src/test/samtal-inkorg-steg.test.ts', 'src/test/samtal-sida.test.ts', 'src/test/samtal-retention.test.ts']) {
       mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
     }
-    for (const p of PATCHES) execFileSync('patch', ['-p1', '--forward', '--batch', '-d', dir, '-i', path.join(ROOT, 'docs/samtal', p)], { stdio: 'pipe' });
+    // Exercise the current checked-in modules, not historical patch replay.
     pg = await disposableSamtalPostgres('priority-1-coordinated-v2.sql');
     await pg.admin.exec('CREATE TABLE IF NOT EXISTS public.platform_admins(user_id uuid PRIMARY KEY); GRANT ALL ON public.platform_admins TO service_role;');
     for (const f of ['a1-provider-transcript.sql', 'a7-durable-webhook.sql', 'a3-a4-ring-estim.sql', 'a5-draft-management.sql', 'a6-monitoring.sql', 'a6-integration.sql'])

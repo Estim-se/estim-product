@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Samtal CI review: current regressions retained; three historical files and one nested V1 suite opt-in only. Isolated runs: 519 focused checks and 81 proposal checks passed; default CI still exposes 48 sandbox Git failures (documented, not hidden). No product/database changes.
+
 - [x] Samtal staging documentation: isolated setup permissions/costs, source branch, explicit outbound denial, safe installation, voice-note identity alternatives and transcript validation documented; accepted patches/tests unchanged.
 - [ ] Samtal staging creation: blocked on management approval, budget and enforceable outbound isolation; no environment, live changes or providers authorized.
 
@@ -170,3 +172,7 @@
 - [x] Verify migrations applied + company restriction + send block on live schema
 - [x] Only then set SAMTAL_A9=1 and SAMTAL_A10=1 (SAMTAL_DISPATCH stays unset)
 - [ ] (blocked: no signed-in browser session on external Supabase; user tests) End-to-end test with Daniel: pasted call -> Inkorg -> Offertutkast
+
+- [x] Samtal i Inkorg (signed-in browser check unavailable): unconfirmed calls in the normal list, confirmation inside the selected conversation, remove separate section, tasks shown in conversation, transcript accessible.
+- [x] Samtal tasks/reminders DB fix, due day + time-of-day words, dismiss duplicate calls.
+- [x] Samtal: clearly new customers/assignments handed off automatically; confirmation only on ambiguity; tasks right column, transcript center; separate quote review removed from Inkorg.

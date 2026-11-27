@@ -54,6 +54,7 @@ export async function runSamtalJobs(db: Db, deps: SamtalDeps, options: { limit?:
   return { claimed: jobs.length, results };
 }
 
+import { assignmentTitle, fullAddress } from './a10/titles';
 export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<string> {
   const company = job.company_id, token = job.lease_token;
   if (!token) return 'stopped';
@@ -109,7 +110,8 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
         if (!deps.assignmentAi) throw new StepError('a9_not_configured');
         if (!await stage('tolka', { interpretation, a9: true } as unknown as Json)) return 'stopped';
         if (interpretation.classification === 'osaker') return 'osaker';
-        return await runA9Matching(db, { call: call.id, company, job: job.id, token }, phoneFacts(interpretation, call.caller_phone), transcript, deps.assignmentAi);
+        return await runA9Matching(db, { call: call.id, company, job: job.id, token }, phoneFacts(interpretation, call.caller_phone), transcript, deps.assignmentAi,
+          { title: assignmentTitle(interpretation), address: fullAddress(interpretation.fields.address?.value, interpretation.fields.place?.value) });
       }
       const candidates = await db.from('customers').select('id, name, phone, address, place').eq('company_id', company).order('created_at', { ascending: false }).limit(5000);
       if (candidates.error) throw new StepError('customers_read_failed', true);
@@ -123,7 +125,8 @@ export async function processJob(db: Db, deps: SamtalDeps, job: Job): Promise<st
     if (step === 'inkorg') {
       if (saved?.a9) {
         if (!a9Enabled() || !deps.assignmentAi || !transcript || !saved.interpretation) throw new StepError('a9_not_configured');
-        return await runA9Matching(db, { call: call.id, company, job: job.id, token }, phoneFacts(saved.interpretation, call.caller_phone), transcript, deps.assignmentAi);
+        return await runA9Matching(db, { call: call.id, company, job: job.id, token }, phoneFacts(saved.interpretation, call.caller_phone), transcript, deps.assignmentAi,
+          { title: assignmentTitle(saved.interpretation), address: fullAddress(saved.interpretation.fields.address?.value, saved.interpretation.fields.place?.value) });
       }
       // A retried inbox step runs again from the saved extraction; the guarded handoff is idempotent per call.
       if (deps.inbox) {

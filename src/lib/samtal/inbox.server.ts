@@ -55,10 +55,12 @@ export function stockholmTime(date: string, time: string | null) {
 
 // The suggested tasks: the AI's next steps, and always at least a call-back; a quote task when a quote can be drafted.
 export function suggestedTasks(i: Interpretation) {
-  const steps = i.next_steps.map(s => ({ kind: s.kind, title: s.title || STEP_TITLES[s.kind]!, due_at: s.date ? stockholmTime(s.date, s.time) : null,
+  // Without a clock time only the day is saved (plus words like "förmiddag"); no exact time is invented.
+  const steps = i.next_steps.map(s => ({ kind: s.kind, title: s.title || STEP_TITLES[s.kind]!, due_at: s.date && s.time ? stockholmTime(s.date, s.time) : null,
+    due_date: s.date, due_hint: s.time ? null : (s.time_hint ?? null),
     address: s.address ?? (s.kind === 'platsbesok' ? [i.fields.address?.value, i.fields.place?.value].filter(Boolean).join(', ') || null : null) }));
-  if (!steps.some(s => s.kind === 'ring_tillbaka')) steps.unshift({ kind: 'ring_tillbaka', title: STEP_TITLES['ring_tillbaka']!, due_at: null, address: null });
-  if (i.quote_ready && !steps.some(s => s.kind === 'offert')) steps.push({ kind: 'offert', title: STEP_TITLES['offert']!, due_at: null, address: null });
+  if (!steps.some(s => s.kind === 'ring_tillbaka')) steps.unshift({ kind: 'ring_tillbaka', title: STEP_TITLES['ring_tillbaka']!, due_at: null, due_date: null, due_hint: null, address: null });
+  if (i.quote_ready && !steps.some(s => s.kind === 'offert')) steps.push({ kind: 'offert', title: STEP_TITLES['offert']!, due_at: null, due_date: null, due_hint: null, address: null });
   return steps.slice(0, 5);
 }
 
@@ -70,6 +72,7 @@ export function samtalInboxStep(): InboxStep {
     const saved = await db.rpc('samtal_inbox_guarded', { p_call: call.id, p_company: company, p_job: lease.job, p_token: lease.token,
       p_extraction: { interpretation: i, customer_match: match }, p_title: requestTitle(i), p_summary: requestSummary(i, meta.data), p_tasks: suggestedTasks(i) });
     if (saved.error) throw Object.assign(new Error('inbox_failed'), { retryable: true });
+    // The day and time-of-day words of each task are filled in by the database from the saved interpretation.
     return (saved.data as { accepted?: boolean } | null)?.accepted === true;
   };
 }

@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { SamtalMonitor } from './samtal-monitor';
 import { prepareApprovedRingQuote } from '@/lib/samtal/a10/review.functions';
-import { SamtalA10ReviewPanel } from './samtal-a10-review';
 import { addSamtalNumberFn, assignRingNoteFn, decideRingDraftFn, deleteRingDraftFn, enrollRingEmployeeFn, revokeRingEnrollmentFn, changeSamtalNumberFn, decideSamtalTaskFn, getSamtal, confirmSamtalReviewFn, samtalAudioLinkFn, saveSamtalSettingsFn, setRingContextFn, startSamtalCallFn } from '@/lib/samtal/samtal.functions';
 import { CALL_KIND } from '@/lib/samtal/ring/labels';
 import { SamtalRingSection } from './samtal-ring';
@@ -77,7 +76,6 @@ export function SamtalPage() {
 
     <SamtalTestCall />
 
-    {d.a10 && <SamtalA10ReviewPanel />}
 
     {d.owner && d.monitor && <div className="card mt16"><SamtalMonitor snapshot={d.monitor.snapshot} alerts={d.monitor.alerts} connected={d.settings.provider_status === 'ansluten'} /></div>}
 
@@ -147,7 +145,7 @@ export function SamtalPage() {
         <div className="row between">
           <span><b>{c.title ?? (c.classification ? CLASSIFICATION[c.classification] : 'Samtal')}</b> · {when(c.started_at)} {minutes(c.duration_seconds)}{d.owner ? ` · ${name(c.user_id)}` : ''}{c.caller_phone ? ` · från ${c.caller_phone}` : ''}</span>
           <span className="xs muted">{CALL_KIND[c.kind] ?? 'Telefonsamtal'} · {c.needs_review ? 'Behöver granskas' : CALL_PROGRESS[c.progress] ?? CALL_STATUS[c.status] ?? 'Väntar'}</span>
-          {(c.progress === 'kund' || c.progress === 'uppdrag') && d.a10 && <a className="xs" href="#samtal-bekrafta" onClick={e => { e.preventDefault(); document.getElementById('samtal-bekrafta')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>Bekräfta nu</a>}
+          {(c.progress === 'kund' || c.progress === 'uppdrag') && d.a10 && <a className="xs" href="/" onClick={e => { e.preventDefault(); void navigate({ to: '/' }); }}>Bekräfta i Inkorgen</a>}
         </div>
         {c.error_code && <div className="xs muted">{errorLabel(c.error_code)}</div>}
         <div className="row mt4">
