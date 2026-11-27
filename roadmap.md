@@ -1,5 +1,7 @@
 # Prototype rebuild
 
+- [x] Samtal CI review: current regressions retained; three historical files and one nested V1 suite opt-in only. Isolated runs: 519 focused checks and 81 proposal checks passed; default CI still exposes 48 sandbox Git failures (documented, not hidden). No product/database changes.
+
 - [x] Samtal staging documentation: isolated setup permissions/costs, source branch, explicit outbound denial, safe installation, voice-note identity alternatives and transcript validation documented; accepted patches/tests unchanged.
 - [ ] Samtal staging creation: blocked on management approval, budget and enforceable outbound isolation; no environment, live changes or providers authorized.
 

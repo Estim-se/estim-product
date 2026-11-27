@@ -194,7 +194,9 @@ jobs:
 
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: node_modules/.bin/vitest run
+        # Required current-app regressions; historical proposals are an explicit local opt-in.
+        # Ubuntu runners provide passwordless sudo; avoid Ubuntu's unprivileged-userns restriction.
+        run: sudo -n env PATH="$PATH" python3 scripts/run-tests-isolated.py
 
       # The review gate's engine (.github/review/): Python's standard library only, nothing to install.
       - name: Review gate tests

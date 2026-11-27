@@ -34,20 +34,24 @@ const owner = { my_company: A, samtal_is_owner: true }, employee = { my_company:
 describe('loading the page', () => {
   it('reads through the user\'s client; the service client reads only the own company\'s member names; the page never gets transcripts', async () => {
     const user = fake((table, ops) => table === 'samtal_calls' && has(ops, 'limit', 100)
-      ? { data: [{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', audio_path: `${A}/${CALL}.mp3`,
+      ? { data: [{ id: CALL, kind: 'telefon', user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', audio_path: `${A}/${CALL}.mp3`,
         extraction: { interpretation: { fields: { job_type: { value: 'laddbox' }, description: { value: 'Ny laddbox' } } } }, transcript: { segments: [{ text: 'hemligt' }] } }] }
       : table === 'samtal_calls' ? { count: 2 } : { data: [] }, owner);
     const admin = fake(table => table === 'company_members' ? { data: [{ user_id: 'u1', role: 'användare' }] } : table === 'profiles' ? { data: [{ id: 'u1', display_name: 'Ali' }] } : { data: [] });
     const page = await loadSamtalPage(user.client, admin.client, 'u0', { stt: false, ai: true });
-    expect(page.calls).toEqual([{ id: CALL, user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true, needs_review: false }]);
+    expect(page.calls).toEqual([{ id: CALL, kind: 'telefon', user_id: 'u1', caller_phone: '+46701234567', started_at: '2026-11-25T08:00:00Z', duration_seconds: 60, status: 'klar', progress: 'klar', classification: 'jobb', error_code: null, thread_id: 't1', title: 'Laddbox: Ny laddbox', has_audio: true, needs_review: false }]);
     expect(JSON.stringify(page)).not.toContain('hemligt');
     expect(page.members).toEqual([{ user_id: 'u1', role: 'användare', name: 'Ali' }]);
-    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles', 'samtal_reviews']);
+    expect(admin.log.queries.map(q => q.table)).toEqual(['company_members', 'profiles', 'samtal_reviews', 'samtal_jobs', 'samtal_a9_matches']);
     expect(has(admin.log.queries[0]!.ops, 'eq', 'company_id', A)).toBe(true);
     expect(has(admin.log.queries[1]!.ops, 'in', 'id', ['u1'])).toBe(true);
     // Pending reviews are read for the own company and only for calls the user's client already returned.
     const reviews = admin.log.queries[2]!.ops;
     expect(has(reviews, 'eq', 'company_id', A) && has(reviews, 'eq', 'decision', 'pending') && has(reviews, 'in', 'call_id', [CALL])).toBe(true);
+    for (const query of admin.log.queries.slice(3)) {
+      expect(has(query.ops, 'eq', 'company_id', A)).toBe(true);
+      expect(has(query.ops, 'in', 'call_id', [CALL])).toBe(true);
+    }
     expect(page).toMatchObject({ owner: true, waiting: 2, keys: { stt: false, ai: true } });
   });
   it('a user without an active company gets nothing', async () => {
