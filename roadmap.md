@@ -164,3 +164,9 @@
 - [x] Testsamtal entry on Samtal page -> real pipeline (code) — end-to-end check waits on accept + flags SAMTAL/SAMTAL_A9/SAMTAL_A10
 - [x] Samtal never starts shared AI jobs (SAMTAL_DISPATCH off); only Bygg Demo AB processed; WhatsApp/email code unchanged
 - [x] Run only Samtal/WhatsApp/email/quote/tender test files, network-isolated
+- [x] Backup snapshot saved + verified (Files: estim-Samtal-Backup-Snapshot-2026-11-27)
+- [x] Server-side send block for threads with a test call; WhatsApp auto-reply off for Bygg Demo AB; old Samtal schedules paused
+- [ ] Accept draft (applies 13 Samtal migrations) — separate turn, no edits
+- [ ] Verify migrations applied + company restriction + send block on live schema
+- [ ] Only then set SAMTAL_A9=1 and SAMTAL_A10=1 (SAMTAL_DISPATCH stays unset)
+- [ ] End-to-end test with Daniel: pasted call -> Inkorg -> Offertutkast
