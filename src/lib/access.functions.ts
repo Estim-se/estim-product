@@ -49,6 +49,10 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
   const origin = getRequestHeader('origin');
   const request = new URL((await import('@tanstack/react-start/server')).getRequest().url);
   if (!origin || origin !== request.origin) throw new Error('Ogiltig avsändare.');
+  const configuredAppUrl = (process.env['APP_URL'] ?? '').trim();
+  const redirectOrigin = /^https:\/\/[^\s/]+$/i.test(configuredAppUrl.replace(/\/+$/, ''))
+    ? new URL(configuredAppUrl).origin
+    : origin;
   async function audit(cid: string, event: string, after: Json) {
     const saved = await db.from('audit_log').insert({ company_id: cid, user_id: context.userId, event, after });
     if (saved.error) throw new Error('Kunde inte spara händelsen.');
@@ -62,7 +66,7 @@ export const manageAccess = createServerFn({ method: 'POST' }).middleware([requi
     const recipient = email.toLowerCase();
     const saved = await db.rpc('estim_save_invitation',{cid,actor:context.userId,recipient,invited_role:role,hashed:token_hash,expiry:expires_at,...(previousId?{previous_id:previousId}:{})});
     if (saved.error || !saved.data) throw new Error('Kunde inte skapa inbjudan.');
-    const redirectTo = `${origin}/inbjudan?token=${token}`;
+    const redirectTo = `${redirectOrigin}/inbjudan?token=${token}`;
     const sent = await db.auth.admin.inviteUserByEmail(recipient, { redirectTo });
     // Existing recipients receive a sign-in email pointing to the same bound invitation.
     if (sent.error?.code === 'email_exists' || sent.error?.message.toLowerCase().includes('already')) {

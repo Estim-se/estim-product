@@ -357,12 +357,15 @@ export function errCode(e: unknown): string {
 }
 
 export function isNoReplySender(email: string): boolean {
-  return /^(no-?reply|do-?not-?reply|wordpress|wix|forms?|noreply-[^@]*)@/i.test(email.trim());
+  return /^(no[-_]?reply|do[-_]?not[-_]?reply|wordpress|wix|forms?|webform|contact[-_]?form|mailer|squarespace|webflow|typeform|noreply-[^@]*)@/i.test(
+    email.trim(),
+  );
 }
 
 /** Mail is stored as PLAIN TEXT only. React escapes it; no HTML from a customer is ever rendered. */
 export function htmlToText(input: string): string {
   return input
+    .replace(/\0/g, "")
     .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|tr|li|h[1-6]|blockquote)>/gi, "\n")
