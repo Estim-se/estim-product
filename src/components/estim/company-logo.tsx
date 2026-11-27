@@ -7,10 +7,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { companyLogoError, companyLogoPath } from '@/lib/company-logo';
 import { getCompanyBranding, saveCompanyLogo } from '@/lib/company-logo.functions';
 
-export function CompanyLogo({ companyId }: { companyId: string }) {
+export function CompanyLogo({ companyId, enabled = true }: { companyId: string; enabled?: boolean }) {
   const get = useServerFn(getCompanyBranding), save = useServerFn(saveCompanyLogo), queries = useQueryClient();
   const queryKey = ['company-branding', companyId];
-  const logo = useQuery({ queryKey, queryFn: () => get() });
+  const logo = useQuery({ queryKey, queryFn: () => get(), enabled: enabled && Boolean(companyId), staleTime: 240_000 });
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const input = useRef<HTMLInputElement>(null);
   async function change(file: File | null) {
