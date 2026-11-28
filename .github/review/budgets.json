@@ -1,8 +1,9 @@
 {
-  "note": "Review budgets per credit cycle, in USD. Overrides are keyed by numeric GitHub user id, never by name. What anyone has spent lives only in the private ledger.",
-  "cycle_anchor_day": 18,
+  "note": "Review budgets per cycle, in USD. A cycle is a calendar month in UTC, starting on cycle_anchor_day (the 1st), the day the Console resets the pr-review workspace's monthly cap. console_cap_usd is that cap; global_usd plus the largest tier cap stays at or under it, so the gate pauses before the Console stops a review (tests/test_budgets.py). Overrides are keyed by numeric GitHub user id, never by name. What anyone has spent lives only in the private ledger.",
+  "cycle_anchor_day": 1,
   "cycle_start": null,
-  "global_usd": 120,
+  "console_cap_usd": 100,
+  "global_usd": 90,
   "default_author_usd": 40,
   "overrides": {},
   "lovable_lane_usd": 10,

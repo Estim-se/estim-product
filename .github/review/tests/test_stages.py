@@ -77,7 +77,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.world.runs, [])
 
     def test_an_accept_of_the_same_diff_passes_without_a_model_call(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_accept({'diffhash': self.diffhash, 'pr': 3})
         self.seed_ledger(led)
         self.assertEqual(self.queue()['go'], 'false')
@@ -88,7 +88,7 @@ class QueueTest(StageCase):
     def test_a_sticky_important_still_in_the_change_fails_without_a_model_call(self):
         lines = [f'export const v{i} = {i * 2};' for i in range(30)]
         first, n, digest = snippet(lines, 12)
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_stickies([{'file': 'src/a.ts', 'n': n, 'hash': digest, 'offset': 12 - first, 'clause': 'BUG1',
                            'summary': 'doubles every value', 'pr': 3}])
         self.seed_ledger(led)
@@ -101,7 +101,7 @@ class QueueTest(StageCase):
     def test_a_sticky_whose_lines_are_already_on_main_does_not_match(self):
         lines = [f'export const v{i} = {i};' for i in range(30)]  # the base side
         first, n, digest = snippet(lines, 12)
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_stickies([{'file': 'src/a.ts', 'n': n, 'hash': digest, 'offset': 0, 'clause': 'BUG1', 'summary': 's', 'pr': 3}])
         self.seed_ledger(led)
         self.assertEqual(self.queue()['go'], 'true')
@@ -129,7 +129,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.queue()['go'], 'false')
         run = self.world.latest(self.sha)
         self.assertEqual(run['status'], 'in_progress')
-        self.assertTrue(run['output']['title'].startswith('Paused: review budget. Resumes when the next cycle starts on 2026-12-18'))
+        self.assertTrue(run['output']['title'].startswith('Paused: review budget. Resumes when the next cycle starts on 2026-12-01'))
         self.assertNotIn('101', json.dumps(run['output']))
         self.budgets['default_author_usd'] = 40
         self.world.runs.clear()
@@ -152,7 +152,7 @@ class QueueTest(StageCase):
         old = 'c' * 40
         self.world.runs.append({'id': 5, 'repo': CFG['repository'], 'head_sha': old, 'name': 'estim-review', 'app_id': 77,
                                 'status': 'completed', 'conclusion': 'success', 'external_id': 'v1|done|7|x|1|'})
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.record_green(7, old)
         self.seed_ledger(led)
         self.queue()
@@ -191,7 +191,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.world.latest(self.sha)['conclusion'], 'success')
 
     def test_the_review_limit_counts_every_review_not_the_kept_history(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         for k in range(1, 12):
             led.record_review(7, {'k': k, 'sha': 'a' * 40, 'outcome': 'failure', 'important': 1,
                                   'at': '2026-11-20T00:00:00Z'})
@@ -287,7 +287,7 @@ class PostAndSettleTest(StageCase):
         self.assertEqual(led.history(7)[-1]['outcome'], 'failure')
 
     def test_a_completed_review_resets_the_requeue_count_of_its_diff(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.count_requeue(state_key(7, self.diffhash), '2026-11-26T09:00:00Z')
         self.seed_ledger(led)
         _, _, environ = self.run_post(self.complete([]))
