@@ -1,4 +1,4 @@
-"""The ledger: review money and state, in one App-only check run per credit cycle on the private review-ledger
+"""The ledger: review money and state, in one App-only check run per cycle on the private review-ledger
 repository (plan §4, step 2 F10, F11).
 
 - One `estim-ledger` run per cycle (external_id `cycle-<start date>`), created at the cycle's first write and then
@@ -29,7 +29,7 @@ def state_key(pr, diffhash):
 
 
 def cycle(today, budgets):
-    """(start, next start) of the credit cycle holding `today` (a date): from the anchor day, or from cycle_start
+    """(start, next start) of the cycle holding `today` (a UTC date): from the anchor day, or from cycle_start
     when that override is set, has begun, and is newer than the anchor's start."""
     anchor = budgets['cycle_anchor_day']
     if not 1 <= anchor <= 28:

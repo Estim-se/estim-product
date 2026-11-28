@@ -84,7 +84,7 @@ class SweepTest(TempDirCase):
         self.assertEqual(self.sweep()['prs'], [])
 
     def test_a_budget_pause_waits_while_the_budget_is_spent(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.reserve('1-1', 1, 101, False, 39.5, '2026-11-26T11:59:00Z')
         self.seed(led)
         self.check('paused', 'budget')
@@ -133,7 +133,7 @@ class SweepTest(TempDirCase):
         self.assertEqual(self.sweep(now=NOW + 26 * 60)['prs'], [7, 8])
 
     def test_a_budget_pause_resumes_when_its_own_review_fits(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.reserve('1-1', 1, 101, False, 37.0, '2026-11-26T11:59:00Z')
         self.seed(led)
         self.check('paused', 'budget')
@@ -157,7 +157,7 @@ class SweepTest(TempDirCase):
         self.assertEqual(self.world.calls, [])
 
     def test_daily_recount_charges_unsettled_runs_their_cap_unless_the_review_never_started(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.reserve('301-7', 7, 101, False, 2.0, '2026-11-26T08:00:00Z')
         led.reserve('302-8', 8, 102, False, 2.0, '2026-11-26T08:00:00Z')
         led.reserve('303-9', 9, 103, False, 2.0, '2026-11-26T11:30:00Z')  # too recent to judge

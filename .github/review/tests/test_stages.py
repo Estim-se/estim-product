@@ -77,7 +77,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.world.runs, [])
 
     def test_an_accept_of_the_same_diff_passes_without_a_model_call(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_accept({'diffhash': self.diffhash, 'pr': 3})
         self.seed_ledger(led)
         self.assertEqual(self.queue()['go'], 'false')
@@ -88,7 +88,7 @@ class QueueTest(StageCase):
     def test_a_sticky_important_still_in_the_change_fails_without_a_model_call(self):
         lines = [f'export const v{i} = {i * 2};' for i in range(30)]
         first, n, digest = snippet(lines, 12)
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_stickies([{'file': 'src/a.ts', 'n': n, 'hash': digest, 'offset': 12 - first, 'clause': 'BUG1',
                            'summary': 'doubles every value', 'pr': 3}])
         self.seed_ledger(led)
@@ -101,7 +101,7 @@ class QueueTest(StageCase):
     def test_a_sticky_whose_lines_are_already_on_main_does_not_match(self):
         lines = [f'export const v{i} = {i};' for i in range(30)]  # the base side
         first, n, digest = snippet(lines, 12)
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.add_stickies([{'file': 'src/a.ts', 'n': n, 'hash': digest, 'offset': 0, 'clause': 'BUG1', 'summary': 's', 'pr': 3}])
         self.seed_ledger(led)
         self.assertEqual(self.queue()['go'], 'true')
@@ -129,7 +129,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.queue()['go'], 'false')
         run = self.world.latest(self.sha)
         self.assertEqual(run['status'], 'in_progress')
-        self.assertTrue(run['output']['title'].startswith('Paused: review budget. Resumes when the next cycle starts on 2026-12-18'))
+        self.assertTrue(run['output']['title'].startswith('Paused: review budget. Resumes when the next cycle starts on 2026-12-01'))
         self.assertNotIn('101', json.dumps(run['output']))
         self.budgets['default_author_usd'] = 40
         self.world.runs.clear()
@@ -152,7 +152,7 @@ class QueueTest(StageCase):
         old = 'c' * 40
         self.world.runs.append({'id': 5, 'repo': CFG['repository'], 'head_sha': old, 'name': 'estim-review', 'app_id': 77,
                                 'status': 'completed', 'conclusion': 'success', 'external_id': 'v1|done|7|x|1|'})
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.record_green(7, old)
         self.seed_ledger(led)
         self.queue()
@@ -191,7 +191,7 @@ class QueueTest(StageCase):
         self.assertEqual(self.world.latest(self.sha)['conclusion'], 'success')
 
     def test_the_review_limit_counts_every_review_not_the_kept_history(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         for k in range(1, 12):
             led.record_review(7, {'k': k, 'sha': 'a' * 40, 'outcome': 'failure', 'important': 1,
                                   'at': '2026-11-20T00:00:00Z'})
@@ -287,12 +287,61 @@ class PostAndSettleTest(StageCase):
         self.assertEqual(led.history(7)[-1]['outcome'], 'failure')
 
     def test_a_completed_review_resets_the_requeue_count_of_its_diff(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.count_requeue(state_key(7, self.diffhash), '2026-11-26T09:00:00Z')
         self.seed_ledger(led)
         _, _, environ = self.run_post(self.complete([]))
         self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='paused').requeues(state_key(7, self.diffhash))['n'], 1)
         self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='success').requeues(state_key(7, self.diffhash))['n'], 0)
+
+    def test_a_cancelled_review_reports_what_it_spent_and_the_ledger_settles_that(self):
+        """The review is cancelled (KeyboardInterrupt) after its calls spent $0.70. It still reports cost 0.7 and
+        fails, and the ledger settles $0.70 instead of keeping the $2.00 cap.
+        Mutation: delete the `except BaseException:` block in stages.review."""
+        from gate.common import HERE
+        queue_out = self.queue()['queue']
+        main = os.path.dirname(os.path.dirname(HERE))  # the checkout's REVIEW.md and AGENTS.md
+        diffhash = self.diffhash
+
+        class FakeRepo:
+            def __init__(self, path, url):
+                pass
+
+            def fetch_commit(self, sha):
+                pass
+
+            def diffhash(self, base, sha):
+                return diffhash
+
+            def export(self, sha, path, only=None):
+                os.makedirs(path, exist_ok=True)
+                return [], []
+
+            def changes(self, base, sha):
+                return []
+
+            def unified(self, a, b):
+                return b''
+
+        class CancelledEngine:
+            def __init__(self, **kw):
+                self.spent = 0.0
+
+            def run(self):
+                self.spent = 0.7
+                raise KeyboardInterrupt
+
+        emitted = {}
+        environ = dict(self.environ, PLAN=json.dumps(self.plan_out()), QUEUE=json.dumps(queue_out), MAIN_DIR=main)
+        with mock.patch.object(stages, 'Repo', FakeRepo), mock.patch.object(stages, 'Engine', CancelledEngine), \
+                mock.patch.object(stages.checks, 'pull', lambda gh, cfg, n: {'title': 't', 'body': 'b'}), \
+                mock.patch.object(stages, 'emit', emitted.update):
+            with self.assertRaises(KeyboardInterrupt):
+                stages.review(environ, gh=object(), tokens=mock.Mock(), runner=lambda *a: None)
+        self.assertEqual((emitted['cost'], emitted['result']['complete']), ('0.7', False))
+        led = self.settle(dict(environ, REVIEW=json.dumps(emitted['result'])), COST=emitted['cost'],
+                          REVIEW_RESULT='cancelled', OUTCOME='paused')
+        self.assertEqual((led.doc['reservations'], led.totals()['global']), ([], 0.7))
 
     def test_an_unsettled_reservation_stays_charged_and_a_skipped_review_costs_nothing(self):
         _, q, environ = self.run_post(self.complete([]))

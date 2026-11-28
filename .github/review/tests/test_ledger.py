@@ -14,11 +14,12 @@ D = datetime.date
 
 class CycleTest(unittest.TestCase):
     def test_anchor_day_and_override(self):
-        self.assertEqual(cycle(D(2026, 11, 26), BUDGETS), (D(2026, 11, 18), D(2026, 12, 18)))
-        self.assertEqual(cycle(D(2026, 11, 18), BUDGETS), (D(2026, 11, 18), D(2026, 12, 18)))
-        self.assertEqual(cycle(D(2026, 11, 17), BUDGETS), (D(2026, 10, 18), D(2026, 11, 18)))
-        self.assertEqual(cycle(D(2027, 1, 3), BUDGETS), (D(2026, 12, 18), D(2027, 1, 18)))
-        late = dict(BUDGETS, cycle_start='2026-11-21')  # the credit arrived late this month
+        mid = dict(BUDGETS, cycle_anchor_day=18)  # the mechanism for any anchor day; budgets.json uses the 1st
+        self.assertEqual(cycle(D(2026, 11, 26), mid), (D(2026, 11, 18), D(2026, 12, 18)))
+        self.assertEqual(cycle(D(2026, 11, 18), mid), (D(2026, 11, 18), D(2026, 12, 18)))
+        self.assertEqual(cycle(D(2026, 11, 17), mid), (D(2026, 10, 18), D(2026, 11, 18)))
+        self.assertEqual(cycle(D(2027, 1, 3), mid), (D(2026, 12, 18), D(2027, 1, 18)))
+        late = dict(mid, cycle_start='2026-11-21')  # a cycle started by hand, later than the anchor
         self.assertEqual(cycle(D(2026, 11, 26), late), (D(2026, 11, 21), D(2026, 12, 18)))
         self.assertEqual(cycle(D(2026, 11, 20), late), (D(2026, 11, 18), D(2026, 12, 18)))  # not begun yet
         with self.assertRaises(GateError):
@@ -146,10 +147,10 @@ class StoreTest(unittest.TestCase):
                 'output': {'text': text}}
 
     def test_reads_the_newest_app_run_and_patches_it_in_place(self):
-        led = Ledger.new('2026-11-18')
+        led = Ledger.new('2026-11-01')
         led.reserve('5-1', 1, 9, False, 1.0, 't')
-        fake = FakeGitHub({('GET', self.PATH): {'check_runs': [self.run_of(3, '2026-11-18', doc=led),
-                                                               self.run_of(9, '2026-11-18', app=1),  # another App: ignored
+        fake = FakeGitHub({('GET', self.PATH): {'check_runs': [self.run_of(3, '2026-11-01', doc=led),
+                                                               self.run_of(9, '2026-11-01', app=1),  # another App: ignored
                                                                ]},
                            ('PATCH', '/repos/Estim-se/review-ledger/check-runs/3'): {}})
         from gate.github import GitHub
@@ -163,25 +164,25 @@ class StoreTest(unittest.TestCase):
         self.assertNotIn('head_sha', body)
 
     def test_a_new_cycle_creates_a_new_run_carrying_state(self):
-        old = Ledger.new('2026-10-18')
+        old = Ledger.new('2026-10-01')
         old.add_accept({'diffhash': 'd', 'pr': 1})
-        fake = FakeGitHub({('GET', self.PATH): {'check_runs': [self.run_of(3, '2026-10-18', doc=old)]},
+        fake = FakeGitHub({('GET', self.PATH): {'check_runs': [self.run_of(3, '2026-10-01', doc=old)]},
                            ('POST', '/repos/Estim-se/review-ledger/check-runs'): {'id': 4}})
         from gate.github import GitHub
         store = Store(GitHub('t', fake), CFG, BUDGETS)
         got = store.read(D(2026, 11, 26))
         self.assertIsNone(store.run_id)
-        self.assertEqual(got.doc['cycle'], '2026-11-18')
+        self.assertEqual(got.doc['cycle'], '2026-11-01')
         self.assertTrue(got.accepted('d'))
         store.write(got)
         method, _, body = fake.calls[-1]
         self.assertEqual(method, 'POST')
-        self.assertEqual((body['external_id'], body['head_sha']), ('cycle-2026-11-18', 'r' * 40))
+        self.assertEqual((body['external_id'], body['head_sha']), ('cycle-2026-11-01', 'r' * 40))
         self.assertEqual(store.run_id, 4)
 
     def test_a_run_without_text_or_a_failing_read_stops(self):
         from gate.github import GitHub
-        broken = {'id': 3, 'name': 'estim-ledger', 'app': {'id': 77}, 'external_id': 'cycle-2026-11-18', 'output': {}}
+        broken = {'id': 3, 'name': 'estim-ledger', 'app': {'id': 77}, 'external_id': 'cycle-2026-11-01', 'output': {}}
         with self.assertRaises(GateError):
             Store(GitHub('t', FakeGitHub({('GET', self.PATH): {'check_runs': [broken]}})), CFG, BUDGETS).read(D(2026, 11, 26))
         with self.assertRaises(GateError):
