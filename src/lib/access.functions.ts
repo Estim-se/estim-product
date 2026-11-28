@@ -3,7 +3,7 @@ import { getRequestHeader } from '@tanstack/react-start/server';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import type { Json } from '@/integrations/supabase/types';
 import { assertBoundedInput } from './input-limits';
-import { parseAccept, parseManagement, INVITATION_DAYS, invitationStatus } from './access-rules';
+import { parseAccept, parseManagement, INVITATION_DAYS, invitationStatus, sessionAlreadyEnded } from './access-rules';
 import { inviteTemplateData } from './invite-metadata';
 
 export const loadAccess = createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
@@ -139,7 +139,14 @@ export const acceptInvitation = createServerFn({ method: 'POST' }).middleware([r
   const password = await db.auth.admin.updateUserById(context.userId, { password: data.password });
   if (password.error) throw new Error('Inbjudan är accepterad, men lösenordet kunde inte sparas. Använd Glömt lösenord? för att slutföra kontot.');
   const bearer = getRequestHeader('authorization')?.replace(/^Bearer /i, '');
-  if (bearer) { const result=await db.auth.admin.signOut(bearer, 'global'); if(result.error)throw new Error('Kontot är klart, men utloggningen kunde inte slutföras. Logga ut och försök igen.'); }
+  if (bearer) {
+    const result = await db.auth.admin.signOut(bearer, 'global');
+    // The password change can already have ended this session; that counts as signed out (only status/code logged).
+    if (!sessionAlreadyEnded(result.error)) {
+      console.error('[invite] sign-out after accept failed', result.error?.status ?? 'unknown', result.error?.code ?? '');
+      throw new Error('Kontot är klart, men utloggningen kunde inte slutföras. Logga ut och försök igen.');
+    }
+  }
   return { companyId: accepted.data };
 });
 

@@ -27,3 +27,11 @@ export function invitationStatus(inv: { accepted_at: string | null; revoked_at: 
 export function canManageCompany(platform: boolean, membership: { company_id: string; role: string } | null, companyId: string) {
   return platform || (membership?.company_id === companyId && membership.role === 'ägare');
 }
+
+/**
+ * After an invitation is accepted the new account's session is signed out. A session that has already ended (for
+ * example by the password change just before) answers 401, 403 or 404: the account is signed out either way.
+ */
+export function sessionAlreadyEnded(error: { status?: number | undefined } | null | undefined): boolean {
+  return !error || error.status === 401 || error.status === 403 || error.status === 404;
+}
