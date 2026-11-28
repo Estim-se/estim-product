@@ -548,6 +548,12 @@ def review(environ=os.environ, gh=None, tokens=None, runner=None):
     except GateError as e:
         result['reason'] = e.code
         log(f'review: stopped ({e.code}): {e}')
+    except BaseException:
+        # Cancelled (the runner's SIGINT arrives as KeyboardInterrupt) or an unexpected error: still report what the
+        # calls spent, so the ledger settles that rather than holding the cap, then fail the step.
+        spent = round(engine.spent, 6) if engine else 0.0
+        emit({'result': dict(result, complete=False, findings=[], reason='engine'), 'cost': str(spent)})
+        raise
     cost = round(engine.spent, 6) if engine else 0.0
     emit({'result': result, 'cost': str(cost)})
     return result, cost

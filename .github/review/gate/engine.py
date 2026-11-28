@@ -8,7 +8,8 @@
 - Code ranks against REVIEW.md: only CONFIRMED can be Important; PLAUSIBLE becomes a Nit naming the check that would
   settle it; at most 5 Nits; pre-existing findings never block.
 - Money: each call gets --max-budget-usd from a split of the tier cap that sums to at most the cap, so parallel calls
-  can't overshoot it together. The running total is written after every call, for the ledger.
+  can't overshoot it together. A call is charged the cost its result reports, or its whole budget when it has no
+  result, fails or is cancelled. The running total is written after every call, for the ledger.
 - The review is complete only when every call returned a validated result with a clean init check.
 """
 import json
@@ -99,15 +100,15 @@ class Engine:
             raise Superseded()
         model = self.cfg['models'][model_key]
         spec = self.calls_spec[role]
-        rc, init, result, reads = self.runner(label, model, spec['effort'], spec['max_turns'], budget, schema, prompt)
+        try:
+            rc, init, result, reads = self.runner(label, model, spec['effort'], spec['max_turns'], budget, schema, prompt)
+        except BaseException:
+            # Failed or cancelled after it may have spent money: charge its whole budget, as below, then stop.
+            self._charge(label, budget)
+            raise
         cost = (result or {}).get('total_cost_usd')
-        with self.lock:
-            self.n += 1
-            # A call without a result may still have spent money: charge its whole budget.
-            charged = float(cost) if isinstance(cost, (int, float)) else budget
-            self.costs[label] = charged
-            self.spent += charged
-            self._write_cost()
+        # A call without a result may still have spent money: charge its whole budget.
+        self._charge(label, float(cost) if isinstance(cost, (int, float)) else budget)
         problems = cli.init_problems(init, model=model, version=self.cfg['cli']['version'])
         if problems:
             raise GateError('engine', 'engine check: ' + ', '.join(problems))
@@ -117,6 +118,13 @@ class Engine:
             self.problems.append(f'{label}: {subtype}')
             return None, reads
         return output, reads
+
+    def _charge(self, label, usd):
+        with self.lock:
+            self.n += 1
+            self.costs[label] = usd
+            self.spent += usd
+            self._write_cost()
 
     def _write_cost(self):
         tmp = os.path.join(self.work, 'cost.json.tmp')

@@ -83,6 +83,24 @@ class EngineTest(TempDirCase):
                 eng._run_cli('finder-3', 'm', 'medium', 10, 0.5, {}, 'p')
         self.assertEqual(seen, [('tok-0', 598 - cli.TOKEN_MARGIN), ('tok-1', cli.MAX_SECONDS)])
 
+    def test_a_call_that_fails_or_is_cancelled_is_charged_its_whole_budget(self):
+        """A call that raises after it may have spent money (a cancel arrives as KeyboardInterrupt) still counts its
+        whole budget, and cost.json, which the review stage reports to the ledger, holds the total.
+        Mutation: delete `self._charge(label, budget)` from Engine.call's except branch."""
+        import json
+        for error in (KeyboardInterrupt(), RuntimeError('boom'), GateError('engine', 'x')):
+            eng = self.engine(FakeCli(cost=0.25))
+            eng.call('finder-1-correctness', 'sonnet', 'finder', 0.5, {}, 'p')
+
+            def failing(*args, error=error):
+                raise error
+            eng.runner = failing
+            with self.assertRaises(type(error)):
+                eng.call('finder-2-security', 'sonnet', 'finder', 0.75, {}, 'p')
+            self.assertEqual((round(eng.spent, 6), eng.n), (1.0, 2), repr(error))
+            with open(os.path.join(self.work, 'cost.json')) as f:
+                self.assertEqual(json.load(f), {'usd': 1.0, 'calls': 2})
+
     def test_review_md_clauses(self):
         self.assertEqual(sorted({k[:3] for k in CLAUSES}), ['BUG', 'SEC', 'UNP'])
         self.assertTrue(CLAUSES['SEC1'].startswith('An Edge Function'))

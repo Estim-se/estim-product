@@ -294,6 +294,55 @@ class PostAndSettleTest(StageCase):
         self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='paused').requeues(state_key(7, self.diffhash))['n'], 1)
         self.assertEqual(self.settle(environ, COST='0.2', OUTCOME='success').requeues(state_key(7, self.diffhash))['n'], 0)
 
+    def test_a_cancelled_review_reports_what_it_spent_and_the_ledger_settles_that(self):
+        """The review is cancelled (KeyboardInterrupt) after its calls spent $0.70. It still reports cost 0.7 and
+        fails, and the ledger settles $0.70 instead of keeping the $2.00 cap.
+        Mutation: delete the `except BaseException:` block in stages.review."""
+        from gate.common import HERE
+        queue_out = self.queue()['queue']
+        main = os.path.dirname(os.path.dirname(HERE))  # the checkout's REVIEW.md and AGENTS.md
+        diffhash = self.diffhash
+
+        class FakeRepo:
+            def __init__(self, path, url):
+                pass
+
+            def fetch_commit(self, sha):
+                pass
+
+            def diffhash(self, base, sha):
+                return diffhash
+
+            def export(self, sha, path, only=None):
+                os.makedirs(path, exist_ok=True)
+                return [], []
+
+            def changes(self, base, sha):
+                return []
+
+            def unified(self, a, b):
+                return b''
+
+        class CancelledEngine:
+            def __init__(self, **kw):
+                self.spent = 0.0
+
+            def run(self):
+                self.spent = 0.7
+                raise KeyboardInterrupt
+
+        emitted = {}
+        environ = dict(self.environ, PLAN=json.dumps(self.plan_out()), QUEUE=json.dumps(queue_out), MAIN_DIR=main)
+        with mock.patch.object(stages, 'Repo', FakeRepo), mock.patch.object(stages, 'Engine', CancelledEngine), \
+                mock.patch.object(stages.checks, 'pull', lambda gh, cfg, n: {'title': 't', 'body': 'b'}), \
+                mock.patch.object(stages, 'emit', emitted.update):
+            with self.assertRaises(KeyboardInterrupt):
+                stages.review(environ, gh=object(), tokens=mock.Mock(), runner=lambda *a: None)
+        self.assertEqual((emitted['cost'], emitted['result']['complete']), ('0.7', False))
+        led = self.settle(dict(environ, REVIEW=json.dumps(emitted['result'])), COST=emitted['cost'],
+                          REVIEW_RESULT='cancelled', OUTCOME='paused')
+        self.assertEqual((led.doc['reservations'], led.totals()['global']), ([], 0.7))
+
     def test_an_unsettled_reservation_stays_charged_and_a_skipped_review_costs_nothing(self):
         _, q, environ = self.run_post(self.complete([]))
         led = self.settle(environ, COST='', REVIEW_RESULT='cancelled', OUTCOME='paused')
