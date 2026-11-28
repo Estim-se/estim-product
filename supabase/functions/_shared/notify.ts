@@ -19,6 +19,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.119.0";
 import { errCode, optNumber } from "./nylas.ts";
 import { sendReply } from "./mail-provider.ts";
 import { escapeHtml } from "./mail-format.ts";
+import { brandedEmailHtml } from "./notify-layout.ts";
 import { parseFromAddress, resendEnabled, resendFromAddress, sendResendEmail } from "./resend.ts";
 
 export type DraftNotifyKind = "draft" | "form_quarantine";
@@ -45,13 +46,38 @@ async function resolveMemberEmails(
   return emails;
 }
 
-function draftCopy(kind: DraftNotifyKind, firm: string, appUrl: string): {
+// Resend mode uses the branded layout of the auth emails; the legacy path (sent from the company's own mailbox
+// with RESEND_NOTIFY_ENABLED off) keeps its original HTML byte for byte.
+function draftCopy(kind: DraftNotifyKind, firm: string, appUrl: string, branded = false): {
   subject: string;
   html: string;
   text: string;
 } {
   const safeFirm = escapeHtml(firm);
   const safeUrl = escapeHtml(appUrl);
+  if (branded) {
+    const form = kind === "form_quarantine";
+    const heading = form ? "Nytt formulärmejl att godkänna" : "Nytt svarsutkast väntar på dig";
+    const what = form
+      ? "Ett nytt formulärmejl väntar på att avsändaren ska godkännas i estim för"
+      : "Ett nytt svarsutkast är klart i estim för";
+    const label = form ? "Öppna och kontrollera" : "Öppna och godkänn";
+    return {
+      subject: heading,
+      html: brandedEmailHtml({
+        preheader: form
+          ? "Ett formulärmejl väntar på att avsändaren ska godkännas."
+          : "Ett nytt svarsutkast är klart att granska i estim.",
+        iconEntity: "&#9993;&#65038;",
+        heading,
+        paragraphs: [`${what} **${firm}**.`, "Inget har skickats till kunden."],
+        button: { label, url: appUrl },
+        footer: `Du får det här mejlet eftersom du är användare i ${firm} i estim.`,
+        appUrl,
+      }),
+      text: `${what} ${firm}.\n\n${label}: ${appUrl}\n\nInget har skickats till kunden.`,
+    };
+  }
   if (kind === "form_quarantine") {
     return {
       subject: "Nytt formulärmejl att godkänna",
@@ -145,7 +171,7 @@ export async function notifyDraftReady(
 
   const firm = company.data?.name ?? "estim";
   const kind: DraftNotifyKind = useResend && opts?.kind === "form_quarantine" ? "form_quarantine" : "draft";
-  const copy = draftCopy(kind, firm, appUrl);
+  const copy = draftCopy(kind, firm, appUrl, useResend);
 
   for (const [idx, to] of emails.entries()) {
     try {
@@ -227,12 +253,18 @@ export async function notifyConnectionLost(
   const mailbox = input.email.trim();
   const reconnectUrl = `${appUrl}/kanaler`;
   const subject = "E-postkopplingen i estim behöver förnyas";
-  const html =
-    `<div style="font-family:Arial,sans-serif;font-size:15px">` +
-    `<p>Kopplingen till <b>${escapeHtml(mailbox)}</b> för ${escapeHtml(firm)} har avbrutits och behöver förnyas.</p>` +
-    `<p>Nya kundmejl hämtas inte in förrän du har kopplat om brevlådan.</p>` +
-    `<p><a href="${escapeHtml(reconnectUrl)}">Koppla om e-posten i estim</a></p>` +
-    `</div>`;
+  const html = brandedEmailHtml({
+    preheader: "Nya kundmejl hämtas inte in förrän du har kopplat om brevlådan.",
+    iconEntity: "&#8635;",
+    heading: "E-postkopplingen behöver förnyas",
+    paragraphs: [
+      `Kopplingen till **${mailbox}** för **${firm}** har avbrutits och behöver förnyas.`,
+      "Nya kundmejl hämtas inte in förrän du har kopplat om brevlådan.",
+    ],
+    button: { label: "Koppla om e-posten", url: reconnectUrl },
+    footer: `Du får det här mejlet eftersom du är ägare av ${firm} i estim.`,
+    appUrl,
+  });
   const text =
     `Kopplingen till ${mailbox} för ${firm} har avbrutits och behöver förnyas.\n\n` +
     `Nya kundmejl hämtas inte in förrän du har kopplat om brevlådan.\n\n` +
