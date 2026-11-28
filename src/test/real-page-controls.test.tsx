@@ -53,6 +53,14 @@ describe('real page actions after presentation changes', () => {
     expect(view.queryByLabelText('WhatsApp-ID')).toBeNull();
     expect(fixture.saveWhatsApp).not.toHaveBeenCalled();
   });
+  it('shows the published receive address wherever the page is opened, never the preview host', () => {
+    fixture.readEmail.mockResolvedValue(null);
+    const view = render(<RealChannels />);
+    fireEvent.click(view.getByRole('button', { name: 'Anslut WhatsApp' }));
+    const field = view.getByLabelText('Adress för inkommande meddelanden') as HTMLInputElement;
+    expect(window.location.origin).not.toBe('https://project--81cac9fa-897e-468e-8d7e-6286042fd75d.lovable.app');
+    expect(field.value).toBe('https://project--81cac9fa-897e-468e-8d7e-6286042fd75d.lovable.app/api/public/receive-message');
+  });
   it.each(['användare', 'ägare'])('keeps technical fields collapsed for %s until opened', role => {
     fixture.role = role; fixture.readEmail.mockResolvedValue(null);
     const view = render(<RealChannels />);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useServerFn } from '@tanstack/react-start';
 import { saveWhatsAppChannel } from '@/lib/channel.functions';
 import { receiveMessageUrl } from '@/lib/channel-rules';
@@ -14,7 +14,6 @@ export function RealChannels() {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const [endpoint, setEndpoint] = useState(receiveMessageUrl);
   const [advanced, setAdvanced] = useState(false);
-  useEffect(() => { setEndpoint(`${window.location.origin}/api/public/receive-message`); }, []);
   const save = useServerFn(saveWhatsAppChannel);
   const connected = Boolean(workspace.data?.whatsAppSendingConnected && workspace.data.channels?.some(c => c.type === 'wa' && c.phone_number_id));
   return <><TopHeader title={`Kanaler · ${workspace.data?.company?.name ?? ''}`} subtitle="Anslut de kanaler där du vill ha kontakt med dina kunder. Alla meddelanden samlas i samma inkorg." /><div className="grid2 fadein channels-grid"><EmailChannelCard isOwner={workspace.data?.role==='ägare'}/><section className="card chcard">

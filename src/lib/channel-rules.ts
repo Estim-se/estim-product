@@ -13,4 +13,6 @@ export function waWindowOpen(last: string | null | undefined, now = Date.now()) 
   const elapsed = now - new Date(last).getTime();
   return elapsed >= 0 && elapsed <= 24 * 60 * 60 * 1000;
 }
-export const receiveMessageUrl = 'https://project--81cac9fa-897e-468e-8d7e-6286042fd75d-dev.lovable.app/api/public/receive-message';
+// Live callers such as n8n use the published host only. The -dev preview runs code that hasn't been reviewed yet.
+export const publishedOrigin = 'https://project--81cac9fa-897e-468e-8d7e-6286042fd75d.lovable.app';
+export const receiveMessageUrl = `${publishedOrigin}/api/public/receive-message`;
